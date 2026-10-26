@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+data/*.db
+config/companies.yaml
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials*.json
+
+# Python
+venv/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store

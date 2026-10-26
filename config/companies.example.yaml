@@ -1,0 +1,8 @@
+companies:
+  - name: Example Construction PLC
+    contact: "telegram:@example"
+    sector: construction
+    keywords: [road, culvert, building, civil works]
+    regions: [Addis Ababa, Oromia]
+    min_budget_etb: 500000
+    exclude: [medical, software]
