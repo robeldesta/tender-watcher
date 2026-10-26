@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 
 from .llm_match import LLMMatch, llm_score
 from .models import Company, Tender
@@ -9,14 +10,14 @@ log = logging.getLogger(__name__)
 MIN_LLM_SCORE = 40
 
 
-def rank(c: Company, tenders: list[Tender], limit: int = 10,
-         client=None) -> list[tuple[Tender, LLMMatch | None]]:
+def rank(c: Company, tenders: list[Tender], limit: int = 10, client=None,
+         today: date | None = None) -> list[tuple[Tender, LLMMatch | None]]:
     """Keyword prefilter, then (with a client) an LLM re-rank of the best candidates.
 
     A tender whose LLM call fails keeps its keyword place with no LLM match,
     so an API outage never empties the digest.
     """
-    ranked = sorted(((score(t, c), t) for t in tenders), key=lambda x: -x[0])
+    ranked = sorted(((score(t, c, today), t) for t in tenders), key=lambda x: -x[0])
     ranked = [t for s, t in ranked if s > 0]
     if client is None:
         return [(t, None) for t in ranked[:limit]]
@@ -34,8 +35,9 @@ def rank(c: Company, tenders: list[Tender], limit: int = 10,
     return (scored + failed)[:limit]
 
 
-def build_digest(c: Company, tenders: list[Tender], limit: int = 10, client=None) -> str:
-    ranked = rank(c, tenders, limit, client)
+def build_digest(c: Company, tenders: list[Tender], limit: int = 10, client=None,
+                 today: date | None = None) -> str:
+    ranked = rank(c, tenders, limit, client, today)
     if not ranked:
         return f"Hi {c.name}: no new matching tenders today."
     lines = [f"Tenders for {c.name} today:"]
