@@ -12,7 +12,7 @@ AI that watches Ethiopian public and NGO tenders, matches them to a company's pr
 - `digest.py` builds the daily message
 - `bid_draft.py` drafts a bid pack (cover letter, company profile, experience tables, compliance checklist) for one firm and one tender; `bid_profile.py` holds the firm's bid profile and renders the tables; `draft_cli.py` runs it
 - `store.py` SQLite storage with de-duplication
-- `cli.py` `python -m tenderwatch.cli run|digest`
+- `cli.py` `python -m tenderwatch.cli demo|run|fetch-fixture`
 - `config/companies.example.yaml` copy to `companies.yaml` (not committed)
 
 ## Setup
@@ -20,8 +20,9 @@ AI that watches Ethiopian public and NGO tenders, matches them to a company's pr
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=...   # needed for extract/match only
-PYTHONPATH=src python -m tenderwatch.cli demo        # offline, keyword match only
+PYTHONPATH=src python -m tenderwatch.cli demo        # offline on saved World Bank notices, keyword match only
 PYTHONPATH=src python -m tenderwatch.cli demo --llm  # adds Claude match score + reason
+PYTHONPATH=src python -m tenderwatch.cli run         # fetch live notices into data/tenders.db
 ```
 The match model defaults to `claude-opus-5-5`; set `TENDERWATCH_MATCH_MODEL` to change it.
 
@@ -39,6 +40,9 @@ The pack is written to `out/bids/` as Markdown to paste into the firm's letterhe
 pip install -r requirements-dev.txt
 python -m pytest     # offline: the Anthropic client is mocked
 ```
+
+## Sources
+- `worldbank`: [World Bank procurement notices API](https://search.worldbank.org/api/v2/procnotices?format=json&project_ctry_name_exact=Ethiopia), Ethiopia only. Public JSON, no key. Covers World Bank-financed projects (lots of civil works and supply). Contract awards are skipped.
 
 ## Rules
 - Respect each source's terms and robots.txt; keep request rates low.
