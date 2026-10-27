@@ -1,0 +1,92 @@
+# Bid profiles: one entry per firm, filled in from the 15-minute onboarding call.
+# Copy to config/bid_profiles.yaml (not committed: it holds client data).
+# Everything here is invented example data.
+#
+# The call should capture, at minimum: grade, licences (with numbers and renewal
+# dates), regions, and past projects (client, value, year, role, scope, and
+# whether they hold a completion certificate). The rest makes the draft more
+# complete; anything missing shows up as [TO CONFIRM: ...] in the pack.
+firms:
+  - legal_name: Example Construction PLC
+    grade: GC Grade 3
+    address: "Bole Sub-city, Woreda 03, Addis Ababa"
+    phone: "+251 11 000 0000"
+    email: tenders@example.com
+    tin: "0000000000"
+    vat_registered: true
+    year_established: 2012
+    signatory_name: Ato Example Person
+    signatory_title: General Manager
+    regions: [Addis Ababa, Oromia, Gambella]
+    work_types: [buildings, health facilities, rural roads, water supply]
+    staff_count: 85
+    annual_turnover_etb:
+      2023: 38000000
+      2024: 46500000
+      2025: 52000000
+    licences:
+      - name: "MoUD General Contractor (GC) Grade 3 competency certificate"
+        number: "GC3/0000/2015"
+        issuer: Ministry of Urban and Infrastructure
+        expires: 2027-07-07
+      - name: Trade licence
+        number: "AA/BL/00/000/0000"
+        issuer: Addis Ababa Trade Bureau
+        expires: 2026-11-10
+      - name: VAT registration certificate
+        number: "0000000"
+        issuer: Ministry of Revenues
+    projects:
+      - id: p1
+        name: Construction of Type B health centre
+        client: Oromia Regional Health Bureau
+        value_etb: 24500000
+        year_completed: 2024
+        region: Oromia
+        role: Main contractor
+        scope: Single-storey health centre, 1,200 m2, with water supply, septic system and fencing
+        completion_certificate: true
+      - id: p2
+        name: Rural access road rehabilitation, 18 km
+        client: Sample Woreda Rural Roads Office
+        value_etb: 31000000
+        year_completed: 2023
+        region: Oromia
+        role: Main contractor
+        scope: Gravel road rehabilitation, culverts and drainage
+        completion_certificate: true
+      - id: p3
+        name: Primary school block (8 classrooms)
+        client: Gambella Regional Education Bureau
+        value_etb: 12800000
+        year_completed: 2025
+        region: Gambella
+        role: Main contractor
+        scope: Two blocks of four classrooms, latrines, water point
+        completion_certificate: false
+      - id: p4
+        name: Animal health post, two sites
+        client: Sample Pastoral Development Project
+        value_etb: 6900000
+        region: Gambella
+        role: Subcontractor
+        scope: Two small veterinary posts with crush and water trough
+    key_personnel:
+      - role: Project manager
+        name: Eng. Example One
+        qualification: BSc Civil Engineering
+        years_experience: 14
+      - role: Site engineer
+        name: Eng. Example Two
+        qualification: BSc Civil Engineering
+        years_experience: 7
+      - role: Sanitary engineer
+        name: Example Three
+        qualification: BSc Water Resources Engineering
+        years_experience: 5
+    equipment:
+      - "Dump trucks, 3 owned"
+      - "Concrete mixers (350 L), 4 owned"
+      - "Backhoe loader, 1 owned"
+      - "Vibrators and formwork for two concurrent sites"
+    notes: Can mobilise to Gambella within 2 weeks; has a site office in Gambella town.
