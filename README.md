@@ -11,6 +11,7 @@ AI that watches Ethiopian public and NGO tenders, matches them to a company's pr
 - `digest.py` builds the daily message
 - `store.py` SQLite storage with de-duplication
 - `cli.py` `python -m tenderwatch.cli run|digest`
+- `dataset.py` record human-checked fields (`review`, `check`) and export notices plus checked labels for training Kyrie, our own model (`export`)
 - `config/companies.example.yaml` copy to `companies.yaml` (not committed)
 
 ## Setup
