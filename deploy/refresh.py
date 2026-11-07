@@ -44,6 +44,8 @@ LISTINGS = [
     ("/tenders/industry/hospitality-tourism", "", "services", 3),
     ("/tenders/industry/printing-publishing", "", "services", 3),
     ("/tenders/industry/miscellaneous", "", "other", 3),
+    ("/tenders/industry/spare-parts-vehicles", "", "vehicles", 3),
+    ("/tenders/industry/industrial-machinery", "", "vehicles", 3),
 ]
 
 # Construction works signals (English + Amharic).
