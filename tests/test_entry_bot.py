@@ -524,5 +524,6 @@ def test_no_competitor_sources():
     assert rf.is_competitor({"id": "mt-x"}) and rf.is_competitor({"id": "seed", "url": "https://reportertenders.com/bids/x"})
     assert not rf.is_competitor({"id": "wb-1", "url": "https://projects.worldbank.org/x", "source": "World Bank"})
     root = Path(__file__).resolve().parent.parent
-    for f in ("web/index.html", "web/tenders.json", "deploy/sources.json"):
-        assert "moderntenders.com" not in (root / f).read_text() and "reportertenders.com" not in (root / f).read_text()
+    for f in ("web/index.html", "web/buyers.html", "web/tenders.json", "deploy/sources.json"):
+        txt = (root / f).read_text().lower()
+        assert not any(c in txt for c in ("moderntenders", "modern tenders", "reportertenders", "reporter tenders", "2merkato"))
