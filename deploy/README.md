@@ -124,3 +124,13 @@ away. Without `kw=`, sensible words for the category are used (for vehicles:
 bus, truck, pickup, spare parts, ተሽከርካሪ, ...). Categories: construction,
 goods, services, consultancy, vehicles, it, electrical, medical, sale, rental,
 other.
+
+### Paying online (/pay)
+
+With `CHAPA_SECRET_KEY` set, a subscriber sends `/pay`, picks monthly or
+yearly, and pays on Chapa's own page. Every minute the bot asks Chapa about
+open payment links (references start with `TW-`), and when one is paid it
+extends `paid_until` (counted from the end of the trial or current period),
+thanks the subscriber, tells the reviewers, and adds a row to
+`/opt/tenders/bot/payments.csv`. No public webhook is needed. Three days
+before a trial or subscription ends, the subscriber gets one reminder.

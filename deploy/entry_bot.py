@@ -54,7 +54,9 @@ CATEGORIES = {  # board category id -> label
 SITE_URL = "https://tenders.sonador.et"
 TRIAL_DAYS = 14
 PAY_TEXT = ("To keep getting tenders: ETB 299 a month or ETB 2,400 a year. "
-            "Reply here or contact Sonador Systems to pay.")
+            "Send /pay to pay with Chapa (Telebirr, CBE Birr, cards and banks).")
+PLANS = {"month": (299, 30, "ETB 299 / month"), "year": (2400, 365, "ETB 2,400 / year")}
+WARN_DAYS = 3
 DEFAULT_KEYWORDS = {  # words that catch a sector's tenders listed under other categories
     "vehicles": ["vehicle", "bus", "buses", "truck", "pickup", "pick-up", "automobile", "minibus", "ambulance",
                  "motorcycle", "tyre", "tire", "spare part", "ተሽከርካሪ", "መኪና", "አውቶቡስ", "የጭነት", "መለዋወጫ"],
@@ -518,6 +520,49 @@ class Telegram:
 # ---------------------------------------------------------------- the bot
 
 
+class Chapa:
+    """Hosted checkout. We create a payment link and later ask Chapa whether it was paid,
+    so the server needs no public webhook endpoint."""
+    API = "https://api.chapa.co/v1"
+
+    def __init__(self, secret_key):
+        self.key = secret_key
+
+    def _req(self, method, path, body=None):
+        req = urllib.request.Request(self.API + path, method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Authorization": "Bearer " + self.key,
+                                              "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=40) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            try:
+                return json.load(e)
+            except ValueError:
+                return {"status": "failed", "message": f"HTTP {e.code}"}
+
+    def checkout(self, tx_ref, amount, name, return_url):
+        r = self._req("POST", "/transaction/initialize", {
+            "amount": str(amount), "currency": "ETB", "tx_ref": tx_ref, "first_name": name[:50] or "Subscriber",
+            "return_url": return_url,
+            "customization": {"title": "Tender Watcher", "description": "Tender alerts subscription"}})
+        if r.get("status") != "success":
+            raise RuntimeError(str(r.get("message"))[:200])
+        return r["data"]["checkout_url"]
+
+    def paid(self, tx_ref, amount):
+        """True when Chapa reports this payment as successful for the full amount in ETB."""
+        r = self._req("GET", "/transaction/verify/" + urllib.parse.quote(tx_ref))
+        d = r.get("data") or {}
+        try:
+            ok_amount = float(d.get("amount", 0)) >= amount
+        except (TypeError, ValueError):
+            ok_amount = False
+        return r.get("status") == "success" and d.get("status") == "success" and ok_amount \
+            and d.get("currency", "ETB") == "ETB" and d.get("tx_ref", tx_ref) == tx_ref
+
+
 def keyword_hit(keywords, text):
     """Whole-word match (plural s/es allowed); a keyword ending in * matches as a word start.
     Amharic and other non-Latin keywords match anywhere, since prefixes like የ- attach to the word."""
@@ -557,7 +602,7 @@ def ids(s):
 class Bot:
     def __init__(self, tg, claude, *, board, state_dir, notices_dir, notices_url,
                  reviewers, collectors, today=None, sources_path="", watch_hour=6, alert_hour=8,
-                 site_url=SITE_URL):
+                 site_url=SITE_URL, chapa=None):
         self.tg, self.claude = tg, claude
         self.board, self.state = board, state_dir
         self.notices_dir, self.notices_url = notices_dir, notices_url.rstrip("/")
@@ -566,6 +611,7 @@ class Bot:
         self.today = today or (lambda: dt.datetime.now(TZ).date().isoformat())
         self.sources_path, self.watch_hour = sources_path, watch_hour
         self.alert_hour, self.site_url = alert_hour, site_url.rstrip("/")
+        self.chapa = chapa
         for d in ("pending", "photos"):
             os.makedirs(os.path.join(state_dir, d), exist_ok=True)
         os.makedirs(notices_dir, exist_ok=True)
@@ -616,7 +662,9 @@ class Bot:
         uid, chat = m["from"]["id"], m["chat"]["id"]
         text = m.get("text", "")
         subs = self.load_subs()
-        if str(uid) in subs and uid not in self.collectors:
+        if str(uid) in subs and (uid not in self.collectors or text.startswith("/pay")):
+            if text.startswith("/pay"):
+                return self.offer_plans(chat)
             return self.say(chat, self.sub_status(subs[str(uid)]))
         if text.startswith("/start") or text.startswith("/id"):
             role = "reviewer" if uid in self.reviewers else "collector" if uid in self.collectors else None
@@ -781,6 +829,8 @@ class Bot:
     def on_button(self, q):
         uid = q["from"]["id"]
         action, _, pid = q.get("data", "").partition(":")
+        if action == "pay":
+            return self.on_pay(q, pid)
         if uid not in self.reviewers:
             return self.tg.call("answerCallbackQuery", callback_query_id=q["id"], text="Only reviewers can do this.")
         try:
@@ -885,7 +935,11 @@ class Bot:
                 self._once_a_day("watch", self.watch_hour, lambda: log("watch done: %d sent for review" % watch_sources(
                     self, load_sources(self.sources_path), log=lambda m: log("watch " + m))))
             self._once_a_day("alert", self.alert_hour, lambda: log("alerts sent: %d" % self.send_alerts()))
-            time.sleep(600)
+            try:
+                self.check_payments()
+            except Exception:
+                traceback.print_exc()
+            time.sleep(60)
 
     # -- subscribers (daily matches in Telegram)
     def _subs_path(self):
@@ -975,6 +1029,91 @@ class Bot:
         return f"Subscribed {subs[tid]['name']} ({', '.join(cats)}), trial until {subs[tid]['trial_until']}. " \
                f"Sent {n} open tenders now."
 
+    # -- payments
+    def _payments_path(self):
+        return os.path.join(self.state, "payments.json")
+
+    def load_payments(self):
+        try:
+            with open(self._payments_path(), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def offer_plans(self, chat):
+        if not self.chapa:
+            return self.say(chat, "Online payment is not set up yet. Please pay Sonador Systems by Telebirr "
+                                  "or bank transfer; your subscription is switched on when the payment arrives.")
+        rows = [[{"text": "Pay " + label, "callback_data": "pay:" + plan}] for plan, (_, _, label) in PLANS.items()]
+        return self.say(chat, "Choose a plan. You pay on Chapa's page (Telebirr, CBE Birr, M-Pesa, cards or banks); "
+                              "your subscription is extended a few minutes after payment.",
+                        reply_markup={"inline_keyboard": rows})
+
+    def on_pay(self, q, plan):
+        uid = q["from"]["id"]
+        subs = self.load_subs()
+        if str(uid) not in subs or plan not in PLANS or not self.chapa:
+            return self.tg.call("answerCallbackQuery", callback_query_id=q["id"], text="Not available.")
+        amount, days, label = PLANS[plan]
+        tx_ref = f"TW-{uid}-{plan}-{uuid.uuid4().hex[:10]}"
+        try:
+            url = self.chapa.checkout(tx_ref, amount, subs[str(uid)]["name"], self.site_url)
+        except Exception as e:
+            print(f"chapa checkout failed: {e}", file=sys.stderr, flush=True)
+            self.tg.call("answerCallbackQuery", callback_query_id=q["id"], text="Payment page failed.")
+            return self.say(uid, "Sorry, the payment page could not be opened. Please try /pay again later.")
+        pays = self.load_payments()
+        pays[tx_ref] = {"uid": uid, "plan": plan, "amount": amount, "days": days, "status": "pending",
+                        "created": time.time()}
+        write_json_atomic(self._payments_path(), pays)
+        self.tg.call("answerCallbackQuery", callback_query_id=q["id"], text="Opening payment page")
+        return self.say(uid, f"{label}: tap below to pay. The link works for 24 hours.",
+                        reply_markup={"inline_keyboard": [[{"text": "Pay " + label, "url": url}]]})
+
+    def check_payments(self):
+        """Ask Chapa about open payment links; extend the subscription when one is paid. Returns payments confirmed."""
+        if not self.chapa:
+            return 0
+        pays, done = self.load_payments(), 0
+        for tx_ref, pay in pays.items():
+            if pay["status"] != "pending":
+                continue
+            if time.time() - pay["created"] > 48 * 3600:
+                pay["status"] = "expired"
+                continue
+            try:
+                ok = self.chapa.paid(tx_ref, pay["amount"])
+            except Exception as e:
+                print(f"chapa verify {tx_ref}: {e}", file=sys.stderr, flush=True)
+                continue
+            if not ok:
+                continue
+            subs = self.load_subs()
+            sub = subs.get(str(pay["uid"]))
+            pay["status"], pay["paid"] = "paid", self.today()
+            if not sub:
+                continue
+            start = max(self.today(), sub.get("paid_until", ""), sub.get("trial_until", ""))
+            until = (dt.date.fromisoformat(start) + dt.timedelta(days=pay["days"])).isoformat()
+            sub.update(paid_until=until, ended_notice=False)
+            self.save_subs(subs)
+            self.ledger_payment(tx_ref, pay, sub, until)
+            self.say(pay["uid"], f"Payment received, thank you. Your Tender Watcher subscription runs until {until}.")
+            for r in self.reviewers:
+                self.say(r, f"Payment: {sub['name']} paid ETB {pay['amount']} ({pay['plan']}), until {until}. Ref {tx_ref}")
+            done += 1
+        write_json_atomic(self._payments_path(), pays)
+        return done
+
+    def ledger_payment(self, tx_ref, pay, sub, until):
+        path = os.path.join(self.state, "payments.csv")
+        new = not os.path.exists(path)
+        with open(path, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(["date", "tx_ref", "telegram_id", "name", "plan", "amount_etb", "paid_until"])
+            w.writerow([self.today(), tx_ref, pay["uid"], sub["name"], pay["plan"], pay["amount"], until])
+
     def matches(self, sub, tenders):
         out = []
         for t in tenders:
@@ -1005,6 +1144,15 @@ class Bot:
                         traceback.print_exc()
                     sub["ended_notice"] = True
                 continue
+            end = max(sub.get("trial_until", ""), sub.get("paid_until", ""))
+            left = (dt.date.fromisoformat(end) - dt.date.fromisoformat(self.today())).days
+            if left <= WARN_DAYS and sub.get("warned_for") != end:
+                try:
+                    self.say(int(tid), f"Your Tender Watcher {'trial' if end == sub.get('trial_until') else 'subscription'}"
+                                       f" ends on {end}. {PAY_TEXT}")
+                    sub["warned_for"] = end
+                except Exception:
+                    traceback.print_exc()
             seen = set(sub.get("sent", []))
             new = [t for t in self.matches(sub, tenders) if t.get("id") not in seen]
             if not new:
@@ -1069,6 +1217,7 @@ def main():
         watch_hour=int(env.get("WATCH_HOUR", "6")),
         alert_hour=int(env.get("ALERT_HOUR", "8")),
         site_url=env.get("SITE_URL", SITE_URL),
+        chapa=Chapa(env["CHAPA_SECRET_KEY"]) if env.get("CHAPA_SECRET_KEY") else None,
     )
     if len(sys.argv) > 1 and sys.argv[1] == "--check-sources":
         check_sources(load_sources(env.get("SOURCES_JSON", "/opt/tenders/sources.json")))

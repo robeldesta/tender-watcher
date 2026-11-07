@@ -346,3 +346,67 @@ def test_alert_chunks_split():
     chunks = eb.alert_chunks("head", ts, "https://x")
     assert len(chunks) > 1 and all(len(c) < 4096 for c in chunks)
     assert sum(c.count("• ") for c in chunks) == 60
+
+
+class FakeChapa:
+    def __init__(self):
+        self.made, self.paid_refs = [], set()
+
+    def checkout(self, tx_ref, amount, name, return_url):
+        self.made.append((tx_ref, amount))
+        return "https://checkout.chapa.co/x/" + tx_ref
+
+    def paid(self, tx_ref, amount):
+        return tx_ref in self.paid_refs
+
+
+def test_pay_with_chapa_extends_subscription(setup):
+    bot, tg, claude, board = setup
+    day = {"d": "2026-11-07"}
+    bot.today = lambda: day["d"]
+    SUB = 777
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER},
+                            "text": f"/subscribe {SUB} vehicles name=Myagta"}})
+
+    # no Chapa configured: manual instructions
+    bot.handle({"message": {"from": {"id": SUB}, "chat": {"id": SUB}, "text": "/pay"}})
+    assert "not set up" in tg.texts(SUB)[-1]
+
+    bot.chapa = FakeChapa()
+    bot.handle({"message": {"from": {"id": SUB}, "chat": {"id": SUB}, "text": "/pay"}})
+    kb = [p for m, p in tg.sent if m == "sendMessage" and p["chat_id"] == SUB][-1]["reply_markup"]["inline_keyboard"]
+    assert [r[0]["callback_data"] for r in kb] == ["pay:month", "pay:year"]
+
+    # a stranger cannot start a payment
+    bot.handle({"callback_query": {"id": "s", "from": {"id": STRANGER}, "data": "pay:year"}})
+    assert bot.chapa.made == []
+
+    bot.handle({"callback_query": {"id": "p", "from": {"id": SUB}, "data": "pay:year"}})
+    (tx_ref, amount), = bot.chapa.made
+    assert amount == 2400 and tx_ref.startswith(f"TW-{SUB}-year-")
+    link = [p for m, p in tg.sent if m == "sendMessage" and p["chat_id"] == SUB][-1]["reply_markup"]
+    assert link["inline_keyboard"][0][0]["url"].endswith(tx_ref)
+
+    assert bot.check_payments() == 0  # not paid yet
+    bot.chapa.paid_refs.add(tx_ref)
+    assert bot.check_payments() == 1
+    sub = bot.load_subs()[str(SUB)]
+    assert sub["paid_until"] == "2027-11-21"  # a year counted from the end of the trial
+    assert "runs until 2027-11-21" in tg.texts(SUB)[-1]
+    assert "Myagta paid ETB 2400" in tg.texts(REVIEWER)[-1]
+    assert bot.check_payments() == 0  # counted once
+    with open(os.path.join(bot.state, "payments.csv")) as f:
+        assert tx_ref in f.read()
+
+
+def test_warning_before_trial_ends(setup):
+    bot, tg, claude, board = setup
+    day = {"d": "2026-11-07"}
+    bot.today = lambda: day["d"]
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": "/subscribe 888 it name=S"}})
+    day["d"] = "2026-11-18"
+    bot.send_alerts()
+    assert "trial ends on 2026-11-21" in tg.texts(888)[-1] and "/pay" in tg.texts(888)[-1]
+    n = len(tg.texts(888))
+    bot.send_alerts()
+    assert len(tg.texts(888)) == n  # warned once
