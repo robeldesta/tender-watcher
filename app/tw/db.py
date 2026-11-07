@@ -99,6 +99,18 @@ def upgrade(engine):
 def make_session(url):
     kw = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {"pool_pre_ping": True}
     engine = create_engine(url, **kw)
-    Base.metadata.create_all(engine)
-    upgrade(engine)
+    if engine.dialect.name == "postgresql":
+        # Several workers start at once; let one create tables and add columns at a time.
+        with engine.connect() as conn:
+            conn.execute(text("SELECT pg_advisory_lock(87001)"))
+            try:
+                Base.metadata.create_all(conn)
+                conn.commit()
+                upgrade(conn.engine)
+            finally:
+                conn.execute(text("SELECT pg_advisory_unlock(87001)"))
+                conn.commit()
+    else:
+        Base.metadata.create_all(engine)
+        upgrade(engine)
     return sessionmaker(engine, expire_on_commit=False)
