@@ -389,11 +389,14 @@ def test_pay_with_chapa_extends_subscription(setup):
 
     assert bot.check_payments() == 0  # not paid yet
     bot.chapa.paid_refs.add(tx_ref)
+    assert bot.check_payments() == 0  # checked less than a minute ago: wait
+    bot._checked.clear()
     assert bot.check_payments() == 1
     sub = bot.load_subs()[str(SUB)]
     assert sub["paid_until"] == "2027-11-21"  # a year counted from the end of the trial
     assert "runs until 2027-11-21" in tg.texts(SUB)[-1]
     assert "Myagta paid ETB 2400" in tg.texts(REVIEWER)[-1]
+    bot._checked.clear()
     assert bot.check_payments() == 0  # counted once
     with open(os.path.join(bot.state, "payments.csv")) as f:
         assert tx_ref in f.read()
@@ -421,3 +424,34 @@ def test_chapa_verify_rules(monkeypatch):
     assert not c.paid("TW-2", 2400)  # someone else's reference
     reply["data"]["status"] = "failed/pending"
     assert not c.paid("TW-1", 2400)
+
+
+def test_payment_check_does_not_lose_a_new_link(setup):
+    """A link created while Chapa is being asked must survive the check's write."""
+    bot, tg, claude, board = setup
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": "/subscribe 999 it name=R"}})
+    bot.chapa = FakeChapa()
+    bot.handle({"callback_query": {"id": "a", "from": {"id": 999}, "data": "pay:month"}})
+    first = bot.chapa.made[0][0]
+    real_paid = bot.chapa.paid
+
+    def paid_while_user_taps(tx_ref, amount):
+        bot.handle({"callback_query": {"id": "b", "from": {"id": 999}, "data": "pay:year"}})
+        return real_paid(tx_ref, amount)
+    bot.chapa.paid_refs.add(first)
+    bot.chapa.paid = paid_while_user_taps
+    assert bot.check_payments() == 1
+    pays = bot.load_payments()
+    assert pays[first]["status"] == "paid"
+    second = bot.chapa.made[1][0]
+    assert pays[second]["status"] == "pending"
+
+
+def test_polling_slows_after_an_hour(setup):
+    bot, *_ = setup
+    pay = {"created": 0}
+    assert bot.due_for_check("x", pay, 1000)
+    bot._checked["x"] = 1000
+    assert not bot.due_for_check("x", pay, 1030) and bot.due_for_check("x", {"created": 900}, 1060)
+    bot._checked["x"] = 5000
+    assert not bot.due_for_check("x", pay, 5300) and bot.due_for_check("x", pay, 5900)

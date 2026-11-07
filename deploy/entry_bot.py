@@ -614,6 +614,9 @@ class Bot:
         self.sources_path, self.watch_hour = sources_path, watch_hour
         self.alert_hour, self.site_url = alert_hour, site_url.rstrip("/")
         self.chapa = chapa
+        import threading
+        self.lock = threading.RLock()  # one writer at a time for subscribers.json and payments.json
+        self._checked = {}
         for d in ("pending", "photos"):
             os.makedirs(os.path.join(state_dir, d), exist_ok=True)
         os.makedirs(notices_dir, exist_ok=True)
@@ -929,6 +932,10 @@ class Bot:
         with open(stamp, "w") as f:
             f.write(now.date().isoformat())
 
+    def locked(self, fn, *a, **k):
+        with self.lock:
+            return fn(*a, **k)
+
     def _daily(self):
         """Website watch at WATCH_HOUR and subscriber alerts at ALERT_HOUR (Addis time), inside this service."""
         log = lambda m: print(m, flush=True)  # noqa: E731
@@ -936,7 +943,7 @@ class Bot:
             if self.sources_path:
                 self._once_a_day("watch", self.watch_hour, lambda: log("watch done: %d sent for review" % watch_sources(
                     self, load_sources(self.sources_path), log=lambda m: log("watch " + m))))
-            self._once_a_day("alert", self.alert_hour, lambda: log("alerts sent: %d" % self.send_alerts()))
+            self._once_a_day("alert", self.alert_hour, lambda: log("alerts sent: %d" % self.locked(self.send_alerts)))
             try:
                 self.check_payments()
             except Exception:
@@ -1064,47 +1071,72 @@ class Bot:
             print(f"chapa checkout failed: {e}", file=sys.stderr, flush=True)
             self.tg.call("answerCallbackQuery", callback_query_id=q["id"], text="Payment page failed.")
             return self.say(uid, "Sorry, the payment page could not be opened. Please try /pay again later.")
-        pays = self.load_payments()
-        pays[tx_ref] = {"uid": uid, "plan": plan, "amount": amount, "days": days, "status": "pending",
-                        "created": time.time()}
-        write_json_atomic(self._payments_path(), pays)
+        with self.lock:
+            pays = self.load_payments()
+            pays[tx_ref] = {"uid": uid, "plan": plan, "amount": amount, "days": days, "status": "pending",
+                            "created": time.time()}
+            write_json_atomic(self._payments_path(), pays)
         self.tg.call("answerCallbackQuery", callback_query_id=q["id"], text="Opening payment page")
         return self.say(uid, f"{label}: tap below to pay. The link works for 24 hours.",
                         reply_markup={"inline_keyboard": [[{"text": "Pay " + label, "url": url}]]})
 
+    def due_for_check(self, tx_ref, pay, now):
+        """Every minute for the first hour after the link was made, then every 15 minutes."""
+        gap = 60 if now - pay["created"] < 3600 else 900
+        return now - self._checked.get(tx_ref, 0) >= gap - 5
+
     def check_payments(self):
-        """Ask Chapa about open payment links; extend the subscription when one is paid. Returns payments confirmed."""
+        """Ask Chapa about open payment links; extend the subscription when one is paid. Returns payments confirmed.
+        Chapa is asked outside the lock; every file change happens under it, on freshly read data."""
         if not self.chapa:
             return 0
-        pays, done = self.load_payments(), 0
-        for tx_ref, pay in pays.items():
-            if pay["status"] != "pending":
+        now = time.time()
+        with self.lock:
+            open_ = {k: v for k, v in self.load_payments().items() if v["status"] == "pending"}
+        paid, expired = [], []
+        for tx_ref, pay in open_.items():
+            if now - pay["created"] > 48 * 3600:
+                expired.append(tx_ref)
                 continue
-            if time.time() - pay["created"] > 48 * 3600:
-                pay["status"] = "expired"
+            if not self.due_for_check(tx_ref, pay, now):
                 continue
+            self._checked[tx_ref] = now
             try:
-                ok = self.chapa.paid(tx_ref, pay["amount"])
+                if self.chapa.paid(tx_ref, pay["amount"]):
+                    paid.append(tx_ref)
             except Exception as e:
                 print(f"chapa verify {tx_ref}: {e}", file=sys.stderr, flush=True)
-                continue
-            if not ok:
-                continue
-            subs = self.load_subs()
-            sub = subs.get(str(pay["uid"]))
-            pay["status"], pay["paid"] = "paid", self.today()
-            if not sub:
-                continue
-            start = max(self.today(), sub.get("paid_until", ""), sub.get("trial_until", ""))
-            until = (dt.date.fromisoformat(start) + dt.timedelta(days=pay["days"])).isoformat()
-            sub.update(paid_until=until, ended_notice=False)
+        if not paid and not expired:
+            return 0
+        done, notify = 0, []
+        with self.lock:
+            pays, subs = self.load_payments(), self.load_subs()
+            for tx_ref in expired:
+                if pays.get(tx_ref, {}).get("status") == "pending":
+                    pays[tx_ref]["status"] = "expired"
+            for tx_ref in paid:
+                pay = pays.get(tx_ref)
+                if not pay or pay["status"] != "pending":
+                    continue  # already credited
+                pay["status"], pay["paid"] = "paid", self.today()
+                sub = subs.get(str(pay["uid"]))
+                if not sub:
+                    continue
+                start = max(self.today(), sub.get("paid_until", ""), sub.get("trial_until", ""))
+                until = (dt.date.fromisoformat(start) + dt.timedelta(days=pay["days"])).isoformat()
+                sub.update(paid_until=until, ended_notice=False)
+                self.ledger_payment(tx_ref, pay, sub, until)
+                done += 1
+                notify.append((tx_ref, dict(pay), sub["name"], until))
+            write_json_atomic(self._payments_path(), pays)
             self.save_subs(subs)
-            self.ledger_payment(tx_ref, pay, sub, until)
-            self.say(pay["uid"], f"Payment received, thank you. Your Tender Watcher subscription runs until {until}.")
-            for r in self.reviewers:
-                self.say(r, f"Payment: {sub['name']} paid ETB {pay['amount']} ({pay['plan']}), until {until}. Ref {tx_ref}")
-            done += 1
-        write_json_atomic(self._payments_path(), pays)
+        for tx_ref, pay, name, until in notify:
+            try:
+                self.say(pay["uid"], f"Payment received, thank you. Your Tender Watcher subscription runs until {until}.")
+                for r in self.reviewers:
+                    self.say(r, f"Payment: {name} paid ETB {pay['amount']} ({pay['plan']}), until {until}. Ref {tx_ref}")
+            except Exception:
+                traceback.print_exc()
         return done
 
     def ledger_payment(self, tx_ref, pay, sub, until):
@@ -1194,7 +1226,8 @@ class Bot:
                 with open(off_path, "w") as f:
                     f.write(str(offset))
                 try:
-                    self.handle(u)
+                    with self.lock:
+                        self.handle(u)
                 except Exception:
                     traceback.print_exc()
 
