@@ -604,7 +604,7 @@ def ids(s):
 class Bot:
     def __init__(self, tg, claude, *, board, state_dir, notices_dir, notices_url,
                  reviewers, collectors, today=None, sources_path="", watch_hour=6, alert_hour=8,
-                 site_url=SITE_URL, chapa=None):
+                 site_url=SITE_URL, chapa=None, app_url="", app_secret=""):
         self.tg, self.claude = tg, claude
         self.board, self.state = board, state_dir
         self.notices_dir, self.notices_url = notices_dir, notices_url.rstrip("/")
@@ -614,6 +614,7 @@ class Bot:
         self.sources_path, self.watch_hour = sources_path, watch_hour
         self.alert_hour, self.site_url = alert_hour, site_url.rstrip("/")
         self.chapa = chapa
+        self.app_url, self.app_secret = app_url.rstrip("/"), app_secret
         import threading
         self.lock = threading.RLock()  # one writer at a time for subscribers.json and payments.json
         self._checked = {}
@@ -666,6 +667,9 @@ class Bot:
             return
         uid, chat = m["from"]["id"], m["chat"]["id"]
         text = m.get("text", "")
+        parts = text.split()
+        if len(parts) == 2 and parts[0] == "/start" and self.app_url and len(parts[1]) > 20:
+            return self.link_web_account(chat, parts[1])
         subs = self.load_subs()
         if str(uid) in subs and (uid not in self.collectors or text.startswith("/pay")):
             if text.startswith("/pay"):
@@ -943,7 +947,11 @@ class Bot:
             if self.sources_path:
                 self._once_a_day("watch", self.watch_hour, lambda: log("watch done: %d sent for review" % watch_sources(
                     self, load_sources(self.sources_path), log=lambda m: log("watch " + m))))
-            self._once_a_day("alert", self.alert_hour, lambda: log("alerts sent: %d" % self.locked(self.send_alerts)))
+            if self.app_url:
+                self._once_a_day("alert", self.alert_hour,
+                                 lambda: log("web alerts sent: %s" % self.app_call("/internal/send-alerts", {})))
+            else:
+                self._once_a_day("alert", self.alert_hour, lambda: log("alerts sent: %d" % self.locked(self.send_alerts)))
             try:
                 self.check_payments()
             except Exception:
@@ -1048,6 +1056,25 @@ class Bot:
                 return json.load(f)
         except (OSError, ValueError):
             return {}
+
+    # -- the web app (tenders.sonador.et) owns accounts and alerts; the bot only links and delivers
+    def app_call(self, path, body):
+        req = urllib.request.Request(self.app_url + path, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              "X-Internal-Secret": self.app_secret})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.load(r)
+
+    def link_web_account(self, chat, token):
+        try:
+            r = self.app_call("/internal/telegram-link", {"token": token, "chat_id": chat})
+        except Exception:
+            traceback.print_exc()
+            return self.say(chat, "Sorry, connecting failed. Please try again from your account page in a minute.")
+        if not r.get("ok"):
+            return self.say(chat, r.get("error") or "This link did not work. Open your account page and tap Connect again.")
+        return self.say(chat, f"Connected{' to ' + r['company'] if r.get('company') else ''}. Every morning you will "
+                              f"get the new tenders that match your interests. Change them at {self.site_url}/account")
 
     def offer_plans(self, chat):
         if not self.chapa:
@@ -1257,6 +1284,8 @@ def main():
         alert_hour=int(env.get("ALERT_HOUR", "8")),
         site_url=env.get("SITE_URL", SITE_URL),
         chapa=Chapa(env["CHAPA_SECRET_KEY"]) if env.get("CHAPA_SECRET_KEY") else None,
+        app_url=env.get("APP_URL", ""),  # e.g. http://127.0.0.1:8700
+        app_secret=env.get("INTERNAL_SECRET", ""),
     )
     if len(sys.argv) > 1 and sys.argv[1] == "--check-sources":
         check_sources(load_sources(env.get("SOURCES_JSON", "/opt/tenders/sources.json")))

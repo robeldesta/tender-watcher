@@ -527,3 +527,21 @@ def test_no_competitor_sources():
     for f in ("web/index.html", "web/buyers.html", "web/tenders.json", "deploy/sources.json"):
         txt = (root / f).read_text().lower()
         assert not any(c in txt for c in ("moderntenders", "modern tenders", "reportertenders", "reporter tenders", "2merkato"))
+
+
+def test_start_token_links_web_account(setup, monkeypatch):
+    bot, tg, claude, board = setup
+    bot.app_url, bot.app_secret = "http://app", "s"
+    calls = []
+
+    def fake(path, body):
+        calls.append((path, body))
+        return {"ok": True, "company": "Sonador"} if body["token"] == "x" * 30 else {"ok": False, "error": "expired"}
+    monkeypatch.setattr(bot, "app_call", fake)
+    bot.handle({"message": {"from": {"id": 5}, "chat": {"id": 5}, "text": "/start " + "x" * 30}})
+    assert calls == [("/internal/telegram-link", {"token": "x" * 30, "chat_id": 5})]
+    assert "Connected to Sonador" in tg.texts(5)[-1]
+    bot.handle({"message": {"from": {"id": 5}, "chat": {"id": 5}, "text": "/start " + "y" * 30}})
+    assert tg.texts(5)[-1] == "expired"
+    bot.handle({"message": {"from": {"id": 5}, "chat": {"id": 5}, "text": "/start"}})
+    assert "Your Telegram ID is 5" in tg.texts(5)[-1]

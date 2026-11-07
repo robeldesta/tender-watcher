@@ -17,7 +17,7 @@ from sqlalchemy import func, or_, select
 from . import notices
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import Company, LoginFailure, Tender, User, make_session, now
+from .db import AlertSent, Company, LoginFailure, Tender, User, make_session, now
 from .sync import BoardSync
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
@@ -94,6 +94,7 @@ def create_app(settings=None, claude=None):
     photos = os.path.join(s.data_dir, "notices")
     os.makedirs(photos, exist_ok=True)
     signer = URLSafeTimedSerializer(s.secret, salt="tw-session")
+    tg_signer = URLSafeTimedSerializer(s.secret, salt="tw-telegram-link")
     app = FastAPI(title="Tender Watcher", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
     tpl = Jinja2Templates(directory=os.path.join(HERE, "templates"))
@@ -308,8 +309,94 @@ def create_app(settings=None, claude=None):
     def account(request: Request, session=Depends(db)):
         u = need(request, session, ("member",))
         c = u.company
+        link = "https://t.me/{}?start={}".format(s.telegram_bot, tg_signer.dumps(u.id)) if s.telegram_bot else ""
         return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=PRICES,
-                    days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()))
+                    days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link)
+
+    @app.post("/account/telegram/stop")
+    def stop_telegram(request: Request, csrf: str = Form(""), session=Depends(db)):
+        u = need(request, session, ("member",))
+        check_csrf(u, csrf)
+        u.telegram_chat = ""
+        session.commit()
+        return RedirectResponse("/account", 303)
+
+    # -- called by the Telegram bot on this server only
+    def internal(request):
+        given = request.headers.get("x-internal-secret", "")
+        if not s.internal_secret or not hmac.compare_digest(given, s.internal_secret):
+            raise HTTPException(403, "No.")
+
+    @app.post("/internal/telegram-link")
+    async def telegram_link(request: Request, session=Depends(db)):
+        internal(request)
+        body = await request.json()
+        try:
+            uid = tg_signer.loads(str(body.get("token", "")), max_age=7 * 86400)
+        except BadSignature:
+            return {"ok": False, "error": "This link has expired. Open your account page and tap Connect again."}
+        u = session.get(User, uid)
+        if not u or not u.active:
+            return {"ok": False, "error": "Account not found."}
+        u.telegram_chat = str(int(body.get("chat_id")))
+        session.commit()
+        return {"ok": True, "name": u.name, "company": u.company.name if u.company else ""}
+
+    @app.post("/internal/send-alerts")
+    def send_alerts_now(request: Request, session=Depends(db)):
+        internal(request)
+        return {"sent": send_alerts(session)}
+
+    def tg_send(chat, text):
+        import urllib.request
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{s.telegram_token}/sendMessage",
+            data=json.dumps({"chat_id": chat, "text": text, "disable_web_page_preview": True}).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+
+    app.state.tg_send = tg_send
+
+    def send_alerts(session):
+        """Each member with Telegram connected and an active trial or subscription gets the new open
+        tenders that match their interests, once. Returns tenders sent."""
+        sync(session)
+        open_q = select(Tender).where(Tender.status == "published", or_(Tender.closes == "", Tender.closes >= today()))
+        tenders = session.scalars(open_q.order_by(Tender.closes)).all()
+        total = 0
+        for u in session.scalars(select(User).where(User.role == "member", User.active, User.telegram_chat != "")):
+            if not has_access(u):
+                continue
+            i = interests(u.company)
+            if not (i["categories"] or i["keywords"]):
+                continue
+            done = set(session.scalars(select(AlertSent.tender_id).where(AlertSent.user_id == u.id)))
+            new = [t for t in tenders if t.id not in done and match(t, i) and days_from(t.closes or "9999-12-31", today()) <= 183]
+            if not new:
+                continue
+            lines = [f"{len(new)} new tender{'s' if len(new) > 1 else ''} for {u.company.name}:"]
+            for t in new[:30]:
+                when = (t.closes or "date not given") + (" " + t.time if t.time else "")
+                lines.append(f"\n• {t.title[:180]}\n{t.buyer[:90]}\nCloses {when}\n{s.site_url}/t/{t.id}")
+            lines.append(f"\nAll your matches: {s.site_url}/my")
+            text, chunks = "", []
+            for line in lines:
+                if len(text) + len(line) > 3900:
+                    chunks.append(text)
+                    text = ""
+                text += line + "\n"
+            chunks.append(text)
+            try:
+                for c in chunks:
+                    app.state.tg_send(u.telegram_chat, c)
+            except Exception as e:
+                print(f"alert to user {u.id} failed: {e}", flush=True)
+                continue
+            session.add_all([AlertSent(user_id=u.id, tender_id=t.id) for t in new])
+            session.commit()
+            total += len(new)
+        return total
 
     @app.post("/account/interests")
     async def save_interests(request: Request, session=Depends(db)):

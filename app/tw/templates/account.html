@@ -8,6 +8,17 @@
   {% else %}<b>Your trial has ended.</b> Subscribe to keep seeing full notices and matches.{% endif %}
   <p class="small muted" style="margin:6px 0 0">ETB {{ prices.month }} a month or ETB {{ "{:,}".format(prices.year) }} a year. Online payment opens this week; until then, pay Sonador Systems by Telebirr or bank transfer and we switch you on.</p>
 </div>
+<h2>Morning alerts</h2>
+<div class="panel" style="margin-bottom:20px">
+{% if me.telegram_chat %}
+  <p style="margin-top:0">Telegram is connected. Every morning you get the new tenders that match your interests.</p>
+  <form method="post" action="/account/telegram/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost" type="submit">Stop Telegram alerts</button></form>
+{% elif tg_link %}
+  <p style="margin-top:0">Get your new matching tenders in Telegram every morning.</p>
+  <a class="btn" href="{{ tg_link }}" target="_blank" rel="noopener">Connect Telegram</a>
+  <p class="small muted">Telegram opens; tap Start. Come back here and reload to see it connected.</p>
+{% endif %}
+</div>
 <h2>What do you bid on?</h2>
 <form method="post" action="/account/interests">
   <input type="hidden" name="csrf" value="{{ csrf }}">

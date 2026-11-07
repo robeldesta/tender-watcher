@@ -17,6 +17,7 @@ def import_rows(session, rows):
         if not tid.startswith(OWN):
             continue
         place = re.sub(r"\s*[\r\n]+\s*", ", ", r.get("place", "")).strip(", ")
+        place = re.sub(r"(\d)([A-Z])", r"\1, \2", place)  # "P.O.Box 62347Addis Ababa" -> "62347, Addis Ababa"
         old = session.get(Tender, tid)
         if old:  # machine sources may correct a row later; keep reviewer-made tw- rows as they are
             if not tid.startswith("tw-") and old.status == "published":

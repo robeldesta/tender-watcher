@@ -32,6 +32,7 @@ class User(Base):
     pw_hash: Mapped[str] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(default=True)
     session_ver: Mapped[int] = mapped_column(default=0)  # bumped on sign-out: old cookies stop working
+    telegram_chat: Mapped[str] = mapped_column(String(20), default="")  # alerts go here when set
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     company: Mapped[Company | None] = relationship()
@@ -67,6 +68,13 @@ class Tender(Base):
     collector: Mapped[User | None] = relationship(foreign_keys=[collector_id])
 
 
+class AlertSent(Base):
+    __tablename__ = "alerts_sent"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    tender_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
 class LoginFailure(Base):
     __tablename__ = "login_failures"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -76,7 +84,8 @@ class LoginFailure(Base):
 
 # Columns added after the first deploy: (table, column, SQL type and default).
 ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
-                 ("companies", "interests", "TEXT NOT NULL DEFAULT ''")]
+                 ("companies", "interests", "TEXT NOT NULL DEFAULT ''"),
+                 ("users", "telegram_chat", "VARCHAR(20) NOT NULL DEFAULT ''")]
 
 
 def upgrade(engine):

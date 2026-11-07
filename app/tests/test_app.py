@@ -39,7 +39,7 @@ def env(tmp_path, monkeypatch):
     board = tmp_path / "tenders.json"
     board.write_text(json.dumps({"updated": "", "tenders": []}))
     s = Settings({"DATABASE_URL": f"sqlite:///{tmp_path}/t.db", "SECRET_KEY": "test", "DATA_DIR": str(tmp_path / "appdata"),
-                  "BOARD_JSON": str(board), "SECURE_COOKIES": "0"})
+                  "BOARD_JSON": str(board), "SECURE_COOKIES": "0", "INTERNAL_SECRET": "sekret"})
     claude = FakeClaude()
     app = create_app(s, claude)
     with app.state.Session() as db:
@@ -270,3 +270,37 @@ def test_date_notes_signup_cap_and_bot_photos(env, monkeypatch):
         assert r.status_code == 303
     r = anon.post("/signup", data={"company": "C9", "name": "N", "phone": "0944000099", "password": "longenough1"})
     assert r.status_code == 429
+
+
+def test_telegram_link_and_alerts(env, monkeypatch):
+    app, _, board = env
+    sent = []
+    app.state.tg_send = lambda chat, text: sent.append((chat, text))
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-1", "buyer": "ESS", "title": "Supply of servers", "closes": "2026-11-20", "category": "it"},
+        {"id": "wb-2", "buyer": "AU", "title": "Catering services", "closes": "2026-11-20", "category": "services"}]}))
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Sonador", "name": "R", "phone": "0955000000", "password": "longenough1"})
+    acc = c.get("/account").text
+    tok = re.search(r'name="csrf" value="([0-9a-f]+)"', acc).group(1)
+    c.post("/account/interests", data={"csrf": tok, "categories": ["it"]})
+    start = re.search(r"https://t\.me/tender_watcher_entry_bot\?start=([^\"]+)\"", acc).group(1)
+
+    # only the bot (with the shared secret) can link or trigger alerts
+    assert c.post("/internal/telegram-link", json={"token": start, "chat_id": 42}).status_code == 403
+    h = {"x-internal-secret": "sekret"}
+    assert c.post("/internal/telegram-link", json={"token": "forged", "chat_id": 42}, headers=h).json()["ok"] is False
+    r = c.post("/internal/telegram-link", json={"token": start, "chat_id": 42}, headers=h).json()
+    assert r["ok"] and r["company"] == "Sonador"
+    assert "Telegram is connected" in c.get("/account").text
+
+    assert c.post("/internal/send-alerts", headers=h).json() == {"sent": 1}
+    (chat, text), = sent
+    assert chat == "42" and "Supply of servers" in text and "Catering" not in text and "/t/wb-1" in text
+    assert c.post("/internal/send-alerts", headers=h).json() == {"sent": 0}  # never twice
+
+    # trial over: no alerts
+    board.write_text(json.dumps({"tenders": [{"id": "wb-3", "buyer": "X", "title": "Laptops", "closes": "2026-12-20",
+                                              "category": "it"}]}))
+    monkeypatch.setattr("tw.main.today", lambda: "2026-11-25")
+    assert c.post("/internal/send-alerts", headers=h).json() == {"sent": 0}
