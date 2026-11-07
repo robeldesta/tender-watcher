@@ -204,7 +204,7 @@ function boot(data){
       meta.appendChild(el('span','tag',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:'')));
       meta.appendChild(el('span','tag',TYPES[t.type]||t.type));
       body.appendChild(meta);
-      var src=el('p','small muted'); var a=el('a',null,'View notice on '+t.source); a.href=t.url; a.target='_blank'; a.rel='noopener'; src.appendChild(a); body.appendChild(src);
+      if(t.url){ var src=el('p','small muted'); var a=el('a',null,t.url.indexOf('/notices/')===0?'See the notice ('+t.source+')':'View notice on '+t.source); a.href=t.url; a.target='_blank'; a.rel='noopener'; src.appendChild(a); body.appendChild(src); }
       row.appendChild(body); list.appendChild(row);
     });
   }

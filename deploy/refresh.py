@@ -10,6 +10,7 @@ Usage: python3 refresh.py [--out /opt/tenders/site/tenders.json] [--dry-run]
 """
 import argparse
 import datetime as dt
+import fcntl
 import html
 import json
 import os
@@ -305,7 +306,24 @@ def main():
         json.dump(fresh, sys.stdout, ensure_ascii=False, indent=1)
         return
 
-    d = os.path.dirname(os.path.abspath(args.out))
+    # The entry bot writes the same file; take the shared lock and pick up
+    # anything it added while we were fetching.
+    lock = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(args.out))), "tenders.lock")
+    with open(lock, "a") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            with open(args.out, encoding="utf-8") as f:
+                now = json.load(f).get("tenders", [])
+        except (OSError, ValueError):
+            now = []
+        have = {t.get("id") for t in merged}
+        merged += [t for t in now if t.get("id") not in have and keep(t)]
+        merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
+        write_atomic(args.out, out)
+
+
+def write_atomic(path, out):
+    d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".tenders.", suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -314,7 +332,7 @@ def main():
         with open(tmp, encoding="utf-8") as f:
             json.load(f)  # sanity check before replacing
         os.chmod(tmp, 0o644)
-        os.replace(tmp, args.out)
+        os.replace(tmp, path)
     except BaseException:
         if os.path.exists(tmp):
             os.unlink(tmp)

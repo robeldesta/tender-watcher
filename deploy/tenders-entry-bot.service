@@ -1,0 +1,19 @@
+[Unit]
+Description=Tender Watcher Telegram entry bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/opt/tenders/entry-bot.env
+ExecStart=/opt/tenders/venv/bin/python -I /opt/tenders/entry_bot.py
+Restart=always
+RestartSec=10
+# Only needs to write the board, the notice photos and its own state.
+ProtectSystem=strict
+ReadWritePaths=/opt/tenders
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
