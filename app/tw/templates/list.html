@@ -1,7 +1,9 @@
 {% extends "base.html" %}{% from "_due.html" import due %}
 {% block body %}
+<script>(function(){var m=/^#t\/(.+)$/.exec(location.hash);if(m)location.replace('/t/'+m[1]);})();</script>
 <h1>Open tenders in Ethiopia</h1>
-<p class="muted">Government, NGO, donor and company tenders, collected by our own team and checked before they go up.</p>
+<p class="muted">Government, NGO, donor and company tenders, collected by our own team and checked before they go up.
+{% if not me %}<a href="/signup">Start a 14-day free trial</a> to see full notices and the tenders that fit your business.{% endif %}</p>
 <form class="panel grid" method="get" action="/">
   <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>
     {% for k, v in CATEGORIES.items() %}<option value="{{ k }}" {{ "selected" if f.category == k }}>{{ v }}</option>{% endfor %}</select></div>

@@ -123,9 +123,12 @@ def test_collect_review_publish(env):
         assert t.status == "published" and t.grade == "GC-4" and t.closes == "2026-11-21"
     home = client(app).get("/").text
     assert "cobblestone" in home and "Supply of laptops" not in home
-    detail = client(app).get(f"/t/{road.id}").text
-    assert "ETB 50,000" in detail and "Saturday 21 Nov 2026" in detail
-    assert client(app).get(f"/notices/{road.photo}").status_code == 200
+    anon = client(app).get(f"/t/{road.id}").text
+    assert "Saturday 21 Nov 2026" in anon and "ETB 50,000" not in anon and "free trial" in anon
+    assert client(app).get(f"/notices/{road.photo}").status_code == 403
+    detail = a.get(f"/t/{road.id}").text
+    assert "ETB 50,000" in detail
+    assert a.get(f"/notices/{road.photo}").status_code == 200
     data = json.loads(board.read_text())["tenders"]
     assert data[0]["id"] == road.id and data[0]["url"] == f"/notices/{road.photo}"
     assert (board.parent / "notices" / road.photo).read_bytes() == JPEG  # photo copied for the static site
@@ -190,7 +193,7 @@ def test_import_board_own_sources_only(env, tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/t.db")
     monkeypatch.setenv("SECRET_KEY", "test")
     manage.main(["import-board", str(path)])
-    page = client(app).get("/t/wb-OP1").text
+    page = client(app, "0911000001").get("/t/wb-OP1").text
     assert "Full text" in page and "projects.worldbank.org" in page
     assert client(app).get("/t/mt-abc").status_code == 404
 
@@ -208,3 +211,39 @@ def test_login_throttle_and_signout(env):
     a, b = client(app, "0911000003"), client(app, "0911000003")
     a.post("/logout")
     assert b.get("/collect", follow_redirects=False).status_code == 303
+
+
+def test_signup_trial_interests_matches(env, monkeypatch):
+    app, _, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-1", "buyer": "ESS", "title": "Supply of servers", "closes": "2026-11-20", "category": "it",
+         "region": "Addis Ababa", "notice": "Full text here"},
+        {"id": "web-2", "buyer": "EEU", "title": "Procurement of 4 pickup trucks", "closes": "2026-11-25",
+         "category": "vehicles", "region": "Oromia"},
+        {"id": "mt-3", "buyer": "X", "title": "Copied servers", "closes": "2026-11-25", "category": "it"}]}))
+    c = TestClient(app)
+    home = c.get("/").text
+    assert "Supply of servers" in home and "Copied servers" not in home  # synced from the board, own sources only
+    r = c.post("/signup", data={"company": "Sonador Systems", "name": "Robel", "phone": "0911000001",
+                                "password": "longenough1"})
+    assert r.status_code == 400 and "already has an account" in r.text
+    r = c.post("/signup", data={"company": "Sonador Systems", "name": "Robel D", "phone": "0933 444 555",
+                                "password": "longenough1", "tin": "0088565182"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/account?welcome=1"
+    acc = c.get("/account?welcome=1").text
+    assert "Free trial" in acc and "14 days left" in acc and "Sat 21 Nov" not in acc
+    assert "Full text here" in c.get("/t/wb-1").text  # trial sees full notices
+    assert "Set your interests" in c.get("/my").text
+    tok = re.search(r'name="csrf" value="([0-9a-f]+)"', acc).group(1)
+    c.post("/account/interests", data={"csrf": tok, "categories": ["it"], "keywords": "pickup, laptops"})
+    my = c.get("/my").text
+    assert "Supply of servers" in my and "pickup trucks" in my
+    c.post("/account/interests", data={"csrf": tok, "categories": ["it"], "regions": ["Oromia"]})
+    my = c.get("/my").text
+    assert "Supply of servers" not in my  # Addis Ababa filtered out
+    assert c.get("/collect").status_code == 403  # members are not collectors
+
+    # trial over: no full notice
+    monkeypatch.setattr("tw.main.today", lambda: "2026-11-22")
+    assert "Full text here" not in c.get("/t/wb-1").text
+    assert "trial has ended" in c.get("/account").text

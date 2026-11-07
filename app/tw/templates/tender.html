@@ -11,12 +11,22 @@
   {% if t.category == "construction" %}<dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd>{% endif %}
   {% if t.place or t.region %}<dt>Where</dt><dd>{{ t.place }}{% if t.region and t.region not in t.place %}{{ ", " if t.place }}{{ t.region }}{% endif %}</dd>{% endif %}
   <dt>Buyer type</dt><dd>{{ TYPES.get(t.type, t.type) }}</dd>
+  {% if full %}
   {% if t.bid_security %}<dt>Bid security</dt><dd>{{ t.bid_security }}</dd>{% endif %}
   {% if t.document_fee %}<dt>Document fee</dt><dd>{{ t.document_fee }}</dd>{% endif %}
   {% if t.reference %}<dt>Reference</dt><dd>{{ t.reference }}</dd>{% endif %}
   {% if t.source %}<dt>Published in</dt><dd>{{ t.source }}</dd>{% endif %}
+  {% endif %}
 </dl>
+{% if full %}
 {% if t.photo %}<h2>The notice</h2><div class="photo"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div>{% endif %}
 {% if t.notice %}<h2>Full notice</h2><div class="notice-text">{{ t.notice }}</div>{% endif %}
 {% if t.url %}<p class="small muted">Buyer's own page: <a href="{{ t.url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
+{% else %}
+<div class="panel">
+  <h2>See the full notice</h2>
+  <p>Bid security, document fee, where to get the bid documents{% if t.photo %}, the notice itself{% elif t.notice %}, the complete notice text{% endif %}, and every other open tender that fits your business.</p>
+  {% if me %}<a class="btn" href="/account">Subscribe</a>{% else %}<a class="btn" href="/signup">Start 14-day free trial</a> <a class="btn ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

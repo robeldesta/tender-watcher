@@ -15,8 +15,9 @@
     {% if me and me.role in ("admin","reviewer","collector") %}<a href="/collect">Add tender</a><a href="/mine">My entries</a>{% endif %}
     {% if me and me.role in ("admin","reviewer") %}<a href="/review">Review</a><a href="/admin/stats">Collectors</a>{% endif %}
     {% if me and me.role == "admin" %}<a href="/admin/team">Team</a>{% endif %}
+    {% if me and me.role == "member" %}<a href="/my">My tenders</a><a href="/account">Account</a>{% endif %}
     {% if me %}<form method="post" action="/logout"><button class="btn link" type="submit">Sign out</button></form>
-    {% else %}<a href="/login">Sign in</a>{% endif %}
+    {% else %}<a href="/login">Sign in</a><a class="btn" href="/signup" style="min-height:36px">Free trial</a>{% endif %}
   </nav>
 </div></header>
 <main><div class="wrap">{% block body %}{% endblock %}</div></main>

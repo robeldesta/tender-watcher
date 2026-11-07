@@ -4,7 +4,6 @@
     python -m tw.manage import-board /opt/tenders/site/tenders.json   (our own tenders from the static board)
 """
 import argparse
-import datetime as dt
 import getpass
 import json
 import os
@@ -14,9 +13,8 @@ from sqlalchemy import select
 
 from .auth import hash_password, norm_phone
 from .config import Settings
-from .db import Tender, User, make_session
-
-OWN = ("wb-", "web-", "fc-", "tw-")
+from .db import User, make_session
+from .sync import import_rows
 
 
 def main(argv=None):
@@ -47,26 +45,7 @@ def main(argv=None):
         elif args.cmd == "import-board":
             with open(args.path, encoding="utf-8") as f:
                 rows = json.load(f).get("tenders", [])
-            added = 0
-            for r in rows:
-                if not str(r.get("id", "")).startswith(OWN) or s.get(Tender, r["id"]):
-                    continue  # our own sources only
-                first = r.get("firstSeen") or dt.date.today().isoformat()
-                url = r.get("url", "")
-                s.add(Tender(
-                    id=r["id"], status="published", buyer=r.get("buyer", ""), title=r.get("title", ""),
-                    category=r.get("category", "other"), region=r.get("region", ""), place=r.get("place", ""),
-                    grade=r.get("grade", ""), closes=r.get("closes", ""), time=r.get("time", ""),
-                    type=r.get("type", "gov"), bid_security=r.get("bid_security", ""),
-                    document_fee=r.get("document_fee", ""), source=r.get("source", ""),
-                    reference=r.get("reference", ""), notice=r.get("notice", ""),
-                    photo=url.rsplit("/", 1)[-1] if url.startswith("/notices/") else "",
-                    url="" if url.startswith("/notices/") else url,
-                    published_at=dt.datetime.fromisoformat(first + "T06:00:00+03:00")))
-                added += 1
-            s.commit()
-            print(f"Imported {added} tenders.")
-
+            print(f"Imported {import_rows(s, rows)} tenders.")
 
 if __name__ == "__main__":
     main()

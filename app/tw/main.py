@@ -1,5 +1,6 @@
 import datetime as dt
 import hashlib
+import json
 import hmac
 import os
 import re
@@ -16,7 +17,8 @@ from sqlalchemy import func, or_, select
 from . import notices
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import LoginFailure, Tender, User, make_session, now
+from .db import Company, LoginFailure, Tender, User, make_session, now
+from .sync import BoardSync
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +30,8 @@ IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_PHOTO = 15_000_000
 LOCK_MINUTES, MAX_PHONE_FAILS, MAX_IP_FAILS = 15, 5, 20
 MIN_PASSWORD = 10
+TRIAL_DAYS = 14
+PRICES = {"month": 299, "year": 2400}
 
 
 def today():
@@ -115,6 +119,23 @@ def create_app(settings=None, claude=None):
         ctx.update(request=request, me=u, csrf=csrf_token(u) if u else "", today=today())
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
 
+    sync = BoardSync(s.board_json)
+
+    def has_access(u):
+        if not u:
+            return False
+        if u.role in STAFF:
+            return True
+        c = u.company
+        return bool(c) and today() <= max(c.trial_until or "", c.paid_until or "")
+
+    def interests(c):
+        try:
+            d = json.loads(c.interests or "{}")
+        except ValueError:
+            d = {}
+        return {k: list(d.get(k, [])) for k in ("categories", "regions", "keywords")}
+
     def need(request, session, roles):
         u = user_from(request, session)
         if not u:
@@ -139,6 +160,7 @@ def create_app(settings=None, claude=None):
     def home(request: Request, category: str = "", region: str = "", type: str = "", q: str = "",
              session=Depends(db)):
         u = user_from(request, session)
+        sync(session)
         query = select(Tender).where(Tender.status == "published",
                                      or_(Tender.closes == "", Tender.closes >= today()))
         if category in notices.CATEGORIES:
@@ -156,11 +178,12 @@ def create_app(settings=None, claude=None):
     @app.get("/t/{tid}", response_class=HTMLResponse)
     def tender_page(request: Request, tid: str, session=Depends(db)):
         u = user_from(request, session)
+        sync(session)
         t = session.get(Tender, tid)
         if not t or (t.status != "published" and not (u and u.role in STAFF)):
             return page(request, "message.html", u, status=404, title="This tender has closed or is no longer listed",
                         text="Tenders leave the list after their closing date.", link=("/", "See all open tenders"))
-        return page(request, "tender.html", u, t=t)
+        return page(request, "tender.html", u, t=t, full=has_access(u))
 
     @app.get("/notices/{name}")
     def photo(request: Request, name: str, session=Depends(db)):
@@ -170,6 +193,8 @@ def create_app(settings=None, claude=None):
         u = user_from(request, session)
         if not t or (t.status != "published" and not (u and u.role in STAFF)):
             raise HTTPException(404, "Not found.")
+        if not has_access(u):
+            raise HTTPException(403, "Start your free trial to see the full notice.")
         return FileResponse(os.path.join(photos, name))
 
     # -- sign in
@@ -205,7 +230,7 @@ def create_app(settings=None, claude=None):
         if not next.startswith("/") or next.startswith("//"):
             next = "/"
         if next == "/":
-            next = "/collect" if u.role in STAFF else "/"
+            next = "/collect" if u.role in STAFF else "/my"
         r = RedirectResponse(next, 303)
         r.set_cookie("tw", signer.dumps([u.id, u.session_ver]), max_age=30 * 86400, httponly=True,
                      samesite="lax", secure=s.secure_cookies)
@@ -220,6 +245,73 @@ def create_app(settings=None, claude=None):
         r = RedirectResponse("/", 303)
         r.delete_cookie("tw")
         return r
+
+    # -- companies: sign-up, account, matches
+    def set_login(r, u):
+        r.set_cookie("tw", signer.dumps([u.id, u.session_ver]), max_age=30 * 86400, httponly=True,
+                     samesite="lax", secure=s.secure_cookies)
+        return r
+
+    @app.get("/signup", response_class=HTMLResponse)
+    def signup_form(request: Request, session=Depends(db)):
+        return page(request, "signup.html", user_from(request, session), form={})
+
+    @app.post("/signup", response_class=HTMLResponse)
+    def signup(request: Request, company: str = Form(""), name: str = Form(""), phone: str = Form(""),
+               password: str = Form(""), tin: str = Form(""), session=Depends(db)):
+        p, tin = norm_phone(phone), re.sub(r"\D", "", tin)
+        error = ("Enter your company's name." if not company.strip() else
+                 "Enter your name." if not name.strip() else
+                 "Enter an Ethiopian mobile number, like 0911 234 567." if not p else
+                 f"Use a password of at least {MIN_PASSWORD} characters." if len(password) < MIN_PASSWORD else
+                 "A TIN has 10 digits." if tin and len(tin) != 10 else
+                 "That phone number already has an account. Sign in instead." if
+                 session.scalars(select(User).where(User.phone == p)).first() else "")
+        if error:
+            return page(request, "signup.html", None, status=400, error=error,
+                        form=dict(company=company, name=name, phone=phone, tin=tin))
+        end = (dt.date.fromisoformat(today()) + dt.timedelta(days=TRIAL_DAYS)).isoformat()
+        c = Company(name=company.strip()[:200], tin=tin, trial_until=end)
+        u = User(name=name.strip()[:120], phone=p, role="member", pw_hash=hash_password(password), company=c)
+        session.add_all([c, u])
+        session.commit()
+        return set_login(RedirectResponse("/account?welcome=1", 303), u)
+
+    @app.get("/account", response_class=HTMLResponse)
+    def account(request: Request, session=Depends(db)):
+        u = need(request, session, ("member",))
+        c = u.company
+        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=PRICES,
+                    days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()))
+
+    @app.post("/account/interests")
+    async def save_interests(request: Request, session=Depends(db)):
+        u = need(request, session, ("member",))
+        form = await request.form()
+        check_csrf(u, form.get("csrf"))
+        cats = [x for x in form.getlist("categories") if x in notices.CATEGORIES]
+        regions = [x for x in form.getlist("regions") if x in notices.REGIONS]
+        kws = [k.strip().lower()[:40] for k in str(form.get("keywords", "")).split(",") if k.strip()][:30]
+        u.company.interests = json.dumps({"categories": cats, "regions": regions, "keywords": kws})
+        session.commit()
+        return RedirectResponse("/my?saved=1", 303)
+
+    def match(t, i):
+        if i["regions"] and t.region and t.region not in i["regions"] and t.region != "Several regions":
+            return False
+        hay = f"{t.title} {t.buyer}".lower()
+        return t.category in i["categories"] or notices.eb.keyword_hit(i["keywords"], hay)
+
+    @app.get("/my", response_class=HTMLResponse)
+    def my_tenders(request: Request, session=Depends(db)):
+        u = need(request, session, ("member",))
+        sync(session)
+        i = interests(u.company)
+        rows = []
+        if i["categories"] or i["keywords"]:
+            q = select(Tender).where(Tender.status == "published", or_(Tender.closes == "", Tender.closes >= today()))
+            rows = [t for t in session.scalars(q.order_by(Tender.published_at.desc())) if match(t, i)]
+        return page(request, "my.html", u, rows=rows, i=i, access=has_access(u))
 
     # -- collectors
     @app.get("/collect", response_class=HTMLResponse)

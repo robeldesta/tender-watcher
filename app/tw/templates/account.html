@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Your account | Tender Watcher{% endblock %}
+{% block body %}
+{% if request.query_params.get("welcome") %}<p class="alert ok">Welcome, {{ me.name }}. Your free trial is on. Tell us what {{ c.name }} bids on and we'll show you the tenders that fit.</p>{% endif %}
+<h1>{{ c.name }}</h1>
+<div class="panel" style="margin-bottom:20px">
+  {% if c.paid_until and c.paid_until >= today %}<b>Subscribed</b> until {{ c.paid_until | long_date }}.
+  {% elif access %}<b>Free trial</b>: {{ days_left }} day{{ "s" if days_left != 1 }} left (until {{ c.trial_until | long_date }}).
+  {% else %}<b>Your trial has ended.</b> Subscribe to keep seeing full notices and matches.{% endif %}
+  <p class="small muted" style="margin:6px 0 0">ETB {{ prices.month }} a month or ETB {{ "{:,}".format(prices.year) }} a year. Online payment opens this week; until then, pay Sonador Systems by Telebirr or bank transfer and we switch you on.</p>
+</div>
+<h2>What do you bid on?</h2>
+<form method="post" action="/account/interests">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <fieldset class="field" style="border:0;padding:0"><legend class="small" style="font-weight:600;color:var(--muted)">Categories</legend>
+    <div class="grid">{% for k, v in CATEGORIES.items() %}<label style="font-weight:500;color:var(--ink)"><input type="checkbox" name="categories" value="{{ k }}" style="width:auto" {{ "checked" if k in i.categories }}> {{ v }}</label>{% endfor %}</div></fieldset>
+  <fieldset class="field" style="border:0;padding:0"><legend class="small" style="font-weight:600;color:var(--muted)">Regions (leave empty for all)</legend>
+    <div class="grid">{% for r in REGIONS %}<label style="font-weight:500;color:var(--ink)"><input type="checkbox" name="regions" value="{{ r }}" style="width:auto" {{ "checked" if r in i.regions }}> {{ r }}</label>{% endfor %}</div></fieldset>
+  <div class="field"><label for="keywords">Words to look for, separated by commas</label>
+    <input id="keywords" name="keywords" value="{{ i.keywords | join(', ') }}" placeholder="laptops, data center, survey, bus"></div>
+  <button class="btn" type="submit">Save and show my tenders</button>
+</form>
+{% endblock %}

@@ -19,6 +19,7 @@ class Company(Base):
     tin: Mapped[str] = mapped_column(String(20), default="")
     trial_until: Mapped[str] = mapped_column(String(10), default="")
     paid_until: Mapped[str] = mapped_column(String(10), default="")
+    interests: Mapped[str] = mapped_column(Text, default="")  # JSON: {"categories": [], "regions": [], "keywords": []}
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
@@ -74,7 +75,8 @@ class LoginFailure(Base):
 
 
 # Columns added after the first deploy: (table, column, SQL type and default).
-ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0")]
+ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
+                 ("companies", "interests", "TEXT NOT NULL DEFAULT ''")]
 
 
 def upgrade(engine):
