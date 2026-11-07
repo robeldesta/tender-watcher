@@ -317,15 +317,6 @@
       "name": "SOS Sahel Ethiopia",
       "url": "https://www.sossahel.org.et/",
       "enabled": false
-    },
-    {
-      "id": "ethiopianreporter",
-      "group": "other",
-      "type": "company",
-      "name": "Reporter Tenders",
-      "url": "https://www.reportertenders.com/",
-      "why": "competitor; we do not copy their listings",
-      "enabled": false
     }
   ]
 }

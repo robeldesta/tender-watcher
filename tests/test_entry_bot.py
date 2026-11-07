@@ -516,3 +516,13 @@ def test_worldbank_skips_individuals_and_midnight():
         dict(base, id="B", procurement_method_name="Individual Consultant Selection"),
         dict(base, id="C", submission_deadline_time="14:30")]}, dt.date(2026, 11, 7), set())
     assert [(t["id"], t["time"]) for t in out] == [("wb-A", ""), ("wb-C", "14:30")]
+
+
+def test_no_competitor_sources():
+    rf = _refresh()
+    assert rf.LISTINGS == []
+    assert rf.is_competitor({"id": "mt-x"}) and rf.is_competitor({"id": "seed", "url": "https://reportertenders.com/bids/x"})
+    assert not rf.is_competitor({"id": "wb-1", "url": "https://projects.worldbank.org/x", "source": "World Bank"})
+    root = Path(__file__).resolve().parent.parent
+    for f in ("web/index.html", "web/tenders.json", "deploy/sources.json"):
+        assert "moderntenders.com" not in (root / f).read_text() and "reportertenders.com" not in (root / f).read_text()

@@ -33,20 +33,10 @@ STALE_DAYS = 21
 # max pages to read). Construction listings are filtered to real works; other
 # listings take their category as given. Listings are newest first, so the
 # busy construction listings only need page 1 on a daily run.
-LISTINGS = [
-    ("/tenders/industry/construction", "", "construction", 1),
-    ("/tenders/competency/general-contractor-grade-3", "GC-3", "construction", 1),
-    ("/tenders/competency/general-contractor-grade-5", "GC-5", "construction", 1),
-    ("/tenders/competency/building-contractor-grade-5", "BC-5", "construction", 1),
-    ("/tenders/industry/ict-technology", "", "it", 5),
-    ("/tenders/industry/electrical-power", "", "electrical", 5),
-    ("/tenders/industry/consultancy-services", "", "consultancy", 5),
-    ("/tenders/industry/hospitality-tourism", "", "services", 3),
-    ("/tenders/industry/printing-publishing", "", "services", 3),
-    ("/tenders/industry/miscellaneous", "", "other", 3),
-    ("/tenders/industry/spare-parts-vehicles", "", "vehicles", 3),
-    ("/tenders/industry/industrial-machinery", "", "vehicles", 3),
-]
+# Competitor listings (Modern Tenders, Reporter Tenders, 2merkato) are NOT a source.
+# Robel, 2026-11-07: our own sources only (freelancers, buyer websites, official feeds).
+LISTINGS = []
+COMPETITORS = re.compile(r"moderntenders|reportertenders|2merkato", re.I)
 
 # Construction works signals (English + Amharic).
 WORKS = re.compile(
@@ -190,6 +180,10 @@ def worldbank(payload, today, existing_ids):
 
 def _words(s):
     return set(re.findall(r"\w{3,}", (s or "").lower()))
+
+
+def is_competitor(t):
+    return t.get("id", "").startswith("mt-") or bool(COMPETITORS.search(t.get("url", "") + " " + t.get("source", "")))
 
 
 def drop_copies(tenders):
@@ -426,7 +420,7 @@ def main():
             return True
         return (today - first_seen).days <= STALE_DAYS
 
-    merged = [t for t in existing + fresh if keep(t)]
+    merged = [t for t in existing + fresh if keep(t) and not is_competitor(t)]
     gone = [t for t in existing if not keep(t)]
     dropped = len(existing) + len(fresh) - len(merged)
     merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
@@ -450,7 +444,7 @@ def main():
         have = {t.get("id") for t in merged}
         merged += [t for t in now if t.get("id") not in have and keep(t)]
         merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
-        merged[:] = drop_copies(merged)
+        merged[:] = [t for t in drop_copies(merged) if not is_competitor(t)]
         flag_checks(merged, today)
         write_atomic(args.out, out)
         archive(os.path.join(os.path.dirname(os.path.abspath(args.out)), "archive.json"), gone)
