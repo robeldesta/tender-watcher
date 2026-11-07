@@ -155,6 +155,8 @@ def worldbank(payload, today, existing_ids):
     for n in payload.get("procnotices", []):
         if (n.get("notice_type") or "").strip().lower() in WB_SKIP or not n.get("id"):
             continue
+        if "individual" in (n.get("procurement_method_name") or "").lower():
+            continue  # hiring one person, not a tender a firm can bid on
         tid = "wb-" + n["id"]
         closes = (n.get("submission_deadline_date") or "")[:10]
         title = (n.get("bid_description") or n.get("project_name") or "").strip()
@@ -172,7 +174,7 @@ def worldbank(payload, today, existing_ids):
             "place": place[:80] or "Ethiopia",
             "grade": find_grade(title + " " + notice) if category == "construction" else "",
             "closes": closes,
-            "time": (n.get("submission_deadline_time") or "")[:5],
+            "time": "" if (n.get("submission_deadline_time") or "")[:5] in ("", "00:00") else n["submission_deadline_time"][:5],
             "type": "donor",
             "firstSeen": today.isoformat(),
             "url": f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{n['id']}",

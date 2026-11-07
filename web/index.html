@@ -283,7 +283,12 @@ function boot(data){
   function route(){
     var m=/^#t\/(.+)$/.exec(location.hash);
     if(m){ var id=decodeURIComponent(m[1]); var t=data.tenders.filter(function(x){ return x.id===id; })[0];
-      if(t){ detail(t); return; } }
+      if(t){ detail(t); return; }
+      var list=document.getElementById('list'); list.textContent='';
+      document.getElementById('filters').style.display='none'; document.getElementById('count').textContent='';
+      var gone=el('article','detail'); gone.appendChild(el('h2',null,'This tender has closed or is no longer listed'));
+      var p=el('p',null,'Tenders leave the board after their closing date. '); var a=el('a',null,'See all open tenders'); a.href='#'; p.appendChild(a); gone.appendChild(p);
+      list.appendChild(gone); window.scrollTo(0,0); return; }
     document.getElementById('filters').style.display=''; document.title=TITLE; render();
   }
   ids.forEach(function(id){ var e=document.getElementById(id); e.addEventListener('input',render); e.addEventListener('change',render); });

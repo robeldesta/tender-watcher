@@ -504,3 +504,15 @@ def test_own_copy_replaces_modern_tenders_copy():
            "closes": "2026-11-17"},
           {"id": "mt-c", "buyer": "Commercial Bank of Ethiopia", "title": "Purchase of UTP Cable Cat 6A", "closes": "2026-11-30"}]
     assert [t["id"] for t in rf.drop_copies(ts)] == ["web-b", "mt-c"]
+
+
+def test_worldbank_skips_individuals_and_midnight():
+    import datetime as dt
+    rf = _refresh()
+    base = {"notice_type": "Invitation for Bids", "submission_deadline_date": "2026-11-20T00:00:00Z",
+            "bid_description": "Supply of servers", "procurement_group": "GO"}
+    out = rf.worldbank({"procnotices": [
+        dict(base, id="A", submission_deadline_time="00:00"),
+        dict(base, id="B", procurement_method_name="Individual Consultant Selection"),
+        dict(base, id="C", submission_deadline_time="14:30")]}, dt.date(2026, 11, 7), set())
+    assert [(t["id"], t["time"]) for t in out] == [("wb-A", ""), ("wb-C", "14:30")]
