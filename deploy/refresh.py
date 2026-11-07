@@ -29,16 +29,17 @@ DELAY = 2.0  # seconds between requests, minimum
 TZ = ZoneInfo("Africa/Addis_Ababa")
 STALE_DAYS = 21
 
-# listing path -> (grade implied by that listing ("" = none), board category)
-# Construction listings are filtered to real works; other listings take
-# their category as given.
+# listing path -> (grade implied by that listing ("" = none), board category,
+# max pages to read). Construction listings are filtered to real works; other
+# listings take their category as given. Listings are newest first, so the
+# busy construction listings only need page 1 on a daily run.
 LISTINGS = [
-    ("/tenders/industry/construction", "", "construction"),
-    ("/tenders/competency/general-contractor-grade-3", "GC-3", "construction"),
-    ("/tenders/competency/general-contractor-grade-5", "GC-5", "construction"),
-    ("/tenders/competency/building-contractor-grade-5", "BC-5", "construction"),
-    ("/tenders/industry/ict-technology", "", "it"),
-    ("/tenders/industry/electrical-power", "", "electrical"),
+    ("/tenders/industry/construction", "", "construction", 1),
+    ("/tenders/competency/general-contractor-grade-3", "GC-3", "construction", 1),
+    ("/tenders/competency/general-contractor-grade-5", "GC-5", "construction", 1),
+    ("/tenders/competency/building-contractor-grade-5", "BC-5", "construction", 1),
+    ("/tenders/industry/ict-technology", "", "it", 5),
+    ("/tenders/industry/electrical-power", "", "electrical", 5),
 ]
 
 # Construction works signals (English + Amharic).
@@ -245,14 +246,26 @@ def main():
             known_codes[c.group(1)] = t
 
     seen = {}  # code -> (url, set of implied grades, set of categories)
-    for path, grade, cat in LISTINGS:
-        try:
-            page = fetch(path)
-        except Exception as e:  # keep going with the other listings
-            print(f"listing failed {path}: {e}", file=sys.stderr)
-            continue
-        codes = listing_codes(page)
-        print(f"{path}: {len(codes)} tenders")
+    for path, grade, cat, max_pages in LISTINGS:
+        codes, last = {}, 1
+        for n in range(1, max_pages + 1):
+            if n > last:
+                break  # past the last page (the site repeats it)
+            try:
+                page = fetch(path if n == 1 else f"{path}?page={n}")
+            except Exception as e:  # keep going with the other listings
+                print(f"listing failed {path} page {n}: {e}", file=sys.stderr)
+                break
+            if n == 1:
+                nums = [int(x) for x in re.findall(re.escape(path) + r"\?page=(\d+)", page)]
+                last = max(nums, default=1)
+            codes.update(listing_codes(page))
+            # Later pages repeat page 1's JSON-LD, so also read the card links,
+            # which carry ?from=<listing> (e.g. ?from=industry/ict-technology).
+            frm = path[len("/tenders/"):]
+            for code, slug in re.findall(r'href="/tenders/([a-z0-9]{10})-([^"?]*)\?from=' + re.escape(frm) + r'"', page):
+                codes.setdefault(code, f"{BASE}/tenders/{code}-{html.unescape(slug)}")
+        print(f"{path}: {len(codes)} tenders ({min(last, max_pages)} pages)")
         for code, url in codes.items():
             u, g, cats = seen.setdefault(code, (url, set(), set()))
             if grade:
