@@ -255,7 +255,7 @@ function boot(data){
     var closes=t.closes?fmt(t.closes)+(t.time?', '+t.time:''):'Not stated. Check the notice.';
     if(t.closes){ var n=daysTo(t.closes); closes+=n<0?' (closed)':n===0?' (today)':' ('+n+' day'+(n===1?'':'s')+' left)'; }
     if(t.check) closes+='. To be confirmed: '+(t.check_why||'this date or time looks unusual')+'.';
-    var hm=/^(\d\d):(\d\d)$/.exec(t.time||''); if(hm && +hm[1]>=1 && +hm[1]<=6){ var h=+hm[1]+6; closes+=' '+t.time+' may be Ethiopian clock time, which is '+(h<10?'0':'')+h+':'+hm[2]+' international time. Check the notice.'; }
+    var hm=/^(\d\d):(\d\d)$/.exec(t.time||''); if(hm && +hm[1]>=1 && +hm[1]<=5){ var h=+hm[1]+6; closes+=' '+t.time+' may be Ethiopian clock time, which is '+(h<10?'0':'')+h+':'+hm[2]+' international time. Check the notice.'; }
     row('Closes',closes);
     row('Category',CATS[cat(t)]||cat(t));
     if(cat(t)==='construction') row('Grade',t.grade?t.grade+' and above':'Not stated');
