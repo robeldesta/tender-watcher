@@ -194,7 +194,15 @@ def create_app(settings=None, claude=None):
             like = f"%{q.strip()}%"
             query = query.where(or_(Tender.title.ilike(like), Tender.buyer.ilike(like), Tender.place.ilike(like)))
         rows = session.scalars(query.order_by(Tender.closes == "", Tender.closes, Tender.time)).all()
-        return page(request, "list.html", u, rows=rows, f=dict(category=category, region=region, type=type, q=q))
+        filtered = bool(category or region or type or q.strip())
+        stats = None
+        if not filtered:
+            week = (dt.date.fromisoformat(today()) + dt.timedelta(days=7)).isoformat()
+            stats = dict(open=len(rows), buyers=len({r.buyer for r in rows}),
+                         week=sum(1 for r in rows if r.closes and r.closes <= week),
+                         latest=sorted(rows, key=lambda r: (r.published_at or r.created_at).replace(tzinfo=None), reverse=True)[:4])
+        return page(request, "list.html", u, rows=rows, stats=stats, filtered=filtered, prices=PRICES,
+                    f=dict(category=category, region=region, type=type, q=q))
 
     @app.get("/t/{tid}", response_class=HTMLResponse)
     def tender_page(request: Request, tid: str, session=Depends(db)):

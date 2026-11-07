@@ -4,3 +4,41 @@
 {%- elif days <= 3 %}<span class="tag soon">{{ days }} day{{ "s" if days > 1 }} left</span>{% elif days <= 7 %}<span class="tag week">{{ days }} days left</span>{% endif -%}
 {%- endif -%}
 {%- endmacro %}
+
+{% macro urgency(t, today) -%}
+{%- if not t.closes %}none{% else %}{% set d = (t.closes | days_from(today)) %}{% if d <= 3 %}soon{% elif d <= 7 %}week{% endif %}{% endif -%}
+{%- endmacro %}
+
+{% macro leaf(t, today, big=False) -%}
+<span class="leaf {{ urgency(t, today) }}{{ ' big' if big }}" aria-hidden="true">
+{%- if t.closes %}<span class="m">{{ (t.closes | short_date).split(' ')[1] }}</span><span class="d">{{ (t.closes | short_date).split(' ')[0] }}</span><span class="t">{{ t.time or "&nbsp;"|safe }}</span>
+{%- else %}<span class="m">Date</span><span class="d">?</span><span class="t">check</span>{% endif -%}
+</span>
+{%- endmacro %}
+
+{% macro bar(t, today) -%}
+{%- if t.closes -%}{%- set d = (t.closes | days_from(today)) -%}{%- set pct = [[100 - d * 100 // 30, 6]|max, 100]|min -%}
+<span class="bar {{ urgency(t, today) }}" role="img" aria-label="{{ d }} days left"><i style="width:{{ pct }}%"></i></span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro left_text(t, today) -%}
+{%- if not t.closes %}Date to check{% else %}{% set d = (t.closes | days_from(today)) %}{% if d == 0 %}Closes today{% elif d == 1 %}1 day left{% else %}{{ d }} days left{% endif %}{% endif -%}
+{%- endmacro %}
+
+{% macro row(t, today) -%}
+<article class="row">
+  {{ leaf(t, today) }}
+  <div>
+    <span class="buyer">{{ t.buyer }}</span>
+    <h3><a href="/t/{{ t.id }}">{{ t.title }}</a></h3>
+    <div class="tags">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span>
+      {% if t.grade %}<span class="tag">{{ t.grade }} and above</span>{% endif %}
+      {% if t.region or t.place %}<span class="tag">{{ t.region or t.place }}</span>{% endif %}
+      <span class="tag">{{ TYPES.get(t.type, t.type) }}</span></div>
+  </div>
+  <div class="left"><strong>{{ left_text(t, today) }}</strong>{{ bar(t, today) }}</div>
+</article>
+{%- endmacro %}
+
+{% macro check() -%}<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 9.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>{%- endmacro %}

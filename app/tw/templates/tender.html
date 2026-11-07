@@ -1,33 +1,67 @@
-{% extends "base.html" %}{% from "_due.html" import due %}
+{% extends "base.html" %}{% from "_due.html" import due, leaf, bar, left_text, check %}
 {% block title %}{{ t.title }} | Tender Watcher{% endblock %}
 {% block body %}
-<p><a href="/">← All open tenders</a></p>
-<span class="buyer">{{ t.buyer }}</span>
-<h1>{{ t.title }}</h1>
-<div class="tags" style="margin-bottom:16px">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span>
-  {% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
-<dl class="facts">
-  <dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}
-    {% for n in date_notes(t, today) %}<div class="small" style="color:var(--amber)">{{ n }}</div>{% endfor %}</dd>
-  {% if t.category == "construction" %}<dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd>{% endif %}
-  {% if t.place or t.region %}<dt>Where</dt><dd>{{ t.place }}{% if t.region and t.region not in t.place %}{{ ", " if t.place }}{{ t.region }}{% endif %}</dd>{% endif %}
-  <dt>Buyer type</dt><dd>{{ TYPES.get(t.type, t.type) }}</dd>
-  {% if full %}
-  {% if t.bid_security %}<dt>Bid security</dt><dd>{{ t.bid_security }}</dd>{% endif %}
-  {% if t.document_fee %}<dt>Document fee</dt><dd>{{ t.document_fee }}</dd>{% endif %}
-  {% if t.reference %}<dt>Reference</dt><dd>{{ t.reference }}</dd>{% endif %}
-  {% if t.source %}<dt>Published in</dt><dd>{{ t.source }}</dd>{% endif %}
-  {% endif %}
-</dl>
-{% if full %}
-{% if t.photo %}<h2>The notice</h2><div class="photo"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div>{% endif %}
-{% if t.notice %}<h2>Full notice</h2><div class="notice-text">{{ t.notice }}</div>{% endif %}
-{% if t.url %}<p class="small muted">Buyer's own page: <a href="{{ t.url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
-{% else %}
-<div class="panel">
-  <h2>See the full notice</h2>
-  <p>Bid security, document fee, where to get the bid documents{% if t.photo %}, the notice itself{% elif t.notice %}, the complete notice text{% endif %}, and every other open tender that fits your business.</p>
-  {% if me %}<a class="btn" href="/account">Subscribe</a>{% else %}<a class="btn" href="/signup">Start 14-day free trial</a> <a class="btn ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}
+<a class="crumb" href="/#tenders"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>All open tenders</a>
+<div class="t-head">
+  <div>
+    <div class="buyer"><span class="avatar" aria-hidden="true">{{ t.buyer[:1] }}</span>{{ t.buyer }}</div>
+    <h1>{{ t.title }}</h1>
+    <div class="tags">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span><span class="tag">{{ TYPES.get(t.type, t.type) }}</span>
+      {% if date_notes(t, today) %}<span class="tag warn">Date to confirm</span>{% endif %}{% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
+  </div>
 </div>
-{% endif %}
+<div class="t-grid">
+  <div>
+    {% set where = t.place ~ ((", " if t.place else "") ~ t.region if t.region and t.region not in t.place else "") %}
+    <div class="{{ 'locked' if not full }}">
+    <dl class="facts">
+      <div><dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}</dd></div>
+      <div><dt>Where</dt><dd>{{ where or "Not stated" }}</dd></div>
+      {% if t.category == "construction" %}<div><dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd></div>{% endif %}
+      {% if full %}
+      <div><dt>Bid security</dt><dd>{{ t.bid_security or "Not stated" }}</dd></div>
+      <div><dt>Document fee</dt><dd>{{ t.document_fee or "Not stated" }}</dd></div>
+      {% if t.reference %}<div><dt>Reference</dt><dd>{{ t.reference }}</dd></div>{% endif %}
+      {% if t.source %}<div{% if not t.reference %} class="wide"{% endif %}><dt>Published in</dt><dd>{{ t.source }}</dd></div>{% endif %}
+      {% else %}
+      <div><dt>Bid security <span style="position:absolute;left:-9999px">(subscribers only)</span></dt><dd class="blur" aria-hidden="true">ETB 00,000 bank guarantee</dd></div>
+      <div><dt>Document fee</dt><dd class="blur" aria-hidden="true">ETB 000, non-refundable</dd></div>
+      <div class="wide"><dt>Where to get the bid documents</dt><dd class="blur" aria-hidden="true">Procurement office, room 000, from 8:30</dd></div>
+      {% endif %}
+    </dl>
+    </div>
+    {% if full %}
+      {% if t.photo %}<h2>The notice</h2><div class="photo" style="margin-bottom:28px"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div>{% endif %}
+      {% if t.notice %}<h2>Full notice</h2><div class="notice-text">{{ t.notice }}</div>{% endif %}
+      {% if t.url %}<p class="small muted" style="margin-top:16px">Buyer's own page: <a href="{{ t.url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
+    {% else %}
+      <div class="lock-card">
+        <h2>See the full notice and everything that fits you</h2>
+        <ul>
+          <li>{{ check() }}Bid security, document fee and where to buy the documents</li>
+          <li>{{ check() }}{% if t.photo %}A photo of the original notice{% elif t.notice %}The complete notice text{% else %}Every detail we collected{% endif %}</li>
+          <li>{{ check() }}Every other open tender that matches your business, each morning in Telegram</li>
+        </ul>
+        <div class="btns">{% if me %}<a class="btn big" href="/account">Subscribe</a>{% else %}<a class="btn big" href="/signup">Start 14-day free trial</a><a class="btn big ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}</div>
+      </div>
+    {% endif %}
+  </div>
+  <aside class="side">
+    <div class="clock">
+      <div class="top">{{ leaf(t, today, True) }}
+        <div>{% if t.closes %}{% set d = t.closes | days_from(today) %}<div class="left-n">{{ d if d >= 0 else 0 }}</div><div class="left-l">{{ "day left" if d == 1 else "days left" }}{% if d < 0 %}: closed{% endif %}</div>
+          {% else %}<div class="left-l">No closing date given</div>{% endif %}</div>
+      </div>
+      {{ bar(t, today) }}
+      <p>{% if t.closes %}Bids close {{ t.closes | long_date }}{% if t.time %} at {{ t.time }}{% endif %}.{% else %}The notice gives no closing date. Check it before you prepare a bid.{% endif %}</p>
+      {% for n in date_notes(t, today) %}<p class="note">{{ n }}</p>{% endfor %}
+    </div>
+    <div class="origin">
+      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/><path d="M10 14.3l2.7 2.7L18.5 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>{% if t.id.startswith("wb-") %}<b>From the World Bank's official feed</b>Published by the World Bank for a project it finances in Ethiopia.
+        {% elif t.id.startswith("web-") %}<b>From the buyer's own website</b>Read from the buyer's site and kept on our server.
+        {% else %}<b>Checked by our team</b>Collected from {{ t.source if (full and t.source) else "a newspaper or notice board" }} and checked by a reviewer before it went up.{% endif %}</div>
+    </div>
+  </aside>
+</div>
 {% endblock %}

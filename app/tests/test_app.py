@@ -261,7 +261,7 @@ def test_date_notes_signup_cap_and_bot_photos(env, monkeypatch):
     anon = TestClient(app)
     page = anon.get("/t/wb-9").text
     assert "08:00 international time" in page and "P.O.Box 62347, Addis Ababa" in page
-    assert "Date to confirm" in anon.get("/").text
+    assert "Date to confirm" in anon.get("/t/wb-9").text
     a = client(app, "0911000001")
     assert a.get("/notices/abcdef123456.jpg").status_code == 200  # photo published by the Telegram bot
     for i in range(5):
