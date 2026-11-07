@@ -294,7 +294,8 @@ def test_subscriber_trial_alerts_and_expiry(setup):
         {"id": "mt-3", "buyer": "AAU", "title": "Supply of laptops", "category": "it", "closes": "2026-11-25"},
         {"id": "mt-4", "buyer": "City Bus", "title": "Bus tyres", "category": "vehicles", "closes": "2026-11-01"},
         {"id": "fc-5", "buyer": "EEU", "title": "Supply of utility vehicles", "category": "vehicles",
-         "closes": "2026-11-30", "url": "/notices/abc.jpg"}]
+         "closes": "2026-11-30", "url": "/notices/abc.jpg"},
+        {"id": "mt-7", "buyer": "INSA", "title": "Bus purchase", "category": "vehicles", "closes": "2028-03-03"}]
     board.write_text(json.dumps(data))
     SUB = 555
 
@@ -308,7 +309,8 @@ def test_subscriber_trial_alerts_and_expiry(setup):
     assert "trial until 2026-11-21" in tg.texts(REVIEWER)[-1] and "Sent 2" in tg.texts(REVIEWER)[-1]
     first = tg.texts(SUB)
     assert "Welcome" in first[0] and "Free trial until 2026-11-21" in first[0]
-    assert "pickup trucks" in first[1] and "https://tenders.sonador.et/notices/abc.jpg" in first[1]
+    assert "pickup trucks" in first[1] and "https://tenders.sonador.et/#t/fc-5" in first[1]
+    assert "moderntenders" not in first[1]
     assert "laptops" not in first[1] and "tyres" not in first[1]  # other sector; already closed
 
     # the subscriber's own message gets their status, not "not registered"

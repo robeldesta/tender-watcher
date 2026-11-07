@@ -50,6 +50,15 @@ select,input{font:inherit;font-size:16px;padding:9px 10px;border:1.5px solid var
 .tag{display:inline-block;font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:3px;background:var(--panel);color:var(--muted);white-space:nowrap}
 .tag.grade{background:var(--accent-soft);color:var(--accent-ink)}
 .tag.new{background:var(--ok-soft);color:var(--ok)}
+.detail{border-top:2px solid var(--ink);padding:18px 0;display:flex;flex-direction:column;gap:14px}
+.detail h2{font-size:26px}
+.detail dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:0}
+.detail dt{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+.detail dd{margin:0}
+.detail .notice img{max-width:100%;border:1px solid var(--rule);border-radius:4px}
+.row .body a.title{color:var(--ink);text-decoration:none}
+.row .body a.title:hover{text-decoration:underline}
+@media (max-width:560px){.detail dl{grid-template-columns:1fr}.detail dd{margin-bottom:6px}}
 .tag.soon{background:var(--bad-soft);color:var(--bad)}
 .tag.week{background:var(--warn-soft);color:var(--warn)}
 .empty{padding:28px 0;color:var(--muted)}
@@ -217,7 +226,7 @@ function boot(data){
       row.appendChild(due);
       var body=el('div','body');
       body.appendChild(el('span','buyer',t.buyer));
-      body.appendChild(el('p',null,t.title));
+      var tp=el('p'); var ta=el('a','title',t.title); ta.href='#t/'+encodeURIComponent(t.id); tp.appendChild(ta); body.appendChild(tp);
       var meta=el('div','meta');
       if(t.closes){ var n=daysTo(t.closes); if(n<=3) meta.appendChild(el('span','tag soon',n===0?'Closes today':n===1?'1 day left':n+' days left')); else if(n<=7) meta.appendChild(el('span','tag week',n+' days left')); }
       if(t.firstSeen && daysTo(t.firstSeen) >= -1) meta.appendChild(el('span','tag new','New'));
@@ -226,12 +235,54 @@ function boot(data){
       meta.appendChild(el('span','tag',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:'')));
       meta.appendChild(el('span','tag',TYPES[t.type]||t.type));
       body.appendChild(meta);
-      if(t.url){ var src=el('p','small muted'); var a=el('a',null,t.url.indexOf('/notices/')===0?'See the notice ('+t.source+')':'View notice on '+t.source); a.href=t.url; a.target='_blank'; a.rel='noopener'; src.appendChild(a); body.appendChild(src); }
       row.appendChild(body); list.appendChild(row);
     });
   }
+  function fmt(d){ var x=parse(d); return x.getDate()+' '+MONTHS[x.getMonth()]+' '+x.getFullYear(); }
+  function detail(t){
+    var list=document.getElementById('list'); list.textContent='';
+    document.getElementById('filters').style.display='none';
+    document.getElementById('count').textContent='';
+    var box=el('article','detail');
+    var back=el('a','small','← All open tenders'); back.href='#'; box.appendChild(back);
+    box.appendChild(el('span','buyer',t.buyer));
+    box.appendChild(el('h2',null,t.title));
+    var dl=el('dl');
+    function row(k,v){ if(!v) return; dl.appendChild(el('dt',null,k)); dl.appendChild(el('dd',null,v)); }
+    var closes=t.closes?fmt(t.closes)+(t.time?', '+t.time:''):'Not stated. Check the notice.';
+    if(t.closes){ var n=daysTo(t.closes); closes+=n<0?' (closed)':n===0?' (today)':' ('+n+' day'+(n===1?'':'s')+' left)'; if(n>183) closes+='. This date looks unusual; check the notice.'; }
+    row('Closes',closes);
+    row('Category',CATS[cat(t)]||cat(t));
+    if(cat(t)==='construction') row('Grade',t.grade?t.grade+' and above':'Not stated');
+    row('Where',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:''));
+    row('Buyer type',TYPES[t.type]||t.type);
+    row('Bid security',t.bid_security); row('Document fee',t.document_fee);
+    if(t.firstSeen) row('On Tender Watcher since',fmt(t.firstSeen));
+    box.appendChild(dl);
+    if(t.url && t.url.indexOf('/notices/')===0){
+      var nb=el('div','notice'); var img=el('img'); img.src=t.url; img.alt='Photo of the original notice'; img.loading='lazy'; nb.appendChild(img); box.appendChild(nb);
+    }
+    var cta=el('p',null,'Get tenders like this every morning in Telegram: ');
+    var tg=el('a',null,'start a 14-day free trial'); tg.href='https://t.me/tender_watcher_entry_bot'; cta.appendChild(tg); box.appendChild(cta);
+    if(t.source){
+      var src=el('p','small muted','First published by '+t.source+'. ');
+      if(t.url && t.url.indexOf('/notices/')!==0){ var a=el('a',null,'Original listing'); a.href=t.url; a.target='_blank'; a.rel='noopener nofollow'; src.appendChild(a); }
+      box.appendChild(src);
+    }
+    list.appendChild(box);
+    document.title=t.title+' | Tender Watcher';
+    window.scrollTo(0,0);
+  }
+  var TITLE=document.title;
+  function route(){
+    var m=/^#t\/(.+)$/.exec(location.hash);
+    if(m){ var id=decodeURIComponent(m[1]); var t=data.tenders.filter(function(x){ return x.id===id; })[0];
+      if(t){ detail(t); return; } }
+    document.getElementById('filters').style.display=''; document.title=TITLE; render();
+  }
   ids.forEach(function(id){ var e=document.getElementById(id); e.addEventListener('input',render); e.addEventListener('change',render); });
-  render();
+  window.addEventListener('hashchange',route);
+  route();
 }
 (function(){
   var embedded; try{ embedded = JSON.parse(document.getElementById('tender-data').textContent); }catch(e){ embedded = {updated:'',tenders:[]}; }

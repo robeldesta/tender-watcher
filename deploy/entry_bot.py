@@ -584,9 +584,7 @@ def alert_chunks(head, tenders, site_url):
     """Telegram messages (under 4000 characters each) listing tenders."""
     out, cur = [], head
     for t in tenders:
-        url = t.get("url") or ""
-        if url.startswith("/"):
-            url = site_url + url
+        url = site_url + "/#t/" + urllib.parse.quote(str(t.get("id", "")))  # always our own page
         when = (t.get("closes") or "date not given") + (" " + t["time"] if t.get("time") else "")
         item = f"\n\n• {t.get('title', '')[:200]}\n{t.get('buyer', '')[:100]}\nCloses {when}" + (f"\n{url}" if url else "")
         if len(cur) + len(item) > 3900:
@@ -1148,11 +1146,15 @@ class Bot:
                 w.writerow(["date", "tx_ref", "telegram_id", "name", "plan", "amount_etb", "paid_until"])
             w.writerow([self.today(), tx_ref, pay["uid"], sub["name"], pay["plan"], pay["amount"], until])
 
+    def far_date(self):
+        return (dt.date.fromisoformat(self.today()) + dt.timedelta(days=183)).isoformat()
+
     def matches(self, sub, tenders):
         out = []
         for t in tenders:
-            if (t.get("closes") or "9999") < self.today():
-                continue
+            closes = t.get("closes") or ""
+            if closes and (closes < self.today() or closes > self.far_date()):
+                continue  # closed, or a date too far ahead to trust
             hay = " ".join(str(t.get(k, "")) for k in ("title", "buyer")).lower()
             if t.get("category") in sub["categories"] or keyword_hit(sub.get("keywords", []), hay):
                 out.append(t)

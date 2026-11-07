@@ -123,7 +123,7 @@ nav.top{display:flex;gap:16px;font-size:15px}
         var ul=el('ul');
         b.open.concat(b.past).forEach(function(t){
           var li=el('li'); var txt=t.title+(t.closes?' · closes '+t.closes:'');
-          if(t.url){ var a=el('a',null,txt); a.href=t.url; a.target='_blank'; a.rel='noopener'; li.appendChild(a); } else li.textContent=txt;
+          if(b.open.indexOf(t)>=0 && t.id){ var a=el('a',null,txt); a.href='/#t/'+encodeURIComponent(t.id); li.appendChild(a); } else li.textContent=txt;
           if(b.past.indexOf(t)>=0) li.appendChild(el('span','muted',' (closed)'));
           ul.appendChild(li);
         });
