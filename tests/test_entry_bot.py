@@ -188,3 +188,86 @@ def test_non_construction_and_category_fix(setup):
     bot.handle({"callback_query": {"id": "q", "from": {"id": REVIEWER}, "data": "ok:" + pid}})
     new = next(t for t in json.loads(board.read_text())["tenders"] if t["id"] == "fc-" + pid)
     assert new["category"] == "it"
+
+
+LISTING = """<html><body>
+<a href="/news/1">Annual report</a>
+<a href="/tenders/road-2026">Invitation to bid: road maintenance</a>
+<a href="docs/rfq-laptops.pdf">RFQ laptops</a>
+<a href="/vacancy/accountant">Vacancy: accountant tender unit</a>
+<a href="/tenders/award-2025">Tender award result</a>
+<a href="https://other.example/tender/x">Partner tender</a>
+<a href="https://cdn.example/files/bid-doc.pdf">Bid document</a>
+<a href="/tenders/road-2026#apply">Invitation to bid: road maintenance</a>
+<a href="/ጨረታ/2">ጨረታ ማስታወቂያ</a>
+</body></html>"""
+
+
+def test_tender_links():
+    links = eb.tender_links(LISTING, "https://buyer.gov.et/")
+    assert links == ["https://buyer.gov.et/tenders/road-2026", "https://buyer.gov.et/docs/rfq-laptops.pdf",
+                     "https://cdn.example/files/bid-doc.pdf", "https://buyer.gov.et/ጨረታ/2"]
+
+
+class FakeWeb:
+    def __init__(self, pages):
+        self.pages, self.got = pages, []
+
+    def get(self, url):
+        self.got.append(url)
+        if url not in self.pages:
+            raise OSError("404")
+        return self.pages[url]
+
+
+SRC = {"id": "aaroads", "name": "Addis Ababa City Roads Authority", "type": "gov",
+       "url": "https://buyer.gov.et/"}
+
+
+def test_watch_sources_review_and_approve(setup):
+    bot, tg, claude, board = setup
+    out = json.loads(json.dumps(NOTICE))
+    out["tenders"][0]["buyer"] = ""
+    bot.claude = FakeClaude(out=out)
+    web = FakeWeb({"https://buyer.gov.et/": (LISTING.encode(), "text/html"),
+                   "https://buyer.gov.et/tenders/road-2026": (b"<p>Invitation to bid</p>", "text/html")})
+    n = eb.watch_sources(bot, [SRC, dict(SRC, id="off", enabled=False)], web=web, log=lambda m: None)
+    assert n == 1  # only the road page loaded; the others 404 and are logged
+    assert "https://buyer.gov.et/" in web.got and all("off" not in u for u in web.got)
+    req = bot.claude.calls[0]["messages"][0]["content"]
+    assert req[0]["type"] == "text" and "<page>" in req[0]["text"]
+    assert "not a photo" in req[-1]["text"]
+    assert tg.photos == []
+    (method, msg), = [(m, p) for m, p in tg.sent if m == "sendMessage" and p["chat_id"] == REVIEWER]
+    assert "Source: https://buyer.gov.et/tenders/road-2026" in msg["text"]
+    pid = msg["reply_markup"]["inline_keyboard"][0][0]["callback_data"].split(":")[1]
+
+    # a second run sends nothing new
+    assert eb.watch_sources(bot, [SRC], web=web, log=lambda m: None) == 0
+
+    bot.handle({"callback_query": {"id": "q", "from": {"id": REVIEWER}, "data": "ok:" + pid}})
+    new = next(t for t in json.loads(board.read_text())["tenders"] if t["id"] == "web-" + pid)
+    assert new["url"] == "https://buyer.gov.et/tenders/road-2026"
+    assert new["buyer"] == "Addis Ababa City Roads Authority" and new["type"] == "gov"
+    assert ("editMessageText" in [m for m, p in tg.sent])
+
+
+def test_watch_skips_closed_and_pdf(setup):
+    bot, tg, claude, board = setup
+    out = json.loads(json.dumps(NOTICE))
+    out["tenders"][0]["closes"] = {"raw": "1 Nov 2026", "calendar": "gregorian", "year": 2026, "month": 11, "day": 1}
+    bot.claude = FakeClaude(out=out)
+    web = FakeWeb({"https://buyer.gov.et/": (LISTING.encode(), "text/html"),
+                   "https://buyer.gov.et/docs/rfq-laptops.pdf": (b"%PDF-1.4 x", "application/pdf")})
+    assert eb.watch_sources(bot, [SRC], web=web, log=lambda m: None) == 0
+    block = bot.claude.calls[0]["messages"][0]["content"][0]
+    assert block["type"] == "document" and block["source"]["media_type"] == "application/pdf"
+
+
+def test_sources_file_is_valid():
+    path = Path(__file__).resolve().parent.parent / "deploy" / "sources.json"
+    sources = eb.load_sources(path)
+    ids_ = [s["id"] for s in sources]
+    assert len(ids_) == len(set(ids_))
+    for s in sources:
+        assert s["url"].startswith("https://") and s["name"] and s["type"] in eb.TYPES

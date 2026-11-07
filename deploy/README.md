@@ -76,3 +76,25 @@ journalctl -u tenders-entry-bot -f
 To add a collector: they send `/start` to the bot, you add the number to
 `COLLECTOR_IDS` in `/opt/tenders/entry-bot.env`, then
 `systemctl restart tenders-entry-bot`.
+
+## Buyer website watcher
+
+The entry bot also checks the tender pages of the buyers in `sources.json`
+(government bodies, utilities, banks, donors and NGOs) once a day, after
+`WATCH_HOUR` Addis time. It follows only links that look like tender notices,
+respects each site's robots.txt, waits 3 seconds between requests, and sends
+each new notice to the reviewers in Telegram, the same way as a collector's
+photo. Nothing goes on the board until a reviewer presses Approve.
+
+```sh
+cd /opt/tenders
+sudo cp ~/tender-watcher/deploy/sources.json /opt/tenders/sources.json
+# see which sources load, which robots.txt blocks, and how many tender links each has
+sudo bash -c 'set -a; . /opt/tenders/entry-bot.env; /opt/tenders/venv/bin/python /opt/tenders/entry_bot.py --check-sources'
+# run the watcher once now instead of waiting for the morning
+sudo bash -c 'set -a; . /opt/tenders/entry-bot.env; /opt/tenders/venv/bin/python /opt/tenders/entry_bot.py --watch-now'
+```
+
+Set `"enabled": false` on any source that fails or is blocked, and replace a
+home page `url` with the site's own tender page once it is known. The first
+run of a new source sends at most 5 notices; later runs at most 10.
