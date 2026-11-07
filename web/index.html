@@ -54,7 +54,9 @@ select,input{font:inherit;font-size:16px;padding:9px 10px;border:1.5px solid var
 .detail h2{font-size:26px}
 .detail dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:0}
 .detail dt{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
-.detail dd{margin:0}
+.detail dd{margin:0;overflow-wrap:anywhere}
+.detail h3{font-family:var(--display);font-size:18px;margin:6px 0 0}
+.notice-text{white-space:pre-wrap;background:var(--panel);border-radius:6px;padding:14px;font-size:16px;max-height:none}
 .detail .notice img{max-width:100%;border:1px solid var(--rule);border-radius:4px}
 .row .body a.title{color:var(--ink);text-decoration:none}
 .row .body a.title:hover{text-decoration:underline}
@@ -259,11 +261,13 @@ function boot(data){
     row('Where',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:''));
     row('Buyer type',TYPES[t.type]||t.type);
     row('Bid security',t.bid_security); row('Document fee',t.document_fee);
+    row('Reference',t.reference); row('Project',t.project); row('Method',t.method); row('Contact',t.contact);
     if(t.firstSeen) row('On Tender Watcher since',fmt(t.firstSeen));
     box.appendChild(dl);
     if(t.url && t.url.indexOf('/notices/')===0){
       var nb=el('div','notice'); var img=el('img'); img.src=t.url; img.alt='Photo of the original notice'; img.loading='lazy'; nb.appendChild(img); box.appendChild(nb);
     }
+    if(t.notice){ box.appendChild(el('h3',null,'Full notice')); var nt=el('div','notice-text',t.notice); box.appendChild(nt); }
     var cta=el('p',null,'Get tenders like this every morning in Telegram: ');
     var tg=el('a',null,'start a 14-day free trial'); tg.href='https://t.me/tender_watcher_entry_bot'; cta.appendChild(tg); box.appendChild(cta);
     if(t.source){

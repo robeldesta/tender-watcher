@@ -143,6 +143,69 @@ def fetch(path_or_url):
         _last[0] = time.monotonic()
 
 
+WB_API = ("https://search.worldbank.org/api/v2/procnotices?format=json&rows=200"
+          "&project_ctry_name_exact=Ethiopia&srt=submission_date&order=desc")
+WB_GROUPS = {"CW": "construction", "GO": "goods", "CS": "consultancy", "NC": "services"}
+WB_SKIP = {"contract award", "general procurement notice"}
+
+
+def worldbank(payload, today, existing_ids):
+    """World Bank-financed tenders in Ethiopia, with the full notice text kept on our own page."""
+    out = []
+    for n in payload.get("procnotices", []):
+        if (n.get("notice_type") or "").strip().lower() in WB_SKIP or not n.get("id"):
+            continue
+        tid = "wb-" + n["id"]
+        closes = (n.get("submission_deadline_date") or "")[:10]
+        title = (n.get("bid_description") or n.get("project_name") or "").strip()
+        if tid in existing_ids or not title or not closes or closes < today.isoformat():
+            continue
+        place = (n.get("contact_address") or "").replace("\n", ", ").strip(", ")
+        notice = text(n.get("notice_text") or "")
+        category = WB_GROUPS.get(n.get("procurement_group") or "", "other")
+        out.append({
+            "id": tid,
+            "buyer": (n.get("contact_organization") or n.get("project_name") or "World Bank-financed project").strip(),
+            "title": title[:300],
+            "category": category,
+            "region": "",
+            "place": place[:80] or "Ethiopia",
+            "grade": find_grade(title + " " + notice) if category == "construction" else "",
+            "closes": closes,
+            "time": (n.get("submission_deadline_time") or "")[:5],
+            "type": "donor",
+            "firstSeen": today.isoformat(),
+            "url": f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{n['id']}",
+            "source": "World Bank procurement notices",
+            "reference": n.get("bid_reference_no") or "",
+            "project": n.get("project_name") or "",
+            "method": n.get("procurement_method_name") or "",
+            "contact": ", ".join(x for x in (n.get("contact_name"), n.get("contact_email"), n.get("contact_phone_no")) if x),
+            "notice": notice[:8000],
+        })
+    return out
+
+
+def _words(s):
+    return set(re.findall(r"\w{3,}", (s or "").lower()))
+
+
+def drop_copies(tenders):
+    """When our own source (buyer website, collector, World Bank) has a tender that Modern Tenders
+    also listed, keep ours and drop the Modern Tenders copy."""
+    own = [t for t in tenders if not t.get("id", "").startswith("mt-")]
+    keep = []
+    for t in tenders:
+        if t.get("id", "").startswith("mt-") and t.get("closes"):
+            tw = _words(t.get("title")) | _words(t.get("buyer"))
+            dup = any(o.get("closes") == t["closes"] and tw and
+                      len(tw & (_words(o.get("title")) | _words(o.get("buyer")))) / len(tw) >= 0.6 for o in own)
+            if dup:
+                continue
+        keep.append(t)
+    return keep
+
+
 def text(fragment):
     s = re.sub(r"<svg.*?</svg>", "", fragment, flags=re.S)
     s = re.sub(r"<[^>]+>", " ", s)
@@ -343,6 +406,14 @@ def main():
         })
         added += 1
 
+    try:
+        wb = worldbank(json.loads(fetch(WB_API)), today, {t.get("id") for t in existing})
+        print(f"World Bank: {len(wb)} new open notices")
+        fresh += wb
+        added += len(wb)
+    except Exception as e:
+        print(f"World Bank failed: {e}", file=sys.stderr)
+
     def keep(t):
         c = t.get("closes", "")
         if c:
@@ -377,6 +448,7 @@ def main():
         have = {t.get("id") for t in merged}
         merged += [t for t in now if t.get("id") not in have and keep(t)]
         merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
+        merged[:] = drop_copies(merged)
         flag_checks(merged, today)
         write_atomic(args.out, out)
         archive(os.path.join(os.path.dirname(os.path.abspath(args.out)), "archive.json"), gone)

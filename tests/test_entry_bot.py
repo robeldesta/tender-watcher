@@ -474,3 +474,33 @@ def test_refresh_flags_odd_dates():
     assert "check" not in ts[2] and "check" not in ts[3]
     chunk = eb.alert_chunks("h", [dict(ts[1], id="x", title="T", buyer="B")], "https://s")[0]
     assert "(to be confirmed)" in chunk
+
+
+def _refresh():
+    rspec = importlib.util.spec_from_file_location(
+        "refresh", Path(__file__).resolve().parent.parent / "deploy" / "refresh.py")
+    rf = importlib.util.module_from_spec(rspec)
+    rspec.loader.exec_module(rf)
+    return rf
+
+
+def test_worldbank_entries_carry_full_notice():
+    import datetime as dt
+    rf = _refresh()
+    payload = json.loads((Path(__file__).resolve().parent / "fixtures" / "worldbank" / "procnotices_ethiopia.json").read_text())
+    out = rf.worldbank(payload, dt.date(2026, 11, 1), set())
+    assert out and all(t["id"].startswith("wb-") and t["type"] == "donor" for t in out)
+    t = next(t for t in out if t["id"] == "wb-OP00476746")
+    assert t["closes"] == "2026-11-18" and t["time"] == "10:00" and t["category"] == "construction"
+    assert t["reference"] == "ET-GAM-RPCU-570832-CW-RFB" and "veterinary" in t["notice"].lower()
+    assert "<p>" not in t["notice"]
+    assert rf.worldbank(payload, dt.date(2026, 11, 1), {"wb-OP00476746"}) == [x for x in out if x["id"] != "wb-OP00476746"]
+
+
+def test_own_copy_replaces_modern_tenders_copy():
+    rf = _refresh()
+    ts = [{"id": "mt-a", "buyer": "Commercial Bank of Ethiopia", "title": "Purchase of UTP Cable Cat 6A", "closes": "2026-11-17"},
+          {"id": "web-b", "buyer": "Commercial Bank of Ethiopia", "title": "Invitation to bid: purchase of UTP cable Cat 6A",
+           "closes": "2026-11-17"},
+          {"id": "mt-c", "buyer": "Commercial Bank of Ethiopia", "title": "Purchase of UTP Cable Cat 6A", "closes": "2026-11-30"}]
+    assert [t["id"] for t in rf.drop_copies(ts)] == ["web-b", "mt-c"]
