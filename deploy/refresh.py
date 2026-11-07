@@ -310,6 +310,7 @@ def main():
         return (today - first_seen).days <= STALE_DAYS
 
     merged = [t for t in existing + fresh if keep(t)]
+    gone = [t for t in existing if not keep(t)]
     dropped = len(existing) + len(fresh) - len(merged)
     merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
     out = {"updated": today_s, "tenders": merged}
@@ -333,6 +334,21 @@ def main():
         merged += [t for t in now if t.get("id") not in have and keep(t)]
         merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
         write_atomic(args.out, out)
+        archive(os.path.join(os.path.dirname(os.path.abspath(args.out)), "archive.json"), gone)
+
+
+def archive(path, gone):
+    """Keep closed tenders in archive.json, for the buyer directory's history."""
+    if not gone:
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = json.load(f).get("tenders", [])
+    except (OSError, ValueError):
+        old = []
+    have = {t.get("id") for t in old}
+    old += [t for t in gone if t.get("id") not in have]
+    write_atomic(path, {"tenders": old})
 
 
 def write_atomic(path, out):
