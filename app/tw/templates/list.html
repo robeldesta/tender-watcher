@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% from "_due.html" import due %}
+{% block body %}
+<h1>Open tenders in Ethiopia</h1>
+<p class="muted">Government, NGO, donor and company tenders, collected by our own team and checked before they go up.</p>
+<form class="panel grid" method="get" action="/">
+  <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>
+    {% for k, v in CATEGORIES.items() %}<option value="{{ k }}" {{ "selected" if f.category == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label for="region">Region</label><select id="region" name="region"><option value="">All regions</option>
+    {% for r in REGIONS %}<option {{ "selected" if f.region == r }}>{{ r }}</option>{% endfor %}</select></div>
+  <div><label for="type">Buyer</label><select id="type" name="type"><option value="">All buyers</option>
+    {% for k, v in TYPES.items() %}<option value="{{ k }}" {{ "selected" if f.type == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label for="q">Search</label><input id="q" name="q" value="{{ f.q }}" placeholder="laptops, bridge, cleaning"></div>
+  <div style="align-self:end"><button class="btn" type="submit">Show tenders</button></div>
+</form>
+<p class="muted small">{{ rows|length }} open tender{{ "s" if rows|length != 1 }}</p>
+<div class="list">
+{% for t in rows %}
+  <article class="row">
+    <div class="due">{% if t.closes %}Closes<b>{{ t.closes | short_date }}</b>{{ t.time }}{% else %}Deadline<b>Check</b>{% endif %}</div>
+    <div>
+      <span class="buyer">{{ t.buyer }}</span>
+      <h3><a href="/t/{{ t.id }}">{{ t.title }}</a></h3>
+      <div class="tags">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span>
+        {% if t.grade %}<span class="tag">{{ t.grade }} and above</span>{% endif %}
+        {% if t.region or t.place %}<span class="tag">{{ t.place or t.region }}</span>{% endif %}
+        <span class="tag">{{ TYPES.get(t.type, t.type) }}</span></div>
+    </div>
+  </article>
+{% else %}
+  <p class="empty">No open tenders match these filters yet. Try another category or region.</p>
+{% endfor %}
+</div>
+{% endblock %}

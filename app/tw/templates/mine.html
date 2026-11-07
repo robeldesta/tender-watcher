@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}My entries | Tender Watcher{% endblock %}
+{% block body %}
+<h1>My entries</h1>
+<p class="panel">In {{ month }}: <b>{{ counts.published }}</b> published, {{ counts.pending }} waiting, {{ counts.rejected }} rejected.</p>
+<table><thead><tr><th>Tender</th><th>Closes</th><th>Status</th></tr></thead><tbody>
+{% for t in rows %}<tr><td><a href="/entry/{{ t.id }}">{{ t.title or "(no title)" }}</a><div class="small muted">{{ t.buyer }}</div></td><td>{{ t.closes }}</td>
+<td><span class="tag {{ 'ok' if t.status == 'published' else 'warn' if t.status == 'pending' }}">{{ t.status|capitalize }}</span></td></tr>
+{% else %}<tr><td colspan="3" class="empty">No entries yet. <a href="/collect">Add your first tender</a>.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Add a tender | Tender Watcher{% endblock %}
+{% block body %}
+<h1>Add a tender</h1>
+<p class="muted">Take a clear photo of one notice, straight on, with the whole notice in the frame. The fields are filled in for you to check.</p>
+{% if error %}<p class="alert bad">{{ error }}</p>{% endif %}
+<form class="panel" method="post" action="/collect" enctype="multipart/form-data" id="collect">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="field"><label for="photo">Photo of the notice</label>
+    <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required></div>
+  <div class="field"><label for="source">Where you found it</label>
+    <input id="source" name="source" placeholder="Addis Zemen, 7 Nov 2026 · or · Notice board, Ministry of Health"></div>
+  <button class="btn" type="submit" id="go">Read the notice</button>
+  <p class="small muted" id="wait" hidden>Reading the notice. This takes up to a minute.</p>
+</form>
+<script>document.getElementById('collect').addEventListener('submit',function(){var b=document.getElementById('go');b.disabled=true;b.textContent='Reading…';document.getElementById('wait').hidden=false;});</script>
+{% if mine %}
+<h2 style="margin-top:28px">Your latest entries</h2>
+<table><thead><tr><th>Tender</th><th>Status</th></tr></thead><tbody>
+{% for t in mine %}<tr><td><a href="/entry/{{ t.id }}">{{ t.title or "(no title yet)" }}</a><div class="small muted">{{ t.buyer }}</div></td>
+<td><span class="tag {{ 'ok' if t.status == 'published' else 'warn' if t.status == 'pending' }}">{{ t.status|capitalize }}</span></td></tr>{% endfor %}
+</tbody></table>{% endif %}
+{% endblock %}

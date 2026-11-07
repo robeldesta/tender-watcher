@@ -1,0 +1,6 @@
+{% macro due(t, today) -%}
+{%- if t.closes -%}{%- set days = (t.closes | days_from(today)) -%}
+{%- if days < 0 %}<span class="tag">Closed</span>{% elif days == 0 %}<span class="tag soon">Closes today</span>
+{%- elif days <= 3 %}<span class="tag soon">{{ days }} day{{ "s" if days > 1 }} left</span>{% elif days <= 7 %}<span class="tag week">{{ days }} days left</span>{% endif -%}
+{%- endif -%}
+{%- endmacro %}

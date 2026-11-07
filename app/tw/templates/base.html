@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Tender Watcher{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">Tender <b>Watcher</b></a>
+  <nav>
+    <a href="/">Open tenders</a>
+    {% if me and me.role in ("admin","reviewer","collector") %}<a href="/collect">Add tender</a><a href="/mine">My entries</a>{% endif %}
+    {% if me and me.role in ("admin","reviewer") %}<a href="/review">Review</a><a href="/admin/stats">Collectors</a>{% endif %}
+    {% if me and me.role == "admin" %}<a href="/admin/team">Team</a>{% endif %}
+    {% if me %}<form method="post" action="/logout"><button class="btn link" type="submit">Sign out</button></form>
+    {% else %}<a href="/login">Sign in</a>{% endif %}
+  </nav>
+</div></header>
+<main><div class="wrap">{% block body %}{% endblock %}</div></main>
+</body>
+</html>

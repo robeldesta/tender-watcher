@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% from "_due.html" import due %}
+{% block title %}{{ t.title }} | Tender Watcher{% endblock %}
+{% block body %}
+<p><a href="/">← All open tenders</a></p>
+<span class="buyer">{{ t.buyer }}</span>
+<h1>{{ t.title }}</h1>
+<div class="tags" style="margin-bottom:16px">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span>
+  {% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
+<dl class="facts">
+  <dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}</dd>
+  {% if t.category == "construction" %}<dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd>{% endif %}
+  {% if t.place or t.region %}<dt>Where</dt><dd>{{ t.place }}{% if t.region and t.region not in t.place %}{{ ", " if t.place }}{{ t.region }}{% endif %}</dd>{% endif %}
+  <dt>Buyer type</dt><dd>{{ TYPES.get(t.type, t.type) }}</dd>
+  {% if t.bid_security %}<dt>Bid security</dt><dd>{{ t.bid_security }}</dd>{% endif %}
+  {% if t.document_fee %}<dt>Document fee</dt><dd>{{ t.document_fee }}</dd>{% endif %}
+  {% if t.reference %}<dt>Reference</dt><dd>{{ t.reference }}</dd>{% endif %}
+  {% if t.source %}<dt>Published in</dt><dd>{{ t.source }}</dd>{% endif %}
+</dl>
+{% if t.photo %}<h2>The notice</h2><div class="photo"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div>{% endif %}
+{% if t.notice %}<h2>Full notice</h2><div class="notice-text">{{ t.notice }}</div>{% endif %}
+{% if t.url %}<p class="small muted">Buyer's own page: <a href="{{ t.url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
+{% endblock %}
