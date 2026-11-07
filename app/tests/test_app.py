@@ -165,7 +165,7 @@ def test_team_admin(env):
     tok = csrf(a, "/admin/team")
     r = a.post("/admin/team", data={"csrf": tok, "name": "Hana", "phone": "0922 111 222", "role": "collector",
                                     "password": "short"})
-    assert r.status_code == 400 and "8 characters" in r.text
+    assert r.status_code == 400 and "10 characters" in r.text
     r = a.post("/admin/team", data={"csrf": tok, "name": "Hana", "phone": "0922 111 222", "role": "collector",
                                     "password": "longenough"}, follow_redirects=False)
     assert r.status_code == 303
@@ -193,3 +193,18 @@ def test_import_board_own_sources_only(env, tmp_path, monkeypatch):
     page = client(app).get("/t/wb-OP1").text
     assert "Full text" in page and "projects.worldbank.org" in page
     assert client(app).get("/t/mt-abc").status_code == 404
+
+
+def test_login_throttle_and_signout(env):
+    app, _, _ = env
+    c = TestClient(app)
+    for _ in range(5):
+        assert c.post("/login", data={"phone": "0911000002", "password": "wrong"}).status_code == 400
+    r = c.post("/login", data={"phone": "0911000002", "password": "password1"})
+    assert r.status_code == 429 and "Too many tries" in r.text  # even the right password waits
+    assert client(app, "0911000003").get("/collect").status_code == 200  # other people are not locked out
+
+    # signing out ends the session on every device
+    a, b = client(app, "0911000003"), client(app, "0911000003")
+    a.post("/logout")
+    assert b.get("/collect", follow_redirects=False).status_code == 303

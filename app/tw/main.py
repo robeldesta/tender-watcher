@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select
 from . import notices
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import Tender, User, make_session, now
+from .db import LoginFailure, Tender, User, make_session, now
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +26,8 @@ EDITABLE = ("buyer", "title", "category", "region", "place", "grade", "closes", 
             "bid_security", "document_fee", "source", "reference", "notice", "url")
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_PHOTO = 15_000_000
+LOCK_MINUTES, MAX_PHONE_FAILS, MAX_IP_FAILS = 15, 5, 20
+MIN_PASSWORD = 10
 
 
 def today():
@@ -96,11 +98,11 @@ def create_app(settings=None, claude=None):
         if not raw:
             return None
         try:
-            uid = signer.loads(raw, max_age=30 * 86400)
-        except BadSignature:
+            uid, ver = signer.loads(raw, max_age=30 * 86400)
+        except (BadSignature, ValueError, TypeError):
             return None
         u = session.get(User, uid)
-        return u if u and u.active else None
+        return u if u and u.active and u.session_ver == ver else None
 
     def csrf_token(u):
         return hmac.new(s.secret.encode(), f"csrf:{u.id}".encode(), hashlib.sha256).hexdigest()[:32]
@@ -175,24 +177,46 @@ def create_app(settings=None, claude=None):
     def login_form(request: Request, next: str = "/", session=Depends(db)):
         return page(request, "login.html", user_from(request, session), next=next)
 
+    def client_ip(request):
+        fwd = request.headers.get("x-forwarded-for", "")
+        return (fwd.split(",")[-1].strip() if fwd else "") or (request.client.host if request.client else "?")
+
     @app.post("/login")
     def login(request: Request, phone: str = Form(""), password: str = Form(""), next: str = Form("/"),
               session=Depends(db)):
-        u = session.scalars(select(User).where(User.phone == norm_phone(phone))).first()
+        p = norm_phone(phone)
+        keys = ["ip:" + client_ip(request)[:60]] + (["phone:" + p] if p else [])
+        since = now() - dt.timedelta(minutes=LOCK_MINUTES)
+        for key in keys:
+            n = session.scalar(select(func.count()).select_from(LoginFailure)
+                               .where(LoginFailure.key == key, LoginFailure.at >= since))
+            if n >= (MAX_PHONE_FAILS if key.startswith("phone:") else MAX_IP_FAILS):
+                return page(request, "login.html", None, status=429, next=next,
+                            error=f"Too many tries. Wait {LOCK_MINUTES} minutes, then try again.")
+        u = session.scalars(select(User).where(User.phone == p)).first() if p else None
         if not u or not u.active or not check_password(password, u.pw_hash):
+            session.add_all([LoginFailure(key=k) for k in keys])
+            session.commit()
             return page(request, "login.html", None, status=400, next=next,
                         error="That phone number and password don't match. Check both and try again.")
+        session.query(LoginFailure).filter(LoginFailure.key == "phone:" + p).delete()
+        session.query(LoginFailure).filter(LoginFailure.at < now() - dt.timedelta(days=1)).delete()
+        session.commit()
         if not next.startswith("/") or next.startswith("//"):
             next = "/"
         if next == "/":
             next = "/collect" if u.role in STAFF else "/"
         r = RedirectResponse(next, 303)
-        r.set_cookie("tw", signer.dumps(u.id), max_age=30 * 86400, httponly=True, samesite="lax",
-                     secure=s.secure_cookies)
+        r.set_cookie("tw", signer.dumps([u.id, u.session_ver]), max_age=30 * 86400, httponly=True,
+                     samesite="lax", secure=s.secure_cookies)
         return r
 
     @app.post("/logout")
-    def logout():
+    def logout(request: Request, session=Depends(db)):
+        u = user_from(request, session)
+        if u:
+            u.session_ver += 1  # signs this person out on every device
+            session.commit()
         r = RedirectResponse("/", 303)
         r.delete_cookie("tw")
         return r
@@ -371,7 +395,7 @@ def create_app(settings=None, claude=None):
         p = norm_phone(phone)
         error = ("Enter a name." if not name.strip() else
                  "Enter an Ethiopian mobile number, like 0911 234 567." if not p else
-                 "Use a password of at least 8 characters." if len(password) < 8 else
+                 f"Use a password of at least {MIN_PASSWORD} characters." if len(password) < MIN_PASSWORD else
                  "Pick a role." if role not in STAFF else
                  "Someone already uses that phone number." if session.scalars(select(User).where(User.phone == p)).first()
                  else "")
@@ -389,6 +413,7 @@ def create_app(settings=None, claude=None):
         p = session.get(User, uid)
         if p and p.id != u.id:
             p.active = not p.active
+            p.session_ver += 1
             session.commit()
         return RedirectResponse("/admin/team", 303)
 

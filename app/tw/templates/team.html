@@ -17,7 +17,7 @@
     <div class="field"><label for="role">Role</label><select id="role" name="role">
       {% for r, lab in [("collector","Collector: adds tenders"),("reviewer","Reviewer: approves tenders"),("admin","Admin: also manages the team")] %}
       <option value="{{ r }}" {{ "selected" if form and form.role == r }}>{{ lab }}</option>{% endfor %}</select></div>
-    <div class="field"><label for="password">Password (8+ characters)</label><input id="password" name="password" type="text" autocomplete="off" required></div>
+    <div class="field"><label for="password">Password (10+ characters)</label><input id="password" name="password" type="text" autocomplete="off" required></div>
   </div>
   <button class="btn" type="submit">Add person</button>
 </form>
