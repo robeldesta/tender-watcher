@@ -68,14 +68,30 @@ footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:
 
 <div class="wrap">
 <header>
-  <span class="eyebrow">Tender Watcher · open construction tenders in Ethiopia</span>
-  <h1>Open construction tenders, updated every morning</h1>
-  <p class="muted">Government, NGO and donor works tenders, sorted by closing date. Pick your grade and region to see only the tenders you can bid on. <span id="updated"></span></p>
+  <span class="eyebrow">Tender Watcher · open tenders in Ethiopia</span>
+  <h1>Open tenders, updated every morning</h1>
+  <p class="muted">Government, NGO, donor and company tenders, sorted by closing date. Pick a category and region to see the tenders that fit your business. <span id="updated"></span></p>
 </header>
 
 <form class="filters" id="filters" onsubmit="event.preventDefault()">
   <div class="field">
-    <label for="f-grade">My licence grade</label>
+    <label for="f-cat">Category</label>
+    <select id="f-cat">
+      <option value="">All categories</option>
+      <option value="construction">Construction and works</option>
+      <option value="goods">Goods and supplies</option>
+      <option value="services">Services</option>
+      <option value="consultancy">Consultancy</option>
+      <option value="vehicles">Vehicles and machinery</option>
+      <option value="it">IT and telecom</option>
+      <option value="medical">Medical and pharma</option>
+      <option value="sale">Sales and auctions</option>
+      <option value="rental">Rent and lease</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-grade">Contractor grade (construction)</label>
     <select id="f-grade">
       <option value="">Any grade</option>
       <option value="1">Grade 1</option><option value="2">Grade 2</option><option value="3">Grade 3</option>
@@ -99,7 +115,7 @@ footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:
   </div>
   <div class="field">
     <label for="f-q">Search</label>
-    <input id="f-q" type="search" placeholder="e.g. bridge, school, fence">
+    <input id="f-q" type="search" placeholder="e.g. laptops, bridge, cleaning">
   </div>
 </form>
 
@@ -109,12 +125,12 @@ footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:
 <section class="cta">
   <span class="eyebrow" style="color:inherit;opacity:.75">Free pilot · 10 Nov to 6 Dec 2026</span>
   <h2>Want the bid documents drafted too?</h2>
-  <p>Pilot firms get the tenders that fit their grade sent to them, plus up to two full bid packs drafted from their own licences, projects and staff. See an example: <a href="https://claude.ai/artifact/8dt2V5ajkMDL8ubWBHBcRS">sample bid pack</a>.</p>
+  <p>Pilot firms get the tenders that fit their business sent to them, plus up to two full bid packs drafted from their own licences, projects and staff. See an example: <a href="https://claude.ai/artifact/8dt2V5ajkMDL8ubWBHBcRS">sample bid pack</a>.</p>
   <p>To join, reply to the message this link came in.</p>
 </section>
 
 <footer>
-  <p>Collected from public notices on Modern Tenders, Reporter Tenders and the World Bank. Grades and deadlines are as published. Always confirm with the buyer before you prepare a bid. Tenders disappear from this list once they close.</p>
+  <p>Collected from public notices on Modern Tenders, Reporter Tenders and the World Bank. Grades and deadlines are as published; field-collected notices are checked by our team before they go up. Always confirm with the buyer before you prepare a bid. Tenders disappear from this list once they close.</p>
 </footer>
 </div>
 
@@ -155,6 +171,8 @@ footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:
 function boot(data){
   var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var TYPES={gov:'Government',ngo:'NGO / UN',donor:'Donor funded',company:'Company / bank'};
+  var CATS={construction:'Construction',goods:'Goods',services:'Services',consultancy:'Consultancy',vehicles:'Vehicles and machinery',it:'IT and telecom',medical:'Medical',sale:'Sale / auction',rental:'Rent / lease',other:'Other'};
+  function cat(t){ return t.category||'construction'; }
   function parse(d){ var p=d.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
   var now=new Date(); var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   function daysTo(d){ return Math.round((parse(d)-today)/86400000); }
@@ -172,14 +190,15 @@ function boot(data){
   var regionSel=document.getElementById('f-region');
   Array.from(new Set(open.map(function(t){return t.region;}))).sort().forEach(function(r){ var o=el('option',null,r); o.value=r; regionSel.appendChild(o); });
 
-  var ids=['f-grade','f-region','f-buyer','f-q'];
+  var ids=['f-cat','f-grade','f-region','f-buyer','f-q'];
   try{ var saved=JSON.parse(localStorage.getItem('tw-filters')||'{}'); ids.forEach(function(id){ if(saved[id]!=null) document.getElementById(id).value=saved[id]; }); }catch(e){}
 
   function render(){
-    var g=document.getElementById('f-grade').value, r=regionSel.value, b=document.getElementById('f-buyer').value, q=document.getElementById('f-q').value.trim().toLowerCase();
+    var c=document.getElementById('f-cat').value, g=document.getElementById('f-grade').value, r=regionSel.value, b=document.getElementById('f-buyer').value, q=document.getElementById('f-q').value.trim().toLowerCase();
     try{ var s={}; ids.forEach(function(id){ s[id]=document.getElementById(id).value; }); localStorage.setItem('tw-filters',JSON.stringify(s)); }catch(e){}
     var rows=open.filter(function(t){
-      if(g){ var n=gradeNum(t.grade); if(n!==null && n < +g) return false; }
+      if(c && cat(t)!==c) return false;
+      if(g && cat(t)==='construction'){ var n=gradeNum(t.grade); if(n!==null && n < +g) return false; }
       if(r && t.region!==r) return false;
       if(b && t.type!==b) return false;
       if(q && (t.buyer+' '+t.title+' '+t.place).toLowerCase().indexOf(q)<0) return false;
@@ -187,7 +206,7 @@ function boot(data){
     });
     var list=document.getElementById('list'); list.textContent='';
     document.getElementById('count').textContent=rows.length+' open tender'+(rows.length===1?'':'s')+(g?' you can bid on with grade '+g:'');
-    if(!rows.length){ list.appendChild(el('p','empty','No open tenders match these filters. Try another region or a different grade.')); return; }
+    if(!rows.length){ list.appendChild(el('p','empty','No open tenders match these filters. Try another category or region.')); return; }
     rows.forEach(function(t){
       var row=el('article','row');
       var due=el('div','due');
@@ -200,7 +219,8 @@ function boot(data){
       var meta=el('div','meta');
       if(t.closes){ var n=daysTo(t.closes); if(n<=3) meta.appendChild(el('span','tag soon',n===0?'Closes today':n===1?'1 day left':n+' days left')); else if(n<=7) meta.appendChild(el('span','tag week',n+' days left')); }
       if(t.firstSeen && daysTo(t.firstSeen) >= -1) meta.appendChild(el('span','tag new','New'));
-      meta.appendChild(el('span','tag grade',t.grade?t.grade+' and above':'Grade not stated'));
+      meta.appendChild(el('span','tag',CATS[cat(t)]||cat(t)));
+      if(cat(t)==='construction') meta.appendChild(el('span','tag grade',t.grade?t.grade+' and above':'Grade not stated'));
       meta.appendChild(el('span','tag',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:'')));
       meta.appendChild(el('span','tag',TYPES[t.type]||t.type));
       body.appendChild(meta);

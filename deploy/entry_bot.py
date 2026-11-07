@@ -37,7 +37,19 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo("Africa/Addis_Ababa")
 MODEL = "claude-opus-5-5"
 TYPES = ("gov", "ngo", "donor", "company")
-EDITABLE = ("buyer", "title", "region", "place", "grade", "closes", "time", "type",
+CATEGORIES = {  # board category id -> label
+    "construction": "Construction and works",
+    "goods": "Goods and supplies",
+    "services": "Services",
+    "consultancy": "Consultancy",
+    "vehicles": "Vehicles and machinery",
+    "it": "IT and telecom",
+    "medical": "Medical and pharma",
+    "sale": "Sales and auctions",
+    "rental": "Rent and lease",
+    "other": "Other",
+}
+EDITABLE = ("buyer", "title", "category", "region", "place", "grade", "closes", "time", "type",
             "bid_security", "document_fee", "newspaper")
 
 # ---------------------------------------------------------------- dates
@@ -78,13 +90,21 @@ Extract every separate tender in the photo (a page can hold several notices; lot
 are one tender). For each one give:
 - buyer: the organisation issuing the tender, in English if the notice gives an English name, \
 otherwise as written.
-- title: a short English description of the work or goods (e.g. "Construction of G+2 office \
-building at Bahir Dar"). Keep the notice number if there is one, as "(Ref ...)".
+- title: a short English description of what is being bought, sold or built (e.g. "Construction \
+of G+2 office building at Bahir Dar", "Supply of laptops and printers", "Sale of used vehicles"). \
+If the notice only says "Invitation to bid" without the subject, write "Subject not stated" and \
+mention it in doubts. Keep the notice number if there is one, as "(Ref ...)".
+- category: construction (building, civil, road, water works, maintenance, renovation), goods \
+(supplies, materials, equipment, uniforms, food), services (cleaning, security, transport, \
+printing, insurance, catering), consultancy (studies, design, supervision, audit, training), \
+vehicles (vehicles and machinery, buying or maintaining), it (IT, software, telecom), medical \
+(medical equipment, drugs, lab supplies), sale (sale or auction of property, vehicles, scrap), \
+rental (renting or leasing space, land or equipment), or other.
 - region: Ethiopian region or city administration (Addis Ababa, Amhara, Oromia, Tigray, Sidama, \
 SNNP, Afar, Somali, Benishangul-Gumuz, Gambella, Harari, Dire Dawa, South West Ethiopia, \
 Central Ethiopia), or "" if unclear.
 - place: town or site, or "".
-- grade: required contractor grade as a code such as GC-5, BC-3, RC-6, WWC-4 (general, building, \
+- grade: for construction only, the required contractor grade as a code such as GC-5, BC-3, RC-6, WWC-4 (general, building, \
 road, water works contractor; lowest acceptable grade), or "" if not stated.
 - closes: the bid CLOSING date (not the opening or publication date). Copy the date text exactly \
 into raw. Set calendar to "ethiopian" when the date is in the Ethiopian calendar (e.g. \
@@ -96,8 +116,6 @@ says "N days after publication", leave year/month/day as 0 and put the text in r
 - type: gov (ministry, bureau, city, public enterprise, university), ngo, donor (UN, World Bank \
 project units, embassies), or company.
 - bid_security and document_fee: as written (amount and currency), or "".
-- is_works: true if this is construction, rehabilitation, maintenance or civil works, false for \
-goods, services, consultancy, rentals, auctions or sales.
 - doubts: anything you could not read or are unsure of, in a few words; "" if none.
 
 Also give newspaper and published date if visible on the page (e.g. "Addis Zemen, 5 Nov 2026").
@@ -131,11 +149,11 @@ TENDER_SCHEMA = {
         "type": {"type": "string", "enum": list(TYPES)},
         "bid_security": {"type": "string"},
         "document_fee": {"type": "string"},
-        "is_works": {"type": "boolean"},
+        "category": {"type": "string", "enum": list(CATEGORIES)},
         "doubts": {"type": "string"},
     },
     "required": ["buyer", "title", "region", "place", "grade", "closes", "time", "type",
-                 "bid_security", "document_fee", "is_works", "doubts"],
+                 "bid_security", "document_fee", "category", "doubts"],
     "additionalProperties": False,
 }
 OUTPUT_SCHEMA = {
@@ -202,7 +220,7 @@ def to_entry(t, newspaper, today):
         "bid_security": t.get("bid_security", "").strip(),
         "document_fee": t.get("document_fee", "").strip(),
         "newspaper": newspaper.strip(),
-        "is_works": bool(t.get("is_works")),
+        "category": t.get("category") if t.get("category") in CATEGORIES else "other",
         "doubts": t.get("doubts", "").strip(),
         "firstSeen": today,
     }
@@ -254,6 +272,7 @@ def board_entry(e, tid, notice_url):
         "id": tid,
         "buyer": e["buyer"],
         "title": e["title"],
+        "category": e.get("category", "other"),
         "region": e["region"],
         "place": e["place"],
         "grade": e["grade"],
@@ -449,8 +468,9 @@ class Bot:
         lines = [
             f"Buyer: {e['buyer']}",
             f"Title: {e['title']}",
+            f"Category: {CATEGORIES.get(e.get('category'), 'not set')}",
             f"Region: {e['region'] or '?'}  Place: {e['place'] or '?'}",
-            f"Grade: {e['grade'] or 'not stated'}",
+            f"Grade: {e['grade'] or 'not stated'}" if e.get("category") == "construction" else "Grade: -",
             f"Closes: {e['closes'] or '?'} {e['time']}  (notice says: {e['closes_raw'] or '-'})",
             f"Type: {e['type']}",
             f"Bid security: {e['bid_security'] or '-'}  Doc fee: {e['document_fee'] or '-'}",
@@ -458,8 +478,6 @@ class Bot:
             f"From: {p['collector']}",
         ]
         warn = []
-        if not e["is_works"]:
-            warn.append("Not construction works?")
         if not e["closes"]:
             warn.append("No closing date; fix with 'closes: YYYY-MM-DD'")
         elif e["closes"] < self.today():
@@ -510,6 +528,9 @@ class Bot:
                 except ValueError:
                     bad.append(line.strip() + " (use YYYY-MM-DD)")
                     continue
+            if k == "category" and v not in CATEGORIES:
+                bad.append(line.strip() + " (" + ", ".join(CATEGORIES) + ")")
+                continue
             if k == "type" and v not in TYPES:
                 bad.append(line.strip() + " (gov, ngo, donor or company)")
                 continue

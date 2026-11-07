@@ -22,7 +22,7 @@ NOTICE = {
         "region": "Amhara", "place": "Bahir Dar", "grade": "gc 5",
         "closes": {"raw": "ኅዳር 11 ቀን 2019 ዓ.ም", "calendar": "ethiopian", "year": 2019, "month": 3, "day": 11},
         "time": "10:00", "type": "gov", "bid_security": "ETB 50,000", "document_fee": "ETB 300",
-        "is_works": True, "doubts": "",
+        "category": "construction", "doubts": "",
     }],
 }
 
@@ -125,7 +125,8 @@ def test_photo_goes_to_review_then_board(setup):
     new = next(t for t in tenders if t["id"] == "fc-" + pid)
     assert new["grade"] == "GC-4" and new["closes"] == "2026-11-20" and new["time"] == "10:00"
     assert new["url"] == f"/notices/{pid}.jpg" and new["source"] == "Addis Zemen, 5 Nov 2026"
-    assert set(new) == {"id", "buyer", "title", "region", "place", "grade", "closes", "time",
+    assert new["category"] == "construction"
+    assert set(new) == {"id", "buyer", "title", "category", "region", "place", "grade", "closes", "time",
                         "type", "firstSeen", "url", "source"}
     assert os.path.exists(os.path.join(bot.notices_dir, pid + ".jpg"))
     assert "Live on the board" in tg.texts(COLLECTOR)[-1]
@@ -168,3 +169,22 @@ def test_duplicate_warning(setup):
     board.write_text(json.dumps(data))
     bot.handle(photo_msg())
     assert "Already on the board (Modern Tenders)" in tg.photos[0][1]
+
+
+def test_non_construction_and_category_fix(setup):
+    bot, tg, claude, board = setup
+    out = json.loads(json.dumps(NOTICE))
+    out["tenders"][0].update(category="goods", grade="", title="Supply of laptops")
+    bot.claude = FakeClaude(out=out)
+    bot.handle(photo_msg())
+    (chat, caption, markup, mid), = tg.photos
+    assert "Category: Goods and supplies" in caption and "Not construction" not in caption
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": "category: it",
+                            "reply_to_message": {"message_id": mid}}})
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": "category: toys",
+                            "reply_to_message": {"message_id": mid}}})
+    assert "Could not use" in tg.texts(REVIEWER)[-1]
+    pid = markup["inline_keyboard"][0][0]["callback_data"].split(":")[1]
+    bot.handle({"callback_query": {"id": "q", "from": {"id": REVIEWER}, "data": "ok:" + pid}})
+    new = next(t for t in json.loads(board.read_text())["tenders"] if t["id"] == "fc-" + pid)
+    assert new["category"] == "it"

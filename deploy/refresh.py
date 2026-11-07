@@ -277,6 +277,7 @@ def main():
             "region": d["region"],
             "place": d["place"],
             "grade": grade,
+            "category": "construction",
             "closes": d["closes"],
             "time": d["time"],
             "type": guess_type(d["buyer"] or d["title"], d["author"]),
