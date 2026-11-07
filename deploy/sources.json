@@ -44,6 +44,6 @@
     {"id": "giz", "group": "donor", "type": "donor", "name": "GIZ Ethiopia", "url": "https://www.giz.de/en/worldwide/336.html"},
     {"id": "savechildren", "group": "ngo", "type": "ngo", "name": "Save the Children Ethiopia", "url": "https://ethiopia.savethechildren.net/"},
     {"id": "sossahel", "group": "ngo", "type": "ngo", "name": "SOS Sahel Ethiopia", "url": "https://www.sossahel.org.et/"},
-    {"id": "ethiopianreporter", "group": "other", "type": "company", "name": "Reporter Tenders", "url": "https://www.reportertenders.com/", "enabled": false}
+    {"id": "ethiopianreporter", "group": "other", "type": "company", "name": "Reporter Tenders", "url": "https://www.reportertenders.com/", "enabled": false, "why": "competitor; we do not copy their listings"}
   ]
 }

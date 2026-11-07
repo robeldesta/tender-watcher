@@ -28,6 +28,7 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -380,8 +381,15 @@ def tender_links(page, base):
 class Web:
     """Polite fetching: robots.txt, one request at a time, a pause between requests."""
 
-    def __init__(self, delay=3.0):
+    def __init__(self, delay=3.0, extra_ca=None):
+        import ssl
         self.delay, self.robots, self.last = delay, {}, 0.0
+        # Some Ethiopian sites send an incomplete certificate chain. Adding the missing
+        # intermediate certificates here keeps full HTTPS verification on.
+        extra_ca = extra_ca if extra_ca is not None else os.environ.get("EXTRA_CA_FILE", "/opt/tenders/extra-ca.pem")
+        self.ctx = ssl.create_default_context()
+        if extra_ca and os.path.exists(extra_ca):
+            self.ctx.load_verify_locations(cafile=extra_ca)
 
     def allowed(self, url):
         import urllib.robotparser
@@ -389,10 +397,14 @@ class Web:
         root = f"{parts.scheme}://{parts.netloc}"
         if root not in self.robots:
             rp = urllib.robotparser.RobotFileParser(root + "/robots.txt")
+            req = urllib.request.Request(root + "/robots.txt", headers={"User-Agent": UA})
             try:
-                rp.read()
-            except Exception:
-                rp = None  # no readable robots.txt: allowed
+                with urllib.request.urlopen(req, timeout=30, context=self.ctx) as r:
+                    rp.parse(r.read(500_000).decode("utf-8", "replace").splitlines())
+            except urllib.error.HTTPError as e:
+                if e.code >= 500:
+                    raise  # server trouble: try again another day rather than guess
+                rp = None  # no robots.txt (404 etc.): allowed
             self.robots[root] = rp
         rp = self.robots[root]
         return rp is None or rp.can_fetch(UA, url)
@@ -405,7 +417,7 @@ class Web:
             time.sleep(wait)
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "en,am;q=0.8"})
         try:
-            with urllib.request.urlopen(req, timeout=40) as r:
+            with urllib.request.urlopen(req, timeout=40, context=self.ctx) as r:
                 body = r.read(MAX_BYTES + 1)
                 ctype = r.headers.get_content_type()
         finally:
