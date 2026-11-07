@@ -544,7 +544,8 @@ class Chapa:
 
     def checkout(self, tx_ref, amount, name, return_url):
         r = self._req("POST", "/transaction/initialize", {
-            "amount": str(amount), "currency": "ETB", "tx_ref": tx_ref, "first_name": name[:50] or "Subscriber",
+            "amount": f"{amount:.2f}", "currency": "ETB", "tx_ref": tx_ref,
+            "first_name": name[:50] or "Subscriber", "last_name": name[:50] or "Subscriber",
             "return_url": return_url,
             "customization": {"title": "Tender Watcher", "description": "Tender alerts subscription"}})
         if r.get("status") != "success":
@@ -555,12 +556,13 @@ class Chapa:
         """True when Chapa reports this payment as successful for the full amount in ETB."""
         r = self._req("GET", "/transaction/verify/" + urllib.parse.quote(tx_ref))
         d = r.get("data") or {}
+        from decimal import Decimal, InvalidOperation
         try:
-            ok_amount = float(d.get("amount", 0)) >= amount
-        except (TypeError, ValueError):
+            ok_amount = Decimal(str(d.get("amount"))) == Decimal(amount)
+        except (InvalidOperation, ValueError):
             ok_amount = False
-        return r.get("status") == "success" and d.get("status") == "success" and ok_amount \
-            and d.get("currency", "ETB") == "ETB" and d.get("tx_ref", tx_ref) == tx_ref
+        return r.get("status") == "success" and str(d.get("status", "")).lower() == "success" and ok_amount \
+            and str(d.get("currency", "")).upper() == "ETB" and d.get("tx_ref") == tx_ref
 
 
 def keyword_hit(keywords, text):

@@ -410,3 +410,14 @@ def test_warning_before_trial_ends(setup):
     n = len(tg.texts(888))
     bot.send_alerts()
     assert len(tg.texts(888)) == n  # warned once
+
+
+def test_chapa_verify_rules(monkeypatch):
+    c = eb.Chapa("CHASECK_TEST-x")
+    reply = {"status": "success", "data": {"status": "success", "amount": "2400.00", "currency": "ETB", "tx_ref": "TW-1"}}
+    monkeypatch.setattr(c, "_req", lambda *a, **k: reply)
+    assert c.paid("TW-1", 2400)
+    assert not c.paid("TW-1", 299)  # wrong amount
+    assert not c.paid("TW-2", 2400)  # someone else's reference
+    reply["data"]["status"] = "failed/pending"
+    assert not c.paid("TW-1", 2400)
