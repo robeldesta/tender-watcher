@@ -40,6 +40,10 @@ LISTINGS = [
     ("/tenders/competency/building-contractor-grade-5", "BC-5", "construction", 1),
     ("/tenders/industry/ict-technology", "", "it", 5),
     ("/tenders/industry/electrical-power", "", "electrical", 5),
+    ("/tenders/industry/consultancy-services", "", "consultancy", 5),
+    ("/tenders/industry/hospitality-tourism", "", "services", 3),
+    ("/tenders/industry/printing-publishing", "", "services", 3),
+    ("/tenders/industry/miscellaneous", "", "other", 3),
 ]
 
 # Construction works signals (English + Amharic).
