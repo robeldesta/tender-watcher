@@ -44,6 +44,7 @@ CATEGORIES = {  # board category id -> label
     "consultancy": "Consultancy",
     "vehicles": "Vehicles and machinery",
     "it": "IT and telecom",
+    "electrical": "Electrical and power",
     "medical": "Medical and pharma",
     "sale": "Sales and auctions",
     "rental": "Rent and lease",
@@ -97,7 +98,8 @@ mention it in doubts. Keep the notice number if there is one, as "(Ref ...)".
 - category: construction (building, civil, road, water works, maintenance, renovation), goods \
 (supplies, materials, equipment, uniforms, food), services (cleaning, security, transport, \
 printing, insurance, catering), consultancy (studies, design, supervision, audit, training), \
-vehicles (vehicles and machinery, buying or maintaining), it (IT, software, telecom), medical \
+vehicles (vehicles and machinery, buying or maintaining), it (IT, software, telecom, data \
+centres), electrical (power, generators, UPS, electrical installation), medical \
 (medical equipment, drugs, lab supplies), sale (sale or auction of property, vehicles, scrap), \
 rental (renting or leasing space, land or equipment), or other.
 - region: Ethiopian region or city administration (Addis Ababa, Amhara, Oromia, Tigray, Sidama, \

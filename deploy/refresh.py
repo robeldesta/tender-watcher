@@ -3,7 +3,8 @@
 
 Reads the public listing pages and the public teaser of each tender page
 (robots.txt allows /tenders/*; the gated part of a page is never requested
-or bypassed). Keeps construction works only, merges into tenders.json and
+or bypassed). Keeps construction works from the construction listings, plus ICT and
+electrical/power tenders, merges into tenders.json and
 writes it atomically.
 
 Usage: python3 refresh.py [--out /opt/tenders/site/tenders.json] [--dry-run]
@@ -28,12 +29,16 @@ DELAY = 2.0  # seconds between requests, minimum
 TZ = ZoneInfo("Africa/Addis_Ababa")
 STALE_DAYS = 21
 
-# listing path -> grade implied by that listing ("" = none)
+# listing path -> (grade implied by that listing ("" = none), board category)
+# Construction listings are filtered to real works; other listings take
+# their category as given.
 LISTINGS = [
-    ("/tenders/industry/construction", ""),
-    ("/tenders/competency/general-contractor-grade-3", "GC-3"),
-    ("/tenders/competency/general-contractor-grade-5", "GC-5"),
-    ("/tenders/competency/building-contractor-grade-5", "BC-5"),
+    ("/tenders/industry/construction", "", "construction"),
+    ("/tenders/competency/general-contractor-grade-3", "GC-3", "construction"),
+    ("/tenders/competency/general-contractor-grade-5", "GC-5", "construction"),
+    ("/tenders/competency/building-contractor-grade-5", "BC-5", "construction"),
+    ("/tenders/industry/ict-technology", "", "it"),
+    ("/tenders/industry/electrical-power", "", "electrical"),
 ]
 
 # Construction works signals (English + Amharic).
@@ -239,8 +244,8 @@ def main():
         if c:
             known_codes[c.group(1)] = t
 
-    seen = {}  # code -> (url, set of implied grades)
-    for path, grade in LISTINGS:
+    seen = {}  # code -> (url, set of implied grades, set of categories)
+    for path, grade, cat in LISTINGS:
         try:
             page = fetch(path)
         except Exception as e:  # keep going with the other listings
@@ -249,13 +254,14 @@ def main():
         codes = listing_codes(page)
         print(f"{path}: {len(codes)} tenders")
         for code, url in codes.items():
-            u, g = seen.setdefault(code, (url, set()))
+            u, g, cats = seen.setdefault(code, (url, set(), set()))
             if grade:
                 g.add(grade)
+            cats.add(cat)
 
     added, skipped, failed = 0, 0, 0
     fresh = []
-    for code, (url, grades) in seen.items():
+    for code, (url, grades, cats) in seen.items():
         if code in known_codes:
             continue  # already on the board; keep its data and firstSeen
         try:
@@ -264,12 +270,18 @@ def main():
             failed += 1
             print(f"detail failed {url}: {e}", file=sys.stderr)
             continue
-        if not d["title"] or not is_works(d):
+        if not d["title"]:
             skipped += 1
             continue
-        grade = find_grade(" ".join([d["title"], d["summary"], d["keywords"]]))
-        if not grade and grades:
-            grade = min(grades, key=lambda x: int(x.split("-")[1]))
+        if "construction" in cats and is_works(d):
+            category, grade = "construction", find_grade(" ".join([d["title"], d["summary"], d["keywords"]]))
+            if not grade and grades:
+                grade = min(grades, key=lambda x: int(x.split("-")[1]))
+        elif cats - {"construction"}:
+            category, grade = sorted(cats - {"construction"})[0], ""
+        else:
+            skipped += 1  # construction listing, but not works
+            continue
         fresh.append({
             "id": "mt-" + code,
             "buyer": d["buyer"],
@@ -277,7 +289,7 @@ def main():
             "region": d["region"],
             "place": d["place"],
             "grade": grade,
-            "category": "construction",
+            "category": category,
             "closes": d["closes"],
             "time": d["time"],
             "type": guess_type(d["buyer"] or d["title"], d["author"]),

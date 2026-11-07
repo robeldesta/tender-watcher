@@ -84,6 +84,7 @@ footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:
       <option value="consultancy">Consultancy</option>
       <option value="vehicles">Vehicles and machinery</option>
       <option value="it">IT and telecom</option>
+      <option value="electrical">Electrical and power</option>
       <option value="medical">Medical and pharma</option>
       <option value="sale">Sales and auctions</option>
       <option value="rental">Rent and lease</option>
@@ -171,7 +172,7 @@ footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:
 function boot(data){
   var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var TYPES={gov:'Government',ngo:'NGO / UN',donor:'Donor funded',company:'Company / bank'};
-  var CATS={construction:'Construction',goods:'Goods',services:'Services',consultancy:'Consultancy',vehicles:'Vehicles and machinery',it:'IT and telecom',medical:'Medical',sale:'Sale / auction',rental:'Rent / lease',other:'Other'};
+  var CATS={construction:'Construction',goods:'Goods',services:'Services',consultancy:'Consultancy',vehicles:'Vehicles and machinery',it:'IT and telecom',electrical:'Electrical and power',medical:'Medical',sale:'Sale / auction',rental:'Rent / lease',other:'Other'};
   function cat(t){ return t.category||'construction'; }
   function parse(d){ var p=d.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
   var now=new Date(); var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
