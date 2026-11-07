@@ -457,3 +457,20 @@ def test_polling_slows_after_an_hour(setup):
     assert not bot.due_for_check("x", pay, 1030) and bot.due_for_check("x", {"created": 900}, 1060)
     bot._checked["x"] = 5000
     assert not bot.due_for_check("x", pay, 5300) and bot.due_for_check("x", pay, 5900)
+
+
+def test_refresh_flags_odd_dates():
+    rspec = importlib.util.spec_from_file_location(
+        "refresh", Path(__file__).resolve().parent.parent / "deploy" / "refresh.py")
+    rf = importlib.util.module_from_spec(rspec)
+    rspec.loader.exec_module(rf)
+    import datetime as dt
+    today = dt.date(2026, 11, 7)
+    ts = [{"closes": "2028-03-03", "time": "08:30"}, {"closes": "2026-11-18", "time": "04:00"},
+          {"closes": "2026-11-25", "time": "10:00", "check": True, "check_why": "old"}, {"closes": "", "time": ""}]
+    rf.flag_checks(ts, today)
+    assert ts[0]["check"] and "6 months" in ts[0]["check_why"] and "06:00" in ts[0]["check_why"]
+    assert ts[1]["check"] and "Ethiopian clock" in ts[1]["check_why"]
+    assert "check" not in ts[2] and "check" not in ts[3]
+    chunk = eb.alert_chunks("h", [dict(ts[1], id="x", title="T", buyer="B")], "https://s")[0]
+    assert "(to be confirmed)" in chunk

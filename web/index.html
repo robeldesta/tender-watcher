@@ -229,6 +229,7 @@ function boot(data){
       var tp=el('p'); var ta=el('a','title',t.title); ta.href='#t/'+encodeURIComponent(t.id); tp.appendChild(ta); body.appendChild(tp);
       var meta=el('div','meta');
       if(t.closes){ var n=daysTo(t.closes); if(n<=3) meta.appendChild(el('span','tag soon',n===0?'Closes today':n===1?'1 day left':n+' days left')); else if(n<=7) meta.appendChild(el('span','tag week',n+' days left')); }
+      if(t.check) meta.appendChild(el('span','tag soon','Date to confirm'));
       if(t.firstSeen && daysTo(t.firstSeen) >= -1) meta.appendChild(el('span','tag new','New'));
       meta.appendChild(el('span','tag',CATS[cat(t)]||cat(t)));
       if(cat(t)==='construction') meta.appendChild(el('span','tag grade',t.grade?t.grade+' and above':'Grade not stated'));
@@ -250,7 +251,8 @@ function boot(data){
     var dl=el('dl');
     function row(k,v){ if(!v) return; dl.appendChild(el('dt',null,k)); dl.appendChild(el('dd',null,v)); }
     var closes=t.closes?fmt(t.closes)+(t.time?', '+t.time:''):'Not stated. Check the notice.';
-    if(t.closes){ var n=daysTo(t.closes); closes+=n<0?' (closed)':n===0?' (today)':' ('+n+' day'+(n===1?'':'s')+' left)'; if(n>183) closes+='. This date looks unusual; check the notice.'; }
+    if(t.closes){ var n=daysTo(t.closes); closes+=n<0?' (closed)':n===0?' (today)':' ('+n+' day'+(n===1?'':'s')+' left)'; }
+    if(t.check) closes+='. To be confirmed: '+(t.check_why||'this date or time looks unusual')+'.';
     row('Closes',closes);
     row('Category',CATS[cat(t)]||cat(t));
     if(cat(t)==='construction') row('Grade',t.grade?t.grade+' and above':'Not stated');

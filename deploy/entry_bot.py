@@ -586,6 +586,8 @@ def alert_chunks(head, tenders, site_url):
     for t in tenders:
         url = site_url + "/#t/" + urllib.parse.quote(str(t.get("id", "")))  # always our own page
         when = (t.get("closes") or "date not given") + (" " + t["time"] if t.get("time") else "")
+        if t.get("check"):
+            when += " (to be confirmed)"
         item = f"\n\n• {t.get('title', '')[:200]}\n{t.get('buyer', '')[:100]}\nCloses {when}" + (f"\n{url}" if url else "")
         if len(cur) + len(item) > 3900:
             out.append(cur)

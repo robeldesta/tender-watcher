@@ -96,6 +96,31 @@ GRADE_RE = [
     (re.compile(r"road\s+contractors?\D{0,30}?grade\s*(\d{1,2})", re.I), "RC"),
 ]
 CODE_RE = re.compile(r"/tenders/([a-z0-9]{10})-")
+CHECK_DAYS = 183  # a closing date further out than this is almost always a typo in the source
+
+
+def check_reasons(closes, time_, today):
+    """Why a closing date/time looks wrong; empty when it looks fine. Dates are never changed."""
+    why = []
+    if closes:
+        try:
+            days = (dt.date.fromisoformat(closes) - today).days
+        except ValueError:
+            days = None
+        if days is None or days > CHECK_DAYS:
+            why.append("closing date more than 6 months away")
+    if time_ and not ("06:00" <= time_ <= "18:00"):
+        why.append("closing time outside 06:00-18:00 (Ethiopian clock?)")
+    return why
+
+
+def flag_checks(tenders, today):
+    for t in tenders:
+        why = check_reasons(t.get("closes", ""), t.get("time", ""), today)
+        t.pop("check", None)
+        t.pop("check_why", None)
+        if why:
+            t["check"], t["check_why"] = True, "; ".join(why)
 
 
 _last = [0.0]
@@ -352,6 +377,7 @@ def main():
         have = {t.get("id") for t in merged}
         merged += [t for t in now if t.get("id") not in have and keep(t)]
         merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
+        flag_checks(merged, today)
         write_atomic(args.out, out)
         archive(os.path.join(os.path.dirname(os.path.abspath(args.out)), "archive.json"), gone)
 
