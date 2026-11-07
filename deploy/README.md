@@ -98,3 +98,29 @@ sudo bash -c 'set -a; . /opt/tenders/entry-bot.env; /opt/tenders/venv/bin/python
 Set `"enabled": false` on any source that fails or is blocked, and replace a
 home page `url` with the site's own tender page once it is known. The first
 run of a new source sends at most 3 notices; later runs at most 10.
+
+## Subscriber alerts (trial and paid)
+
+Until the web app has billing, subscribers get their matches from the same
+bot. Each morning after `ALERT_HOUR` (Addis time) every active subscriber gets
+the open tenders on the board that match their categories or keywords and that
+they have not been sent before. A new subscriber has a 14-day free trial; when
+it ends they get one message with the price (ETB 299/month or ETB 2,400/year)
+and then nothing until a reviewer records the payment.
+
+The subscriber sends `/start` to the bot and gives you the number it replies
+with. Then, as a reviewer, send the bot:
+
+```
+/subscribe 123456789 vehicles name=Myagta_Trading
+/subscribe 123456789 consultancy,services kw=survey,evaluation,electronics name=Delta
+/paid 123456789 2027-11-22
+/subs
+/unsubscribe 123456789
+```
+
+`/subscribe` starts the trial and sends them every matching open tender right
+away. Without `kw=`, sensible words for the category are used (for vehicles:
+bus, truck, pickup, spare parts, ተሽከርካሪ, ...). Categories: construction,
+goods, services, consultancy, vehicles, it, electrical, medical, sale, rental,
+other.

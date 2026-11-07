@@ -271,3 +271,78 @@ def test_sources_file_is_valid():
     assert len(ids_) == len(set(ids_))
     for s in sources:
         assert s["url"].startswith("https://") and s["name"] and s["type"] in eb.TYPES
+
+
+def test_keyword_hit():
+    kws = eb.DEFAULT_KEYWORDS["vehicles"]
+    assert eb.keyword_hit(kws, "procurement of 3 buses and 2 trucks")
+    assert eb.keyword_hit(kws, "supply of spare parts for heavy duty vehicles")
+    assert eb.keyword_hit(kws, "የተሽከርካሪ ጎማ ግዥ")
+    assert eb.keyword_hit(kws, "ተሽከርካሪዎች ግዥ")
+    assert not eb.keyword_hit(kws, "business development consultancy")
+    assert eb.keyword_hit(["consultan*"], "consultancy service")
+
+
+def test_subscriber_trial_alerts_and_expiry(setup):
+    bot, tg, claude, board = setup
+    day = {"d": "2026-11-07"}
+    bot.today = lambda: day["d"]
+    data = json.loads(board.read_text())
+    data["tenders"] += [
+        {"id": "mt-2", "buyer": "Ethiopian Roads", "title": "Procurement of 4 pickup trucks", "category": "goods",
+         "closes": "2026-11-25", "url": "https://moderntenders.com/tenders/x"},
+        {"id": "mt-3", "buyer": "AAU", "title": "Supply of laptops", "category": "it", "closes": "2026-11-25"},
+        {"id": "mt-4", "buyer": "City Bus", "title": "Bus tyres", "category": "vehicles", "closes": "2026-11-01"},
+        {"id": "fc-5", "buyer": "EEU", "title": "Supply of utility vehicles", "category": "vehicles",
+         "closes": "2026-11-30", "url": "/notices/abc.jpg"}]
+    board.write_text(json.dumps(data))
+    SUB = 555
+
+    # only reviewers can subscribe someone
+    bot.handle({"message": {"from": {"id": COLLECTOR}, "chat": {"id": COLLECTOR},
+                            "text": f"/subscribe {SUB} vehicles name=Myagta"}})
+    assert bot.load_subs() == {}
+
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER},
+                            "text": f"/subscribe {SUB} vehicles name=Myagta_Trading"}})
+    assert "trial until 2026-11-21" in tg.texts(REVIEWER)[-1] and "Sent 2" in tg.texts(REVIEWER)[-1]
+    first = tg.texts(SUB)
+    assert "Welcome" in first[0] and "Free trial until 2026-11-21" in first[0]
+    assert "pickup trucks" in first[1] and "https://tenders.sonador.et/notices/abc.jpg" in first[1]
+    assert "laptops" not in first[1] and "tyres" not in first[1]  # other sector; already closed
+
+    # the subscriber's own message gets their status, not "not registered"
+    bot.handle({"message": {"from": {"id": SUB}, "chat": {"id": SUB}, "text": "/start"}})
+    assert "Myagta Trading" in tg.texts(SUB)[-1]
+
+    # nothing new: no message; a new matching tender: one message
+    n = len(tg.texts(SUB))
+    assert bot.send_alerts() == 0 and len(tg.texts(SUB)) == n
+    data["tenders"].append({"id": "web-6", "buyer": "UNICEF", "title": "Ambulance supply",
+                            "category": "medical", "closes": "2026-12-05", "url": "https://unicef.org/t"})
+    board.write_text(json.dumps(data))
+    assert bot.send_alerts() == 1 and "1 new tender for you today" in tg.texts(SUB)[-1]
+
+    # trial ends: one notice with the price, then silence
+    day["d"] = "2026-11-22"
+    bot.send_alerts()
+    assert "ETB 299" in tg.texts(SUB)[-1]
+    n = len(tg.texts(SUB))
+    bot.send_alerts()
+    assert len(tg.texts(SUB)) == n
+
+    # paid: alerts resume
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": f"/paid {SUB} 2027-11-22"}})
+    assert "paid until 2027-11-22" in tg.texts(SUB)[-1]
+    assert bot.active(bot.load_subs()[str(SUB)])
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": "/subs"}})
+    assert "Myagta Trading: vehicles" in tg.texts(REVIEWER)[-1]
+    bot.handle({"message": {"from": {"id": REVIEWER}, "chat": {"id": REVIEWER}, "text": "/subscribe x toys"}})
+    assert "Usage" in tg.texts(REVIEWER)[-1]
+
+
+def test_alert_chunks_split():
+    ts = [{"id": str(i), "title": "T" * 190, "buyer": "B", "closes": "2026-12-01"} for i in range(60)]
+    chunks = eb.alert_chunks("head", ts, "https://x")
+    assert len(chunks) > 1 and all(len(c) < 4096 for c in chunks)
+    assert sum(c.count("• ") for c in chunks) == 60

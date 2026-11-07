@@ -50,6 +50,16 @@ CATEGORIES = {  # board category id -> label
     "rental": "Rent and lease",
     "other": "Other",
 }
+SITE_URL = "https://tenders.sonador.et"
+TRIAL_DAYS = 14
+PAY_TEXT = ("To keep getting tenders: ETB 299 a month or ETB 2,400 a year. "
+            "Reply here or contact Sonador Systems to pay.")
+DEFAULT_KEYWORDS = {  # words that catch a sector's tenders listed under other categories
+    "vehicles": ["vehicle", "bus", "buses", "truck", "pickup", "pick-up", "automobile", "minibus", "ambulance",
+                 "motorcycle", "tyre", "tire", "spare part", "ተሽከርካሪ", "መኪና", "አውቶቡስ", "የጭነት", "መለዋወጫ"],
+    "consultancy": ["consultan*", "survey", "evaluation", "assessment", "baseline", "study", "studies", "research"],
+    "it": ["software", "hardware", "network", "server", "data center", "data centre", "ict", "computer"],
+}
 EDITABLE = ("buyer", "title", "category", "region", "place", "grade", "closes", "time", "type",
             "bid_security", "document_fee", "newspaper")
 
@@ -496,13 +506,46 @@ class Telegram:
 # ---------------------------------------------------------------- the bot
 
 
+def keyword_hit(keywords, text):
+    """Whole-word match (plural s/es allowed); a keyword ending in * matches as a word start.
+    Amharic and other non-Latin keywords match anywhere, since prefixes like የ- attach to the word."""
+    for k in keywords:
+        k = k.lower()
+        if not k.isascii():
+            if k.rstrip("*") in text:
+                return True
+            continue
+        pat = r"(?<!\w)" + (re.escape(k[:-1]) if k.endswith("*") else re.escape(k) + r"(?:s|es)?(?!\w)")
+        if re.search(pat, text):
+            return True
+    return False
+
+
+def alert_chunks(head, tenders, site_url):
+    """Telegram messages (under 4000 characters each) listing tenders."""
+    out, cur = [], head
+    for t in tenders:
+        url = t.get("url") or ""
+        if url.startswith("/"):
+            url = site_url + url
+        when = (t.get("closes") or "date not given") + (" " + t["time"] if t.get("time") else "")
+        item = f"\n\n• {t.get('title', '')[:200]}\n{t.get('buyer', '')[:100]}\nCloses {when}" + (f"\n{url}" if url else "")
+        if len(cur) + len(item) > 3900:
+            out.append(cur)
+            cur = "(continued)"
+        cur += item
+    out.append(cur + f"\n\nAll open tenders: {site_url}")
+    return out
+
+
 def ids(s):
     return {int(x) for x in re.split(r"[,\s]+", s or "") if x.strip().lstrip("-").isdigit()}
 
 
 class Bot:
     def __init__(self, tg, claude, *, board, state_dir, notices_dir, notices_url,
-                 reviewers, collectors, today=None, sources_path="", watch_hour=6):
+                 reviewers, collectors, today=None, sources_path="", watch_hour=6, alert_hour=8,
+                 site_url=SITE_URL):
         self.tg, self.claude = tg, claude
         self.board, self.state = board, state_dir
         self.notices_dir, self.notices_url = notices_dir, notices_url.rstrip("/")
@@ -510,6 +553,7 @@ class Bot:
         self.collectors = set(collectors) | self.reviewers
         self.today = today or (lambda: dt.datetime.now(TZ).date().isoformat())
         self.sources_path, self.watch_hour = sources_path, watch_hour
+        self.alert_hour, self.site_url = alert_hour, site_url.rstrip("/")
         for d in ("pending", "photos"):
             os.makedirs(os.path.join(state_dir, d), exist_ok=True)
         os.makedirs(notices_dir, exist_ok=True)
@@ -559,6 +603,9 @@ class Bot:
             return
         uid, chat = m["from"]["id"], m["chat"]["id"]
         text = m.get("text", "")
+        subs = self.load_subs()
+        if str(uid) in subs and uid not in self.collectors:
+            return self.say(chat, self.sub_status(subs[str(uid)]))
         if text.startswith("/start") or text.startswith("/id"):
             role = "reviewer" if uid in self.reviewers else "collector" if uid in self.collectors else None
             msg = f"Your Telegram ID is {uid}."
@@ -570,6 +617,8 @@ class Bot:
             return self.say(chat, f"You are not registered. Your Telegram ID is {uid}; send it to the Tender Watcher team.")
         if text.startswith("/stats") and uid in self.reviewers:
             return self.say(chat, self.stats())
+        if uid in self.reviewers and text.split(" ")[0] in ("/subscribe", "/paid", "/subs", "/unsubscribe"):
+            return self.say(chat, self.sub_command(text))
         if m.get("reply_to_message") and uid in self.reviewers and text:
             return self.on_correction(m)
         photo = None
@@ -800,25 +849,166 @@ class Bot:
         lines += [f"{n}: {c}" for n, c in sorted(counts.items(), key=lambda x: -x[1])]
         return "\n".join(lines)
 
-    def _daily_watch(self):
-        """Check buyer websites once a day at WATCH_HOUR (Addis time), inside this service."""
-        stamp = os.path.join(self.state, "last-watch")
+    def _once_a_day(self, name, hour, job):
+        stamp = os.path.join(self.state, "last-" + name)
+        now = dt.datetime.now(TZ)
+        try:
+            last = open(stamp).read().strip()
+        except OSError:
+            last = ""
+        if now.hour < hour or last == now.date().isoformat():
+            return
+        try:
+            job()
+        except Exception:
+            traceback.print_exc()
+        with open(stamp, "w") as f:
+            f.write(now.date().isoformat())
+
+    def _daily(self):
+        """Website watch at WATCH_HOUR and subscriber alerts at ALERT_HOUR (Addis time), inside this service."""
+        log = lambda m: print(m, flush=True)  # noqa: E731
         while True:
-            now = dt.datetime.now(TZ)
-            try:
-                last = open(stamp).read().strip()
-            except OSError:
-                last = ""
-            if now.hour >= self.watch_hour and last != now.date().isoformat():
-                try:
-                    n = watch_sources(self, load_sources(self.sources_path),
-                                      log=lambda m: print("watch " + m, flush=True))
-                    print(f"watch done: {n} tenders sent for review", flush=True)
-                except Exception:
-                    traceback.print_exc()
-                with open(stamp, "w") as f:
-                    f.write(now.date().isoformat())
+            if self.sources_path:
+                self._once_a_day("watch", self.watch_hour, lambda: log("watch done: %d sent for review" % watch_sources(
+                    self, load_sources(self.sources_path), log=lambda m: log("watch " + m))))
+            self._once_a_day("alert", self.alert_hour, lambda: log("alerts sent: %d" % self.send_alerts()))
             time.sleep(600)
+
+    # -- subscribers (daily matches in Telegram)
+    def _subs_path(self):
+        return os.path.join(self.state, "subscribers.json")
+
+    def load_subs(self):
+        try:
+            with open(self._subs_path(), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def save_subs(self, subs):
+        write_json_atomic(self._subs_path(), subs)
+
+    def active(self, sub):
+        return self.today() <= max(sub.get("trial_until", ""), sub.get("paid_until", ""))
+
+    def sub_status(self, sub):
+        what = ", ".join(CATEGORIES.get(c, c) for c in sub["categories"])
+        if sub.get("keywords"):
+            what += "; words: " + ", ".join(sub["keywords"])
+        if sub.get("paid_until", "") >= self.today():
+            until = f"Paid until {sub['paid_until']}."
+        elif sub.get("trial_until", "") >= self.today():
+            until = f"Free trial until {sub['trial_until']}."
+        else:
+            until = "Your subscription has ended. " + PAY_TEXT
+        return (f"Tender Watcher alerts for {sub['name']}.\nYou get new tenders every morning for: {what}.\n"
+                f"{until}\nAll open tenders: {self.site_url}")
+
+    def sub_command(self, text):
+        """Reviewer commands:
+        /subscribe <telegram id> <category,...> [kw=word,word] [name=Name_With_Underscores]
+        /paid <telegram id> <YYYY-MM-DD>   /unsubscribe <telegram id>   /subs"""
+        parts = text.split()
+        subs = self.load_subs()
+        cmd, args = parts[0], parts[1:]
+        if cmd == "/subs":
+            if not subs:
+                return "No subscribers yet."
+            return "\n".join(f"{k} {v['name']}: {','.join(v['categories'])} trial {v.get('trial_until', '')} "
+                             f"paid {v.get('paid_until') or '-'}{'' if self.active(v) else ' (ended)'}"
+                             for k, v in subs.items())
+        if not args or not args[0].isdigit():
+            return "Usage: " + " ".join(self.sub_command.__doc__.split())
+        tid = args[0]
+        if cmd == "/unsubscribe":
+            if tid not in subs:
+                return "Not a subscriber."
+            gone = subs.pop(tid)
+            self.save_subs(subs)
+            return f"Removed {gone['name']}."
+        if cmd == "/paid":
+            if tid not in subs or len(args) < 2 or not re.fullmatch(r"\d{4}-\d\d-\d\d", args[1]):
+                return "Usage: /paid <telegram id> <YYYY-MM-DD>"
+            subs[tid].update(paid_until=args[1], ended_notice=False)
+            self.save_subs(subs)
+            self.say(int(tid), f"Thank you, your Tender Watcher subscription is paid until {args[1]}.")
+            return f"{subs[tid]['name']} paid until {args[1]}."
+        cats, kws, name = [], [], ""
+        for a in args[1:]:
+            if a.startswith("kw="):
+                kws += [w.replace("_", " ").strip().lower() for w in a[3:].split(",") if w.strip()]
+            elif a.startswith("name="):
+                name = a[5:].replace("_", " ")
+            else:
+                cats += [c.strip().lower() for c in a.split(",") if c.strip()]
+        bad = [c for c in cats if c not in CATEGORIES]
+        if bad or not (cats or kws):
+            return f"Unknown category {', '.join(bad) or '(none)'}. Use: {', '.join(CATEGORIES)}"
+        if not kws:
+            for c in cats:
+                kws += DEFAULT_KEYWORDS.get(c, [])
+        start = dt.date.fromisoformat(self.today())
+        old = subs.get(tid, {})
+        subs[tid] = {"name": name or old.get("name") or tid, "categories": cats, "keywords": kws,
+                     "start": old.get("start", start.isoformat()),
+                     "trial_until": old.get("trial_until", (start + dt.timedelta(days=TRIAL_DAYS)).isoformat()),
+                     "paid_until": old.get("paid_until", ""), "sent": old.get("sent", []), "ended_notice": False}
+        self.save_subs(subs)
+        try:
+            self.say(int(tid), "Welcome to Tender Watcher.\n" + self.sub_status(subs[tid]))
+            n = self.send_alerts(only=tid, first=True)
+        except Exception as e:
+            return f"Saved {subs[tid]['name']}, but could not message them ({e}). Have them send /start to the bot."
+        return f"Subscribed {subs[tid]['name']} ({', '.join(cats)}), trial until {subs[tid]['trial_until']}. " \
+               f"Sent {n} open tenders now."
+
+    def matches(self, sub, tenders):
+        out = []
+        for t in tenders:
+            if (t.get("closes") or "9999") < self.today():
+                continue
+            hay = " ".join(str(t.get(k, "")) for k in ("title", "buyer")).lower()
+            if t.get("category") in sub["categories"] or keyword_hit(sub.get("keywords", []), hay):
+                out.append(t)
+        return out
+
+    def send_alerts(self, only=None, first=False):
+        """Send each active subscriber the open tenders they have not seen yet. Returns tenders sent."""
+        try:
+            with open(self.board, encoding="utf-8") as f:
+                tenders = json.load(f).get("tenders", [])
+        except (OSError, ValueError):
+            return 0
+        subs, total = self.load_subs(), 0
+        for tid, sub in subs.items():
+            if only and tid != only:
+                continue
+            if not self.active(sub):
+                if not sub.get("ended_notice"):
+                    try:
+                        self.say(int(tid), f"Your Tender Watcher {'trial' if not sub.get('paid_until') else 'subscription'}"
+                                           f" has ended. {PAY_TEXT}")
+                    except Exception:
+                        traceback.print_exc()
+                    sub["ended_notice"] = True
+                continue
+            seen = set(sub.get("sent", []))
+            new = [t for t in self.matches(sub, tenders) if t.get("id") not in seen]
+            if not new:
+                continue
+            head = (f"{len(new)} open tenders for you right now:" if first
+                    else f"{len(new)} new tender{'s' if len(new) > 1 else ''} for you today:")
+            try:
+                for chunk in alert_chunks(head, new, self.site_url):
+                    self.say(int(tid), chunk, disable_web_page_preview=True)
+            except Exception:
+                traceback.print_exc()
+                continue
+            sub["sent"] = (sub.get("sent", []) + [t["id"] for t in new])[-3000:]
+            total += len(new)
+        self.save_subs(subs)
+        return total
 
     def run(self):
         off_path = os.path.join(self.state, "offset")
@@ -827,9 +1017,8 @@ class Bot:
         except (OSError, ValueError):
             offset = 0
         print("entry bot running", flush=True)
-        if self.sources_path:
-            import threading
-            threading.Thread(target=self._daily_watch, daemon=True).start()
+        import threading
+        threading.Thread(target=self._daily, daemon=True).start()
         while True:
             try:
                 updates = self.tg.call("getUpdates", offset=offset, timeout=50,
@@ -866,6 +1055,8 @@ def main():
         collectors=ids(env.get("COLLECTOR_IDS", "")),
         sources_path=env.get("SOURCES_JSON", ""),
         watch_hour=int(env.get("WATCH_HOUR", "6")),
+        alert_hour=int(env.get("ALERT_HOUR", "8")),
+        site_url=env.get("SITE_URL", SITE_URL),
     )
     if len(sys.argv) > 1 and sys.argv[1] == "--check-sources":
         check_sources(load_sources(env.get("SOURCES_JSON", "/opt/tenders/sources.json")))
