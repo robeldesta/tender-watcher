@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tender Watcher Board</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a site notice board. Filter bar on top, then one row per tender ordered by closing date, deadline in a left column. */
+:root{
+  --paper:#fbfaf7; --panel:#f1efe8; --ink:#1d2328; --muted:#5b636b; --rule:#d9d5ca;
+  --accent:#b8740f; --accent-ink:#8a5306; --accent-soft:#f6e8cf;
+  --ok:#2f7a4a; --warn:#a4570a; --bad:#b03a2e; --ok-soft:#e3f1e7; --warn-soft:#fbecd8; --bad-soft:#f7e1de;
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#15191c; --panel:#1e2327; --ink:#e7e4dc; --muted:#a2a8ad; --rule:#343a3f;
+  --accent:#e2a24a; --accent-ink:#f0bd72; --accent-soft:#3a2d18;
+  --ok:#6cc08a; --warn:#eaa458; --bad:#ec8576; --ok-soft:#1c3324; --warn-soft:#3a2a15; --bad-soft:#3d1f1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#15191c; --panel:#1e2327; --ink:#e7e4dc; --muted:#a2a8ad; --rule:#343a3f;
+  --accent:#e2a24a; --accent-ink:#f0bd72; --accent-soft:#3a2d18;
+  --ok:#6cc08a; --warn:#eaa458; --bad:#ec8576; --ok-soft:#1c3324; --warn-soft:#3a2a15; --bad-soft:#3d1f1b; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
+h1,h2{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(26px,5.5vw,36px);font-weight:800}
+h2{font-size:20px;font-weight:700}
+p{margin:0}
+a{color:var(--accent-ink);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)} .small{font-size:15px}
+header{display:flex;flex-direction:column;gap:10px}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;background:var(--panel);border-radius:6px;padding:14px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+label{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+select,input{font:inherit;font-size:16px;padding:9px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%}
+.count{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.list{display:flex;flex-direction:column;border-top:2px solid var(--ink)}
+.row{display:grid;grid-template-columns:104px 1fr;gap:4px 16px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.due{font-family:var(--mono);font-size:12.5px;line-height:1.35;color:var(--muted)}
+.due b{display:block;font-family:var(--display);font-size:21px;font-weight:800;color:var(--ink)}
+.body{min-width:0;display:flex;flex-direction:column;gap:5px}
+.buyer{font-weight:700}
+.meta{display:flex;flex-wrap:wrap;gap:6px}
+.tag{display:inline-block;font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:3px;background:var(--panel);color:var(--muted);white-space:nowrap}
+.tag.grade{background:var(--accent-soft);color:var(--accent-ink)}
+.tag.new{background:var(--ok-soft);color:var(--ok)}
+.tag.soon{background:var(--bad-soft);color:var(--bad)}
+.tag.week{background:var(--warn-soft);color:var(--warn)}
+.empty{padding:28px 0;color:var(--muted)}
+.cta{background:var(--ink);color:var(--paper);border-radius:6px;padding:20px clamp(16px,4vw,24px);display:flex;flex-direction:column;gap:10px}
+.cta h2{color:var(--paper)} .cta a{color:var(--paper)}
+footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+@media (max-width:520px){
+  .row{grid-template-columns:1fr}
+  .due{display:flex;gap:8px;align-items:baseline}
+  .due b{display:inline;font-size:17px}
+}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">Tender Watcher · open construction tenders in Ethiopia</span>
+  <h1>Open construction tenders, updated every morning</h1>
+  <p class="muted">Government, NGO and donor works tenders, sorted by closing date. Pick your grade and region to see only the tenders you can bid on. <span id="updated"></span></p>
+</header>
+
+<form class="filters" id="filters" onsubmit="event.preventDefault()">
+  <div class="field">
+    <label for="f-grade">My licence grade</label>
+    <select id="f-grade">
+      <option value="">Any grade</option>
+      <option value="1">Grade 1</option><option value="2">Grade 2</option><option value="3">Grade 3</option>
+      <option value="4">Grade 4</option><option value="5">Grade 5</option><option value="6">Grade 6</option>
+      <option value="7">Grade 7</option><option value="8">Grade 8</option><option value="9">Grade 9</option><option value="10">Grade 10</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-region">Region</label>
+    <select id="f-region"><option value="">All regions</option></select>
+  </div>
+  <div class="field">
+    <label for="f-buyer">Buyer type</label>
+    <select id="f-buyer">
+      <option value="">All buyers</option>
+      <option value="gov">Government</option>
+      <option value="ngo">NGO / UN</option>
+      <option value="donor">Donor funded</option>
+      <option value="company">Company / bank</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-q">Search</label>
+    <input id="f-q" type="search" placeholder="e.g. bridge, school, fence">
+  </div>
+</form>
+
+<p class="count" id="count" aria-live="polite"></p>
+<div class="list" id="list"></div>
+
+<section class="cta">
+  <span class="eyebrow" style="color:inherit;opacity:.75">Free pilot · 10 Nov to 6 Dec 2026</span>
+  <h2>Want the bid documents drafted too?</h2>
+  <p>Pilot firms get the tenders that fit their grade sent to them, plus up to two full bid packs drafted from their own licences, projects and staff. See an example: <a href="https://claude.ai/artifact/8dt2V5ajkMDL8ubWBHBcRS">sample bid pack</a>.</p>
+  <p>To join, reply to the message this link came in.</p>
+</section>
+
+<footer>
+  <p>Collected from public notices on Modern Tenders, Reporter Tenders and the World Bank. Grades and deadlines are as published. Always confirm with the buyer before you prepare a bid. Tenders disappear from this list once they close.</p>
+</footer>
+</div>
+
+<script type="application/json" id="tender-data">
+{"updated":"2026-11-07","tenders":[
+{"id":"msf-semera","buyer":"Médecins Sans Frontières (MSF) Belgium","title":"35 m² staff lounge building at the Semera project office","region":"Afar","place":"Semera","grade":"BC-5","closes":"2026-11-09","time":"17:00","type":"ngo","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/sru2ridn96-medecins-sans-frontieres-msf-is-seeking-qualified-and-experienced-general","source":"Modern Tenders"},
+{"id":"eeu-fence","buyer":"Ethiopian Electric Utility, Debre Markos region","title":"Office fence construction","region":"Amhara","place":"Finote Selam and Bichena","grade":"BC-5","closes":"2026-11-09","time":"14:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/ftb1dai1pa-the-ethiopian-electric-utility-eeu-debremarkos-region-invites-bids-from","source":"Modern Tenders"},
+{"id":"ercs-saransar","buyer":"Ethiopian Red Cross Society, Oromia branch","title":"Renovation of Saransar health center","region":"Oromia","place":"Gorodola, East Borana","grade":"BC-6","closes":"2026-11-10","time":"14:00","type":"ngo","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/pl0fb6hvpj-the-ethiopian-red-cross-society-oromia-branch-office-invites-eligible","source":"Modern Tenders"},
+{"id":"eic-wells","buyer":"Ethiopian Insurance Corporation","title":"Drilling and construction of two water wells (head office and Kality sport center)","region":"Addis Ababa","place":"Addis Ababa","grade":"GC-5","closes":"2026-11-11","time":"14:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/fqnh68os04-ethiopian-insurance-corporation-invites-sealed-bids-from-eligible-bidders","source":"Modern Tenders"},
+{"id":"dorcas-tvet","buyer":"Dorcas Aid Ethiopia","title":"TVET workshop buildings (steel structure) and a G+2 administration building","region":"Addis Ababa","place":"Akaki-Kality","grade":"","closes":"2026-11-13","time":"17:00","type":"ngo","firstSeen":"2026-10-28","url":"https://reportertenders.com/bids/dorcas-aid-ethiopia-dae-hereby-invites-eligible-and-qualified-contractors-to-submit-technical-and-financial-proposal-for-the-construction-of-tvet-workshop-buildings-and-a-g2-administration-buildin/","source":"Reporter Tenders"},
+{"id":"caritas-dillo","buyer":"Caritas Switzerland","title":"Rehabilitation of the Dillo main water pipeline (HDPE, earthworks)","region":"Oromia","place":"Dillo, Borena","grade":"GC/WWC-3","closes":"2026-11-16","time":"12:00","type":"ngo","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/9f2dcmmcmr-caritas-switzerland-invites-experienced-general-or-water-works-contractors","source":"Modern Tenders"},
+{"id":"amhara-metal-sheds","buyer":"Amhara Metal Industry and Machine Technology Development Enterprise","title":"Construction of shed facilities","region":"Amhara","place":"Bure and Gondar","grade":"GC-4","closes":"2026-11-16","time":"12:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/g1bqll9o5e-amhara-metal-industry-and-machine-technology-development-enterprise-machine","source":"Modern Tenders"},
+{"id":"siket-bank","buyer":"Siket Bank S.C.","title":"Maintenance works at Filiphos and Yeka Woreda 01 branch offices","region":"Addis Ababa","place":"Addis Ababa","grade":"BC-7","closes":"2026-11-16","time":"11:00","type":"company","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/mflc6evse4-siket-bank-s-c-invites-bidders-for-filiphos-and-yeka-woreda-01-branch-office","source":"Modern Tenders"},
+{"id":"dera-irrigation","buyer":"Dera Woreda Finance Office, South Gondar","title":"Wetebet small-scale irrigation project","region":"Amhara","place":"Dera woreda","grade":"GC-5","closes":"2026-11-18","time":"10:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/4aa0unjh0p-amhara-national-regional-state-south-gonder-zone-dera-woreda-finance-office","source":"Modern Tenders"},
+{"id":"guto-gida-road","buyer":"Guto Gida Woreda Roads and Logistics Office","title":"Gari–Fayisa road maintenance","region":"Oromia","place":"Guto Gida, East Wollega","grade":"GC-4","closes":"2026-11-19","time":"10:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/9kcl20m64s-the-east-wollega-zone-guto-gida-woreda-road-logistics-office-invites-eligible","source":"Modern Tenders"},
+{"id":"erer-shed","buyer":"Erer Farmers' Cooperatives Union","title":"Car shed at the union head office","region":"Oromia","place":"Bishoftu","grade":"BC-5","closes":"2026-11-19","time":"12:00","type":"company","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/h0jsf21i78-erer-farmers-cooperative-union-invites-eligible-contractors-for-the","source":"Modern Tenders"},
+{"id":"gemahi-bridge","buyer":"South West Ethiopia Transport and Road Development Bureau","title":"Remaining works on the 14 m span Gemahi bridge","region":"South West Ethiopia","place":"Anderacha, Sheka zone","grade":"BC-5","closes":"2026-11-20","time":"14:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/mclq0ifvuq-the-southwest-ethiopia-people-regional-state-transport-and-road-development","source":"Modern Tenders"},
+{"id":"eic-shoring","buyer":"Ethiopian Insurance Corporation","title":"Excavation shoring system and excavation works, Nefas Silk multipurpose buildings","region":"Addis Ababa","place":"Nefas Silk","grade":"GC-1","closes":"2026-11-20","time":"14:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/sunaboj5kg-ethiopian-insurance-corporation-eic-invites-wax-sealed-bids-from-eligible","source":"Modern Tenders"},
+{"id":"eep-230kv","buyer":"Ethiopian Electric Power (World Bank PRIME 1)","title":"115 km 230 kV transmission line, Injibara to Debark (ET EEP 533125 CW RFB)","region":"Amhara","place":"Injibara–Debark","grade":"","closes":"2026-11-26","time":"14:00","type":"donor","firstSeen":"2026-10-28","url":"https://www.greenbuildingafrica.co.za/ethiopia-invites-bids-for-115-km-of-230-kv-transmission-lines-under-world-bank-supported-project/","source":"Green Building Africa"},
+{"id":"meneshe-bridge","buyer":"Ethiopian Roads Authority","title":"24 m Meneshe River bridge","region":"South West Ethiopia","place":"Masha, Sheka zone","grade":"GC-4","closes":"2026-11-30","time":"12:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/uvvb1kvpfp-the-southwest-ethiopia-roads-authority-is-inviting-bids-for-the-construction-of","source":"Modern Tenders"},
+{"id":"amhara-small-bridges","buyer":"Amhara Regional Bureau of Agriculture","title":"Small bridges in Dejen and Farta woredas","region":"Amhara","place":"Dejen and Farta","grade":"GC-5","closes":"2026-12-04","time":"10:00","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/pkd4ssg7co-the-amhara-regional-state-bureau-of-agriculture-now-invites-eligible-bidders","source":"Modern Tenders"},
+{"id":"eal-water","buyer":"Ethiopian Airlines Group","title":"Water source study, drilling and water supply works at Debre Markos, Gore-Metu and Mizan-Aman airports","region":"Several regions","place":"Three airports","grade":"WWC-2","closes":"2026-12-09","time":"","type":"company","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/np83sncg2b-invitation-to-bid-for-design-build-of-water-source-study-investigation","source":"Modern Tenders"},
+{"id":"vermi-sheds","buyer":"Amhara Regional Bureau of Agriculture","title":"20 vermi-compost sheds across Amhara zones","region":"Amhara","place":"Various zones","grade":"BC-5","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/building-contractor-grade-5","source":"Modern Tenders"},
+{"id":"north-wollo-sheds","buyer":"North Wollo Zone Finance and Economic Development","title":"Shed construction","region":"Amhara","place":"North Wollo","grade":"GC-5","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/general-contractor-grade-5","source":"Modern Tenders"},
+{"id":"arada-works","buyer":"Arada Sub-City Design and Construction Works Office","title":"Construction works across several projects","region":"Addis Ababa","place":"Arada","grade":"GC-5","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/general-contractor-grade-5","source":"Modern Tenders"},
+{"id":"gindewoyin-office","buyer":"Gindewoyin Town Administration","title":"Mesob one-stop centre office building","region":"Amhara","place":"Gindewoyin","grade":"GC-5","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/general-contractor-grade-5","source":"Modern Tenders"},
+{"id":"mizan-wall","buyer":"Mizan Aman City Administration","title":"Ditch canal and concrete retaining wall; sports field in front of Mizan high school","region":"South West Ethiopia","place":"Mizan Aman","grade":"GC-5","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/general-contractor-grade-5","source":"Modern Tenders"},
+{"id":"alem-gebeya-corridor","buyer":"Alem Gebeya City Administration Finance Office","title":"Corridor construction, 4 lots","region":"Central Ethiopia","place":"Alem Gebeya","grade":"GC-6","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/general-contractor-grade-5","source":"Modern Tenders"},
+{"id":"hadiya-health","buyer":"Hadiya Zone Finance Bureau","title":"Remaining works on Gemedo health center and pharmacy blocks at Belessa, Morsuto and Humaro","region":"Central Ethiopia","place":"Hadiya zone","grade":"BC-7","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/building-contractor-grade-5","source":"Modern Tenders"},
+{"id":"wancii-court","buyer":"Wancii Woreda Court","title":"G+2 office building","region":"Oromia","place":"Wancii woreda","grade":"","closes":"","time":"","type":"gov","firstSeen":"2026-11-07","url":"https://moderntenders.com/tenders/competency/building-contractor-grade-5","source":"Modern Tenders"},
+{"id":"islamic-relief-water","buyer":"Islamic Relief Ethiopia","title":"Three water supply projects, Gursum and Harawo, Fafen zone","region":"Somali","place":"Fafen zone","grade":"GC/WWC-4","closes":"","time":"","type":"ngo","firstSeen":"2026-11-07","url":"https://reportertenders.com/bids/islamic-relief-ethiopia-ire-now-invites-all-eligible-contractors-registered-and-renewed-licensed-under-the-category-of-construction-general-contractor-gc-or-water-works-construction-wwc-grade-4/","source":"Reporter Tenders"},
+{"id":"habitat-diredawa","buyer":"Habitat for Humanity Ethiopia","title":"Partial renovation works","region":"Dire Dawa","place":"Dire Dawa","grade":"BC/GC-8","closes":"","time":"","type":"ngo","firstSeen":"2026-11-07","url":"https://reportertenders.com/bids/habitat-for-humanity-ethiopia-hfhe-hereby-invites-potential-and-legally-eligible-bidders-having-construction-license-for-contractors-of-general-partnership-smes-or-private-bc-gc-8-and-above-cont/","source":"Reporter Tenders"},
+{"id":"care-sidama","buyer":"CARE Ethiopia","title":"Demonstration low-cost livestock housing, Shebedino and Wondogenet","region":"Sidama","place":"Shebedino and Wondogenet","grade":"GC-6","closes":"","time":"","type":"ngo","firstSeen":"2026-10-28","url":"https://reportertenders.com/bids/care-ethiopia-is-seeking-eligible-contractors-category-gc-grade-6-and-above-for-procurement-of-full-contract-service-for-construction-of-demonstration-livestock-low-cost-housing-units-sidama/","source":"Reporter Tenders"}
+]}
+</script>
+
+<script>
+function boot(data){
+  var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var TYPES={gov:'Government',ngo:'NGO / UN',donor:'Donor funded',company:'Company / bank'};
+  function parse(d){ var p=d.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
+  var now=new Date(); var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  function daysTo(d){ return Math.round((parse(d)-today)/86400000); }
+  function gradeNum(g){ var m=/(\d+)/.exec(g||''); return m?+m[1]:null; }
+  function el(tag,cls,text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+
+  var open = data.tenders.filter(function(t){ return !t.closes || daysTo(t.closes) >= 0; });
+  open.sort(function(a,b){
+    if(a.closes && b.closes) return parse(a.closes)-parse(b.closes);
+    if(a.closes) return -1; if(b.closes) return 1; return a.buyer.localeCompare(b.buyer);
+  });
+
+  if(data.updated){ var u=parse(data.updated); document.getElementById('updated').textContent='Last updated '+u.getDate()+' '+MONTHS[u.getMonth()]+' '+u.getFullYear()+'.'; }
+
+  var regionSel=document.getElementById('f-region');
+  Array.from(new Set(open.map(function(t){return t.region;}))).sort().forEach(function(r){ var o=el('option',null,r); o.value=r; regionSel.appendChild(o); });
+
+  var ids=['f-grade','f-region','f-buyer','f-q'];
+  try{ var saved=JSON.parse(localStorage.getItem('tw-filters')||'{}'); ids.forEach(function(id){ if(saved[id]!=null) document.getElementById(id).value=saved[id]; }); }catch(e){}
+
+  function render(){
+    var g=document.getElementById('f-grade').value, r=regionSel.value, b=document.getElementById('f-buyer').value, q=document.getElementById('f-q').value.trim().toLowerCase();
+    try{ var s={}; ids.forEach(function(id){ s[id]=document.getElementById(id).value; }); localStorage.setItem('tw-filters',JSON.stringify(s)); }catch(e){}
+    var rows=open.filter(function(t){
+      if(g){ var n=gradeNum(t.grade); if(n!==null && n < +g) return false; }
+      if(r && t.region!==r) return false;
+      if(b && t.type!==b) return false;
+      if(q && (t.buyer+' '+t.title+' '+t.place).toLowerCase().indexOf(q)<0) return false;
+      return true;
+    });
+    var list=document.getElementById('list'); list.textContent='';
+    document.getElementById('count').textContent=rows.length+' open tender'+(rows.length===1?'':'s')+(g?' you can bid on with grade '+g:'');
+    if(!rows.length){ list.appendChild(el('p','empty','No open tenders match these filters. Try another region or a different grade.')); return; }
+    rows.forEach(function(t){
+      var row=el('article','row');
+      var due=el('div','due');
+      if(t.closes){ var d=parse(t.closes); due.appendChild(document.createTextNode('Closes')); due.appendChild(el('b',null,d.getDate()+' '+MONTHS[d.getMonth()])); if(t.time) due.appendChild(document.createTextNode(t.time)); }
+      else { due.appendChild(document.createTextNode('Deadline')); due.appendChild(el('b',null,'Check')); }
+      row.appendChild(due);
+      var body=el('div','body');
+      body.appendChild(el('span','buyer',t.buyer));
+      body.appendChild(el('p',null,t.title));
+      var meta=el('div','meta');
+      if(t.closes){ var n=daysTo(t.closes); if(n<=3) meta.appendChild(el('span','tag soon',n===0?'Closes today':n===1?'1 day left':n+' days left')); else if(n<=7) meta.appendChild(el('span','tag week',n+' days left')); }
+      if(t.firstSeen && daysTo(t.firstSeen) >= -1) meta.appendChild(el('span','tag new','New'));
+      meta.appendChild(el('span','tag grade',t.grade?t.grade+' and above':'Grade not stated'));
+      meta.appendChild(el('span','tag',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:'')));
+      meta.appendChild(el('span','tag',TYPES[t.type]||t.type));
+      body.appendChild(meta);
+      var src=el('p','small muted'); var a=el('a',null,'View notice on '+t.source); a.href=t.url; a.target='_blank'; a.rel='noopener'; src.appendChild(a); body.appendChild(src);
+      row.appendChild(body); list.appendChild(row);
+    });
+  }
+  ids.forEach(function(id){ var e=document.getElementById(id); e.addEventListener('input',render); e.addEventListener('change',render); });
+  render();
+}
+(function(){
+  var embedded; try{ embedded = JSON.parse(document.getElementById('tender-data').textContent); }catch(e){ embedded = {updated:'',tenders:[]}; }
+  if(!window.fetch || location.protocol==='file:'){ boot(embedded); return; }
+  fetch('tenders.json',{cache:'no-cache'}).then(function(r){ if(!r.ok) throw r; return r.json(); })
+    .then(function(d){ boot(d && d.tenders ? d : embedded); })
+    .catch(function(){ boot(embedded); });
+})();
+</script>
+
+</body>
+</html>
