@@ -247,3 +247,26 @@ def test_signup_trial_interests_matches(env, monkeypatch):
     monkeypatch.setattr("tw.main.today", lambda: "2026-11-22")
     assert "Full text here" not in c.get("/t/wb-1").text
     assert "trial has ended" in c.get("/account").text
+
+
+def test_date_notes_signup_cap_and_bot_photos(env, monkeypatch):
+    app, _, board = env
+    (board.parent / "notices").mkdir(exist_ok=True)
+    (board.parent / "notices" / "abcdef123456.jpg").write_bytes(JPEG)
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-9", "buyer": "ESS", "title": "Servers", "closes": "2026-11-20", "time": "02:00",
+         "place": "P.O.Box 62347\r\nAddis Ababa"},
+        {"id": "fc-abcdef123456", "buyer": "AACRA", "title": "Road", "closes": "2026-11-25",
+         "url": "/notices/abcdef123456.jpg"}]}))
+    anon = TestClient(app)
+    page = anon.get("/t/wb-9").text
+    assert "08:00 international time" in page and "P.O.Box 62347, Addis Ababa" in page
+    assert "Date to confirm" in anon.get("/").text
+    a = client(app, "0911000001")
+    assert a.get("/notices/abcdef123456.jpg").status_code == 200  # photo published by the Telegram bot
+    for i in range(5):
+        r = anon.post("/signup", data={"company": f"C{i}", "name": "N", "phone": f"09440000{i:02d}",
+                                       "password": "longenough1"}, follow_redirects=False)
+        assert r.status_code == 303
+    r = anon.post("/signup", data={"company": "C9", "name": "N", "phone": "0944000099", "password": "longenough1"})
+    assert r.status_code == 429

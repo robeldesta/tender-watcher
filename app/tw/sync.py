@@ -3,6 +3,7 @@ Telegram photo entries) into the app's database. Competitor-sourced rows are nev
 import datetime as dt
 import json
 import os
+import re
 
 from .db import Tender
 
@@ -13,13 +14,19 @@ def import_rows(session, rows):
     added = 0
     for r in rows:
         tid = str(r.get("id", ""))
-        if not tid.startswith(OWN) or session.get(Tender, tid):
+        if not tid.startswith(OWN):
+            continue
+        place = re.sub(r"\s*[\r\n]+\s*", ", ", r.get("place", "")).strip(", ")
+        old = session.get(Tender, tid)
+        if old:  # machine sources may correct a row later; keep reviewer-made tw- rows as they are
+            if not tid.startswith("tw-") and old.status == "published":
+                old.place, old.time, old.closes = place, r.get("time", ""), r.get("closes", "")
             continue
         first = r.get("firstSeen") or dt.date.today().isoformat()
         url = r.get("url", "")
         session.add(Tender(
             id=tid, status="published", buyer=r.get("buyer", ""), title=r.get("title", ""),
-            category=r.get("category", "other"), region=r.get("region", ""), place=r.get("place", ""),
+            category=r.get("category", "other"), region=r.get("region", ""), place=place,
             grade=r.get("grade", ""), closes=r.get("closes", ""), time=r.get("time", ""),
             type=r.get("type", "gov"), bid_security=r.get("bid_security", ""),
             document_fee=r.get("document_fee", ""), source=r.get("source", ""),

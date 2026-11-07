@@ -31,6 +31,7 @@ MAX_PHOTO = 15_000_000
 LOCK_MINUTES, MAX_PHONE_FAILS, MAX_IP_FAILS = 15, 5, 20
 MIN_PASSWORD = 10
 TRIAL_DAYS = 14
+MAX_SIGNUPS_PER_HOUR = 5
 PRICES = {"month": 299, "year": 2400}
 
 
@@ -64,6 +65,20 @@ def long_date(iso):
     return f"{d.strftime('%A')} {d.day} {MONTHS[d.month - 1]} {d.year}"
 
 
+def date_notes(t, ref):
+    """Plain-language warnings about a closing date or time that looks wrong. Never changes the data."""
+    notes = []
+    if t.closes and days_from(t.closes, ref) > 183:
+        notes.append("This closing date is more than 6 months away, which is unusual. Check the notice.")
+    m = re.fullmatch(r"(\d\d):(\d\d)", t.time or "")
+    if m and 1 <= int(m.group(1)) <= 5:
+        notes.append(f"{t.time} may be Ethiopian clock time, which is {int(m.group(1)) + 6:02d}:{m.group(2)} "
+                     "international time. Check the notice.")
+    elif m and not ("06:00" <= t.time <= "18:00"):
+        notes.append("This closing time is outside office hours. Check the notice.")
+    return notes
+
+
 def host(url):
     from urllib.parse import urlsplit
     return urlsplit(url).hostname or url
@@ -84,6 +99,7 @@ def create_app(settings=None, claude=None):
     tpl = Jinja2Templates(directory=os.path.join(HERE, "templates"))
     tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host)
+    tpl.env.globals.update(date_notes=date_notes)
     state = {"claude": claude}
 
     def get_claude():
@@ -120,6 +136,7 @@ def create_app(settings=None, claude=None):
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
 
     sync = BoardSync(s.board_json)
+    board_notices = os.path.join(os.path.dirname(os.path.abspath(s.board_json)), "notices") if s.board_json else ""
 
     def has_access(u):
         if not u:
@@ -187,7 +204,7 @@ def create_app(settings=None, claude=None):
 
     @app.get("/notices/{name}")
     def photo(request: Request, name: str, session=Depends(db)):
-        if not re.fullmatch(r"[0-9a-f]{16}\.(jpg|png|webp)", name):
+        if not re.fullmatch(r"[0-9a-f]{12,16}\.(jpg|png|webp)", name):
             raise HTTPException(404, "Not found.")
         t = session.scalars(select(Tender).where(Tender.photo == name)).first()
         u = user_from(request, session)
@@ -195,7 +212,11 @@ def create_app(settings=None, claude=None):
             raise HTTPException(404, "Not found.")
         if not has_access(u):
             raise HTTPException(403, "Start your free trial to see the full notice.")
-        return FileResponse(os.path.join(photos, name))
+        for folder in (photos, board_notices):  # app uploads, then photos the Telegram bot published
+            path = os.path.join(folder, name)
+            if folder and os.path.exists(path):
+                return FileResponse(path)
+        raise HTTPException(404, "Not found.")
 
     # -- sign in
     @app.get("/login", response_class=HTMLResponse)
@@ -260,6 +281,12 @@ def create_app(settings=None, claude=None):
     def signup(request: Request, company: str = Form(""), name: str = Form(""), phone: str = Form(""),
                password: str = Form(""), tin: str = Form(""), session=Depends(db)):
         p, tin = norm_phone(phone), re.sub(r"\D", "", tin)
+        ip_key = "signup:" + client_ip(request)[:60]
+        recent = session.scalar(select(func.count()).select_from(LoginFailure).where(
+            LoginFailure.key == ip_key, LoginFailure.at >= now() - dt.timedelta(hours=1)))
+        if recent >= MAX_SIGNUPS_PER_HOUR:
+            return page(request, "signup.html", None, status=429, form=dict(company=company, name=name, phone=phone, tin=tin),
+                        error="Too many new accounts from this connection. Try again in an hour.")
         error = ("Enter your company's name." if not company.strip() else
                  "Enter your name." if not name.strip() else
                  "Enter an Ethiopian mobile number, like 0911 234 567." if not p else
@@ -273,7 +300,7 @@ def create_app(settings=None, claude=None):
         end = (dt.date.fromisoformat(today()) + dt.timedelta(days=TRIAL_DAYS)).isoformat()
         c = Company(name=company.strip()[:200], tin=tin, trial_until=end)
         u = User(name=name.strip()[:120], phone=p, role="member", pw_hash=hash_password(password), company=c)
-        session.add_all([c, u])
+        session.add_all([c, u, LoginFailure(key=ip_key)])
         session.commit()
         return set_login(RedirectResponse("/account?welcome=1", 303), u)
 

@@ -7,7 +7,8 @@
 <div class="tags" style="margin-bottom:16px">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span>
   {% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
 <dl class="facts">
-  <dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}</dd>
+  <dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}
+    {% for n in date_notes(t, today) %}<div class="small" style="color:var(--amber)">{{ n }}</div>{% endfor %}</dd>
   {% if t.category == "construction" %}<dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd>{% endif %}
   {% if t.place or t.region %}<dt>Where</dt><dd>{{ t.place }}{% if t.region and t.region not in t.place %}{{ ", " if t.place }}{{ t.region }}{% endif %}</dd>{% endif %}
   <dt>Buyer type</dt><dd>{{ TYPES.get(t.type, t.type) }}</dd>
