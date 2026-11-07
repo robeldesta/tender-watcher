@@ -97,4 +97,4 @@ sudo bash -c 'set -a; . /opt/tenders/entry-bot.env; /opt/tenders/venv/bin/python
 
 Set `"enabled": false` on any source that fails or is blocked, and replace a
 home page `url` with the site's own tender page once it is known. The first
-run of a new source sends at most 5 notices; later runs at most 10.
+run of a new source sends at most 3 notices; later runs at most 10.

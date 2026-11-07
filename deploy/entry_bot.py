@@ -407,7 +407,7 @@ class Web:
         return body, ctype
 
 
-def watch_sources(bot, sources, web=None, first_run_max=5, per_source_max=10, log=print):
+def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, log=print):
     """Check each buyer's tender page; send new tender notices to the reviewers."""
     web = web or Web()
     seen_path = os.path.join(bot.state, "seen.json")
