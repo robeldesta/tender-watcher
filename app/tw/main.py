@@ -17,7 +17,7 @@ from sqlalchemy import func, or_, select
 from . import notices
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import AlertSent, Company, LoginFailure, Tender, User, make_session, now
+from .db import AlertSent, Company, LoginFailure, Payment, Tender, User, make_session, now
 from .sync import BoardSync
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
@@ -33,6 +33,9 @@ MIN_PASSWORD = 10
 TRIAL_DAYS = 14
 MAX_SIGNUPS_PER_HOUR = 5
 PRICES = {"month": 299, "year": 2400}
+PLAN_DAYS = {"month": 30, "year": 365}
+PAY_METHODS = {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}
+CHECK_HOURS = 48  # stop asking Chapa about a checkout after this
 
 
 def today():
@@ -310,8 +313,135 @@ def create_app(settings=None, claude=None):
         u = need(request, session, ("member",))
         c = u.company
         link = "https://t.me/{}?start={}".format(s.telegram_bot, tg_signer.dumps(u.id)) if s.telegram_bot else ""
+        pays = session.scalars(select(Payment).where(Payment.company_id == c.id, Payment.status == "paid")
+                               .order_by(Payment.paid_at.desc())).all()
         return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=PRICES,
-                    days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link)
+                    days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link,
+                    pays=pays, methods=PAY_METHODS, chapa_on=bool(app.state.chapa),
+                    payment=request.query_params.get("payment", ""))
+
+    # -- payments
+    app.state.chapa = notices.eb.Chapa(s.chapa_key) if s.chapa_key else None
+
+    def credit(session, p, method=None, reference="", by=None):
+        """Mark a payment paid and extend the company's subscription. Safe to call twice:
+        the row is locked and a payment already paid is left alone. Returns True when credited now."""
+        p = session.scalars(select(Payment).where(Payment.id == p.id).with_for_update().execution_options(populate_existing=True)).one()
+        if p.status == "paid":
+            return False
+        c = session.scalars(select(Company).where(Company.id == p.company_id).with_for_update().execution_options(populate_existing=True)).one()
+        start = max(today(), c.paid_until or "", c.trial_until or "")
+        c.paid_until = (dt.date.fromisoformat(start) + dt.timedelta(days=p.days)).isoformat()
+        p.status, p.paid_at, p.paid_until = "paid", now(), c.paid_until
+        if method:
+            p.method = method
+        if reference:
+            p.reference = reference[:120]
+        if by:
+            p.recorded_by = by
+        session.commit()
+        return True
+
+    def verify(session, p):
+        """Ask Chapa about one pending checkout; credit it when paid. Returns True when credited now."""
+        chapa = app.state.chapa
+        if not chapa or p.status != "pending" or p.method != "chapa":
+            return False
+        p.checked_at = now()
+        session.commit()
+        try:
+            ok = chapa.paid(p.tx_ref, p.amount)
+        except Exception as e:
+            print(f"chapa verify {p.tx_ref}: {e}", flush=True)
+            return False
+        return credit(session, p) if ok else False
+
+    def check_pending(session):
+        """Verify open checkouts: each at most once a minute in its first hour, then every 15 minutes;
+        expire them after CHECK_HOURS. Returns payments credited."""
+        n, t = 0, now()
+        for p in session.scalars(select(Payment).where(Payment.status == "pending", Payment.method == "chapa")).all():
+            created = p.created_at if p.created_at.tzinfo else p.created_at.replace(tzinfo=dt.timezone.utc)
+            age = (t - created).total_seconds()
+            if age > CHECK_HOURS * 3600:
+                p.status = "expired"
+                session.commit()
+                continue
+            last = p.checked_at and (p.checked_at if p.checked_at.tzinfo else p.checked_at.replace(tzinfo=dt.timezone.utc))
+            gap = 55 if age < 3600 else 895
+            if last and (t - last).total_seconds() < gap:
+                continue
+            n += verify(session, p)
+        return n
+
+    @app.post("/account/pay")
+    def pay(request: Request, plan: str = Form(""), csrf: str = Form(""), session=Depends(db)):
+        u = need(request, session, ("member",))
+        check_csrf(u, csrf)
+        if plan not in PRICES:
+            raise HTTPException(400, "Pick a plan.")
+        if not app.state.chapa:
+            raise HTTPException(503, "Online payment is not open yet. Pay by Telebirr or bank transfer for now.")
+        p = Payment(tx_ref="TW-" + uuid.uuid4().hex[:16], company_id=u.company_id, plan=plan,
+                    amount=PRICES[plan], days=PLAN_DAYS[plan])
+        session.add(p)
+        session.commit()
+        try:
+            url = app.state.chapa.checkout(p.tx_ref, p.amount, u.company.name,
+                                           f"{s.site_url}/account/paid?ref={p.tx_ref}")
+        except Exception as e:
+            print(f"chapa checkout {p.tx_ref}: {e}", flush=True)
+            p.status = "expired"
+            session.commit()
+            raise HTTPException(502, "Chapa did not open the payment page. Please try again in a minute.")
+        return RedirectResponse(url, 303)
+
+    @app.get("/account/paid")
+    def paid(request: Request, ref: str = "", session=Depends(db)):
+        u = need(request, session, ("member",))
+        p = session.scalars(select(Payment).where(Payment.tx_ref == ref, Payment.company_id == u.company_id)).first()
+        if p and p.status == "pending":
+            verify(session, p)
+            session.refresh(p)
+        state = "paid" if p and p.status == "paid" else "waiting" if p and p.status == "pending" else "unknown"
+        return RedirectResponse(f"/account?payment={state}", 303)
+
+    @app.post("/internal/check-payments")
+    def check_payments_now(request: Request, session=Depends(db)):
+        internal(request)
+        return {"credited": check_pending(session)}
+
+    @app.get("/admin/payments", response_class=HTMLResponse)
+    def payments(request: Request, session=Depends(db)):
+        u = need(request, session, ("admin",))
+        return payments_page(request, session, u)
+
+    def payments_page(request, session, u, status=200, **ctx):
+        rows = session.scalars(select(Payment).order_by(Payment.created_at.desc()).limit(200)).all()
+        companies = session.scalars(select(Company).order_by(Company.name)).all()
+        return page(request, "payments.html", u, status=status, rows=rows, companies=companies, prices=PRICES,
+                    methods=PAY_METHODS, chapa_on=bool(app.state.chapa), **ctx)
+
+    @app.post("/admin/payments", response_class=HTMLResponse)
+    def record_payment(request: Request, company_id: int = Form(0), plan: str = Form(""), method: str = Form(""),
+                       reference: str = Form(""), csrf: str = Form(""), session=Depends(db)):
+        u = need(request, session, ("admin",))
+        check_csrf(u, csrf)
+        c = session.get(Company, company_id)
+        error = ("Pick the company." if not c else "Pick a plan." if plan not in PRICES else
+                 "Pick Telebirr or bank transfer." if method not in ("telebirr", "bank") else
+                 "Enter the Telebirr or bank transaction number." if not reference.strip() else
+                 "That transaction number is already recorded." if session.scalars(
+                     select(Payment).where(Payment.reference == reference.strip()[:120])).first() else "")
+        if error:
+            return payments_page(request, session, u, status=400, error=error,
+                                 form=dict(company_id=company_id, plan=plan, method=method, reference=reference))
+        p = Payment(tx_ref="TW-M-" + uuid.uuid4().hex[:14], company_id=c.id, plan=plan, amount=PRICES[plan],
+                    days=PLAN_DAYS[plan], method=method)
+        session.add(p)
+        session.commit()
+        credit(session, p, reference=reference.strip(), by=u.id)
+        return RedirectResponse("/admin/payments?added=1", 303)
 
     @app.post("/account/telegram/stop")
     def stop_telegram(request: Request, csrf: str = Form(""), session=Depends(db)):

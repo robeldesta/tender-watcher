@@ -12,6 +12,7 @@ class Settings:
         self.telegram_token = env.get("TELEGRAM_BOT_TOKEN", "")
         self.telegram_bot = env.get("TELEGRAM_BOT_USERNAME", "tender_watcher_entry_bot")
         self.internal_secret = env.get("INTERNAL_SECRET", "")  # shared with the Telegram bot
+        self.chapa_key = env.get("CHAPA_SECRET_KEY", "")  # Sonador's Chapa account; test key until Robel says live
         self.secure_cookies = env.get("SECURE_COOKIES", "1") == "1"
         if not self.secret:
             raise RuntimeError("SECRET_KEY is required")

@@ -956,6 +956,13 @@ class Bot:
                 self.check_payments()
             except Exception:
                 traceback.print_exc()
+            if self.app_url:  # the web app's Chapa checkouts; it decides which ones are due
+                try:
+                    r = self.app_call("/internal/check-payments", {})
+                    if r.get("credited"):
+                        log("web payments credited: %s" % r["credited"])
+                except Exception:
+                    traceback.print_exc()
             time.sleep(60)
 
     # -- subscribers (daily matches in Telegram)

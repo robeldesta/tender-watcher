@@ -82,6 +82,27 @@ class LoginFailure(Base):
     at: Mapped[dt.datetime] = mapped_column(default=now, index=True)
 
 
+class Payment(Base):
+    """One subscription payment: a Chapa checkout (pending until Chapa confirms it) or a payment
+    recorded by an admin (Telebirr or bank transfer to Sonador Systems)."""
+    __tablename__ = "payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tx_ref: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    plan: Mapped[str] = mapped_column(String(10))  # month, year
+    amount: Mapped[int] = mapped_column()  # ETB
+    days: Mapped[int] = mapped_column()
+    method: Mapped[str] = mapped_column(String(12), default="chapa")  # chapa, telebirr, bank
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)  # pending, paid, expired
+    reference: Mapped[str] = mapped_column(String(120), default="")  # Telebirr or bank transaction id
+    paid_until: Mapped[str] = mapped_column(String(10), default="")  # subscription end this payment gave
+    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(default=now)
+    paid_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    checked_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    company: Mapped[Company] = relationship()
+
+
 # Columns added after the first deploy: (table, column, SQL type and default).
 ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
                  ("companies", "interests", "TEXT NOT NULL DEFAULT ''"),

@@ -1,12 +1,27 @@
 {% extends "base.html" %}{% block title %}Your account | Tender Watcher{% endblock %}
 {% block body %}
 {% if request.query_params.get("welcome") %}<p class="alert ok">Welcome, {{ me.name }}. Your free trial is on. Tell us what {{ c.name }} bids on and we'll show you the tenders that fit.</p>{% endif %}
+{% if payment == "paid" %}<p class="alert ok">Thank you. Your payment went through and your subscription is extended.</p>
+{% elif payment == "waiting" %}<p class="alert warn">Chapa has not confirmed your payment yet. If you paid, it shows here within a few minutes; reload this page.</p>
+{% elif payment == "unknown" %}<p class="alert bad">We couldn't find that payment. If money left your account, tell us and we'll sort it out.</p>{% endif %}
 <h1>{{ c.name }}</h1>
 <div class="panel" style="margin-bottom:20px">
   {% if c.paid_until and c.paid_until >= today %}<b>Subscribed</b> until {{ c.paid_until | long_date }}.
   {% elif access %}<b>Free trial</b>: {{ days_left }} day{{ "s" if days_left != 1 }} left (until {{ c.trial_until | long_date }}).
   {% else %}<b>Your trial has ended.</b> Subscribe to keep seeing full notices and matches.{% endif %}
-  <p class="small muted" style="margin:6px 0 0">ETB {{ prices.month }} a month or ETB {{ "{:,}".format(prices.year) }} a year. Online payment opens this week; until then, pay Sonador Systems by Telebirr or bank transfer and we switch you on.</p>
+  {% if chapa_on %}
+  <form method="post" action="/account/pay" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn" type="submit" name="plan" value="year">Pay ETB {{ "{:,}".format(prices.year) }} for a year</button>
+    <button class="btn ghost" type="submit" name="plan" value="month">Pay ETB {{ prices.month }} for a month</button>
+  </form>
+  <p class="small muted" style="margin:8px 0 0">You pay on Chapa's page with Telebirr, CBE Birr, a bank account or card. {% if access %}Paying now adds to the days you have left.{% endif %} You can also pay Sonador Systems by Telebirr or bank transfer and we switch you on.</p>
+  {% else %}
+  <p class="small muted" style="margin:6px 0 0">ETB {{ prices.month }} a month or ETB {{ "{:,}".format(prices.year) }} a year. Pay Sonador Systems by Telebirr or bank transfer and we switch you on.</p>
+  {% endif %}
+  {% if pays %}<details style="margin-top:10px"><summary class="small">Your payments</summary><ul class="small">
+  {% for p in pays %}<li>{{ p.paid_at.strftime("%d %b %Y") }}: ETB {{ "{:,}".format(p.amount) }} ({{ p.plan }}, {{ methods.get(p.method, p.method) }}), paid until {{ p.paid_until | long_date }}</li>{% endfor %}
+  </ul></details>{% endif %}
 </div>
 <h2>Morning alerts</h2>
 <div class="panel" style="margin-bottom:20px">

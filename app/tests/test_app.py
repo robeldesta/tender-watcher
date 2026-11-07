@@ -304,3 +304,102 @@ def test_telegram_link_and_alerts(env, monkeypatch):
                                               "category": "it"}]}))
     monkeypatch.setattr("tw.main.today", lambda: "2026-11-25")
     assert c.post("/internal/send-alerts", headers=h).json() == {"sent": 0}
+
+
+class FakeChapa:
+    def __init__(self):
+        self.made, self.paid_refs, self.asked = [], set(), []
+
+    def checkout(self, tx_ref, amount, name, return_url):
+        self.made.append((tx_ref, amount, name, return_url))
+        return "https://checkout.chapa.co/checkout/payment/" + tx_ref
+
+    def paid(self, tx_ref, amount):
+        self.asked.append(tx_ref)
+        return tx_ref in self.paid_refs
+
+
+def test_chapa_checkout_and_manual_payments(env, monkeypatch):
+    app, _, _ = env
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Myagta", "name": "M", "phone": "0955000001", "password": "longenough1"})
+    tok = csrf(c, "/account")
+    assert "Pay ETB" not in c.get("/account").text  # no key: no online button
+    assert c.post("/account/pay", data={"csrf": tok, "plan": "year"}).status_code == 503
+
+    chapa = app.state.chapa = FakeChapa()
+    assert "Pay ETB 2,400 for a year" in c.get("/account").text
+    assert c.post("/account/pay", data={"csrf": "bad", "plan": "year"}).status_code == 400
+    assert c.post("/account/pay", data={"csrf": tok, "plan": "week"}).status_code == 400
+    r = c.post("/account/pay", data={"csrf": tok, "plan": "year"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("https://checkout.chapa.co/")
+    ref, amount, name, back = chapa.made[-1]
+    assert ref.startswith("TW-") and amount == 2400 and name == "Myagta" and back.endswith("/account/paid?ref=" + ref)
+
+    # back from Chapa before it confirms
+    r = c.get("/account/paid?ref=" + ref, follow_redirects=False)
+    assert r.headers["location"] == "/account?payment=waiting"
+    # another company's or a made-up ref tells nothing
+    assert c.get("/account/paid?ref=TW-nope", follow_redirects=False).headers["location"] == "/account?payment=unknown"
+
+    chapa.paid_refs.add(ref)
+    assert c.get("/account/paid?ref=" + ref, follow_redirects=False).headers["location"] == "/account?payment=paid"
+    acc = c.get("/account?payment=paid").text
+    # trial ends 21 Nov; a year is added after it
+    assert "Subscribed" in acc and "2027-11-21" not in acc and "21 Nov 2027" in acc and "payment went through" in acc
+    # credited once, even when asked again
+    c.get("/account/paid?ref=" + ref)
+    h = {"x-internal-secret": "sekret"}
+    assert c.post("/internal/check-payments", headers=h).json() == {"credited": 0}
+    with app.state.Session() as db:
+        from tw.db import Company, Payment
+        assert db.query(Company).filter_by(name="Myagta").one().paid_until == "2027-11-21"
+        assert db.query(Payment).filter_by(status="paid").count() == 1
+
+    # a checkout paid without coming back is picked up by the bot's call
+    c.post("/account/pay", data={"csrf": tok, "plan": "month"})
+    ref2 = chapa.made[-1][0]
+    assert c.post("/internal/check-payments").status_code == 403
+    assert c.post("/internal/check-payments", headers=h).json() == {"credited": 0}
+    chapa.paid_refs.add(ref2)
+    assert c.post("/internal/check-payments", headers=h).json() == {"credited": 0}  # asked under a minute ago
+    with app.state.Session() as db:
+        p = db.query(Payment).filter_by(tx_ref=ref2).one()
+        p.checked_at = None
+        db.commit()
+    assert c.post("/internal/check-payments", headers=h).json() == {"credited": 1}
+    with app.state.Session() as db:
+        assert db.query(Company).filter_by(name="Myagta").one().paid_until == "2027-12-21"
+
+    # admin records a Telebirr payment for another company
+    c2 = TestClient(app)
+    c2.post("/signup", data={"company": "Delta", "name": "D", "phone": "0955000002", "password": "longenough1"})
+    assert client(app, "0911000004").get("/admin/payments").status_code == 403
+    a = client(app, "0911000001")
+    atok = csrf(a, "/admin/payments")
+    with app.state.Session() as db:
+        delta = db.query(Company).filter_by(name="Delta").one().id
+    bad = a.post("/admin/payments", data={"csrf": atok, "company_id": delta, "plan": "month", "method": "telebirr", "reference": ""})
+    assert bad.status_code == 400 and "transaction number" in bad.text
+    r = a.post("/admin/payments", data={"csrf": atok, "company_id": delta, "plan": "month", "method": "telebirr",
+                                        "reference": "TB123"}, follow_redirects=False)
+    assert r.status_code == 303
+    again = a.post("/admin/payments", data={"csrf": atok, "company_id": delta, "plan": "month", "method": "telebirr",
+                                            "reference": "TB123"})
+    assert again.status_code == 400 and "already recorded" in again.text
+    page_ = a.get("/admin/payments").text
+    assert "Delta" in page_ and "TB123" in page_ and "Myagta" in page_
+    with app.state.Session() as db:
+        assert db.query(Company).filter_by(name="Delta").one().paid_until == "2026-12-21"
+
+    # an unpaid checkout expires after two days
+    c.post("/account/pay", data={"csrf": tok, "plan": "month"})
+    ref3 = chapa.made[-1][0]
+    import datetime as dt
+    with app.state.Session() as db:
+        p = db.query(Payment).filter_by(tx_ref=ref3).one()
+        p.created_at = p.created_at - dt.timedelta(days=3)
+        db.commit()
+    c.post("/internal/check-payments", headers=h)
+    with app.state.Session() as db:
+        assert db.query(Payment).filter_by(tx_ref=ref3).one().status == "expired"
