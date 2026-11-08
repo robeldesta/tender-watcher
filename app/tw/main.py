@@ -159,8 +159,8 @@ def create_app(settings=None, claude=None):
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
 
     with Session() as _s:  # tenders saved before multi-category get theirs once
-        for _t in _s.scalars(select(Tender).where(Tender.categories == "")):
-            notices.tag(_t)
+        for _t in _s.scalars(select(Tender).where(or_(Tender.categories == "", Tender.reviewer_id.is_(None)))):
+            notices.tag(_t, keep=notices.cats(_t))  # word lists grow; a reviewer's choice is left alone
         _s.commit()
     sync = BoardSync(s.board_json)
     board_notices = os.path.join(os.path.dirname(os.path.abspath(s.board_json)), "notices") if s.board_json else ""

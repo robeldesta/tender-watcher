@@ -60,10 +60,11 @@ SUBJECT_WORDS = {
     "electrical": r"electric(al)?|generators?|transformers?|solar|power supply|cables?|lighting|substation|ኤሌክትሪክ|ጀነሬተር",
     "vehicles": r"vehicles?|trucks?|bus(es)?|pick-?ups?|motorcycles?|tractors?|excavators?|machinery|spare parts|tyres?|tires?|"
                 r"ተሽከርካሪ|መኪና",
-    "medical": r"medical|medicines?|pharma\w*|hospital equipment|laborator(y|ies)|reagents?|drugs?|vaccines?|መድኃኒት|የህክምና",
+    "medical": r"medical|medicines?|pharma\w*|hospital equipment|laborator(y|ies)|reagents?|drugs?|vaccines?|biobank|eqa|proficiency testing|pt panels?|vital signs|መድኃኒት|የህክምና",
     "construction": r"construction|building works?|rehabilitation of|road works?|bridges?|civil works|renovation|ግንባታ",
     "consultancy": r"consultan(t|cy|cies)|feasibility|baseline (study|survey)|evaluation|assessment study|technical assistance|"
-                   r"design and supervision|survey|ጥናት",
+                   r"design and supervision|survey|legal (firm|services|advis\w+)|law firm|advisory|dispute|"
+                   r"design-build|(water|source|soil|geotechnical) study|study|ጥናት",
     "services": r"cleaning|security services?|catering|insurance|transport services?|printing|maintenance services?|"
                 r"travel agency|audit services?",
     "rental": r"rent(al)?|lease|for hire|ኪራይ",
