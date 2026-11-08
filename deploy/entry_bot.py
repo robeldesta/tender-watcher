@@ -1001,6 +1001,8 @@ class Bot:
                 e = to_entry(t, source["name"], self.today())
                 if e["closes"] and e["closes"] < self.today():
                     continue
+                if source.get("render") and not e["closes"]:
+                    continue  # bank pages keep old posts and asset sales up for months: no closing date, no listing
                 if not re.search(r"[^\W\d_]{3}", re.sub(r"(?i)not stated|unknown|subject|title", "", e["title"])):
                     continue  # no real subject: usually a listing page read as a tender
                 e["buyer"] = e["buyer"] or source["name"]

@@ -168,56 +168,56 @@
       "group": "bank",
       "type": "company",
       "name": "National Bank of Ethiopia",
-      "url": "https://nbe.gov.et/"
+      "url": "https://nbe.gov.et/announcements/"
     },
     {
       "id": "cbe", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Commercial Bank of Ethiopia",
-      "url": "https://combanketh.et/"
+      "url": "https://combanketh.et/misalliance/tenders"
     },
     {
       "id": "dbe", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Development Bank of Ethiopia",
-      "url": "https://dbe.com.et/"
+      "url": "https://dbe.com.et/?page_id=7700"
     },
     {
       "id": "awash", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Awash Bank",
-      "url": "https://awashbank.com/"
+      "url": "https://awashbank.com/bid/"
     },
     {
       "id": "dashen", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Dashen Bank",
-      "url": "https://dashenbanksc.com/"
+      "url": "https://dashenbanksc.com/bids-tenders/"
     },
     {
       "id": "boa", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Bank of Abyssinia",
-      "url": "https://www.bankofabyssinia.com/"
+      "url": "https://www.bankofabyssinia.com/tenders/"
     },
     {
       "id": "coop", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Cooperative Bank of Oromia",
-      "url": "https://coopbankoromia.com.et/"
+      "url": "https://coopbankoromia.com.et/tender-2/"
     },
     {
       "id": "hibret", "render": true,
       "group": "bank",
       "type": "company",
       "name": "Hibret Bank",
-      "url": "https://www.hibretbank.com.et/"
+      "url": "https://www.hibretbank.com.et/category/bid/"
     },
     {
       "id": "wegagen",
@@ -239,7 +239,7 @@
       "group": "bank",
       "type": "company",
       "name": "Zemen Bank",
-      "url": "https://www.zemenbank.com/"
+      "url": "https://zemenbank.com/announcement/"
     },
     {
       "id": "eic",

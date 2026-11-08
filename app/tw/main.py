@@ -41,6 +41,7 @@ DEFAULT_PRICES = {"ETB": {"month": 299, "year": 2400, "win_month": 990, "win_yea
 PRICE_CACHE_SECONDS = 10
 CURRENCIES = {"ETB": "ETB", "USD": "USD"}  # online checkout
 BANK_CURRENCIES = ("ETB", "USD", "EUR")  # recorded by an admin
+BID_NO = re.compile(r"\b\d{1,4}/\d{4}/\d{2}\b")  # bank bid numbers such as 103/2026/27
 VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s*$", re.I)
 # Watch (month, year): every tender, matches and alerts. Win (win_month, win_year): Watch plus Bid Room.
 PLAN_DAYS = {"month": 30, "year": 365, "win_month": 30, "win_year": 365}
@@ -923,10 +924,10 @@ def create_app(settings=None, claude=None):
             if not re.fullmatch(r"\d{4}-\d\d-\d\d", row.closes):
                 row.closes = ""
             dup = duplicate_of(session, row)
-            if dup:
-                if dup.status == "pending" and dup.url == row.url:
-                    continue  # the same page found again
-                row.doubts = (f"Possibly already listed: {dup.title} ({dup.id}). " + row.doubts).strip()
+            if dup:  # already listed or waiting: keep one, and take a closing time it lacked
+                if not dup.time and row.time:
+                    dup.time = row.time
+                continue
             session.add(row)
             session.flush()
             created += 1
@@ -1075,9 +1076,13 @@ def create_app(settings=None, claude=None):
             return None
         for t in session.scalars(select(Tender).where(Tender.closes == row.closes, Tender.status != "rejected",
                                                       Tender.id != row.id)):
-            if notices.norm(t.buyer) == notices.norm(row.buyer) and \
-                    notices.norm(t.title)[:40] == notices.norm(row.title)[:40]:
+            if notices.norm(t.buyer) != notices.norm(row.buyer):
+                continue
+            if notices.norm(t.title)[:40] == notices.norm(row.title)[:40]:
                 return t
+            bid = BID_NO.findall(row.title + " " + (row.reference or ""))
+            if bid and set(bid) & set(BID_NO.findall(t.title + " " + (t.reference or ""))):
+                return t  # same bid number: the same tender, worded differently or in another language
         return None
 
     def can_edit(u, t):

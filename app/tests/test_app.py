@@ -459,6 +459,14 @@ def test_website_finds_go_to_web_review(env):
     h = {"x-internal-secret": "sekret"}
     assert c.post("/internal/submit", json=body, headers=h).json() == {"created": 1}
     assert c.post("/internal/submit", json=body, headers=h).json() == {"created": 0}  # same page again
+    # the same bank tender read again from its notice PDF, worded differently: one row, with the time it lacked
+    cbe = {"buyer": "Commercial Bank of Ethiopia", "title": "Supply of scanner machines (bid no. 103/2026/27)",
+           "closes": "2026-12-03", "time": "", "category": "it", "type": "company"}
+    assert c.post("/internal/submit", json={"source": "CBE", "url": "https://cbe/list", "entries": [cbe]}, headers=h).json() == {"created": 1}
+    pdf = dict(cbe, title="Purchase of 202 scanner machines, bid 103/2026/27", time="10:00")
+    assert c.post("/internal/submit", json={"source": "CBE", "url": "https://cbe/a.pdf", "entries": [pdf]}, headers=h).json() == {"created": 0}
+    with app.state.Session() as db:
+        assert db.query(Tender).filter(Tender.buyer == "Commercial Bank of Ethiopia").one().time == "10:00"
     assert "ground power" not in c.get("/").text  # not public before review
     a = client(app, "0911000001")
     rev = a.get("/review").text
