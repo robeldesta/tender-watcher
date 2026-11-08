@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import JSON, ForeignKey, String, Text, create_engine, inspect, text
+from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 
@@ -103,6 +103,28 @@ class Payment(Base):
     paid_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     checked_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     company: Mapped[Company] = relationship()
+
+
+class Price(Base):
+    """A plan's price in one currency, set by an admin on /admin/prices. Payments keep the amount
+    they were made at, so a change only affects checkouts started after it."""
+    __tablename__ = "prices"
+    __table_args__ = (UniqueConstraint("currency", "plan"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3))  # ETB, USD
+    plan: Mapped[str] = mapped_column(String(10))  # month, year
+    amount: Mapped[int] = mapped_column()
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
+class Setting(Base):
+    """A value an admin can change on the site, such as the trial length."""
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200))
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 # Columns added after the first deploy: (table, column, SQL type and default).

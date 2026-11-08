@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#0B3D2E">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Noto+Sans+Ethiopic:wght@500;600&display=swap">
-<link rel="stylesheet" href="/static/app.css?v=3">
+<link rel="stylesheet" href="/static/app.css?v=4">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230F6B4F'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E1%8C%A8%3C/text%3E%3C/svg%3E">
 </head>
 <body>
@@ -19,7 +19,7 @@
     {% if me and me.role == "member" %}<a href="/my" {% if path == "/my" %}aria-current="page"{% endif %}>My tenders</a><a href="/account" {% if path == "/account" %}aria-current="page"{% endif %}>Account</a>{% endif %}
     {% if me and me.role in ("admin","reviewer","collector") %}<a href="/collect" {% if path == "/collect" %}aria-current="page"{% endif %}>Add tender</a><a href="/mine" {% if path == "/mine" %}aria-current="page"{% endif %}>My entries</a>{% endif %}
     {% if me and me.role in ("admin","reviewer") %}<a href="/review" {% if path == "/review" %}aria-current="page"{% endif %}>Review</a><a href="/admin/stats" {% if path == "/admin/stats" %}aria-current="page"{% endif %}>Collectors</a>{% endif %}
-    {% if me and me.role == "admin" %}<a href="/admin/team" {% if path == "/admin/team" %}aria-current="page"{% endif %}>Team</a><a href="/admin/payments" {% if path == "/admin/payments" %}aria-current="page"{% endif %}>Payments</a>{% endif %}
+    {% if me and me.role == "admin" %}<a href="/admin/team" {% if path == "/admin/team" %}aria-current="page"{% endif %}>Team</a><a href="/admin/payments" {% if path == "/admin/payments" %}aria-current="page"{% endif %}>Payments</a><a href="/admin/prices" {% if path == "/admin/prices" %}aria-current="page"{% endif %}>Prices</a>{% endif %}
     {% if not me or me.role == "member" %}<a href="/pricing" class="{{ 'opt' if not me }}" {% if path == "/pricing" %}aria-current="page"{% endif %}>Pricing</a>{% endif %}
     {% if me %}<form method="post" action="/logout"><button class="btn link" type="submit">Sign out</button></form>
     {% else %}<a href="/login" class="opt" {% if path == "/login" %}aria-current="page"{% endif %}>Sign in</a><a class="btn" href="/signup">Start free trial</a>{% endif %}

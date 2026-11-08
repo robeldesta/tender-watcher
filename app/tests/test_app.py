@@ -506,3 +506,32 @@ def test_tenders_sit_in_several_categories(env):
     from tw.db import Tender as T
     with app.state.Session() as db:
         assert db.get(T, "wb-OP00473353").categories == ",goods,it,"
+
+
+def test_admin_sets_prices_and_trial(env):
+    app, _, _ = env
+    app.state.chapa = FakeChapa()
+    m = TestClient(app)
+    assert m.get("/admin/prices", follow_redirects=False).status_code in (303, 401, 403)
+    a = client(app, "0911000001")
+    page_ = a.get("/admin/prices").text
+    assert 'value="299"' in page_ and 'value="99"' in page_ and 'value="14"' in page_
+    tok = csrf(a, "/admin/prices")
+    form = {"csrf": tok, "ETB_month": "349", "ETB_year": "2,900", "USD_month": "12", "USD_year": "65", "trial_days": "7"}
+    bad = a.post("/admin/prices", data={**form, "USD_year": "free"})
+    assert bad.status_code == 400 and "whole number" in bad.text
+    assert a.post("/admin/prices", data=form, follow_redirects=False).headers["location"] == "/admin/prices?saved=4"
+    pub = m.get("/pricing").text
+    assert "ETB 349" in pub and "ETB 2,900" in pub and "7 days" in pub and "ETB 299" not in pub
+    assert "USD 65" in m.get("/pricing?cur=USD").text
+    # new companies get the new trial; checkout charges the new price
+    m.post("/signup", data={"company": "Jobale", "name": "J", "phone": "0955000009", "password": "longenough1"})
+    with app.state.Session() as db:
+        from tw.db import Company
+        assert db.query(Company).filter_by(name="Jobale").one().trial_until == "2026-11-14"
+    mt = csrf(m, "/account")
+    m.post("/account/pay", data={"csrf": mt, "plan": "year", "currency": "USD"})
+    assert app.state.chapa.made[-1][1] == 65
+    m.post("/account/pay", data={"csrf": mt, "plan": "month"})
+    assert app.state.chapa.made[-1][1] == 349
+    assert "Nothing changed" in a.get(a.post("/admin/prices", data=form, follow_redirects=False).headers["location"]).text

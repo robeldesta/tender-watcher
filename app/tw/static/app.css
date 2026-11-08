@@ -339,3 +339,4 @@ a.pg:hover{border-color:var(--green);color:var(--green)}
 @media (max-width:900px){.plans.three{grid-template-columns:1fr}}
 .cur-switch.dark{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}
 .cur-switch.dark a{color:var(--on-forest-muted)}.cur-switch.dark a[aria-current]{background:var(--mint);color:var(--forest)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

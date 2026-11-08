@@ -3,8 +3,8 @@
 <div class="auth">
   <section class="auth-main">
     <form method="post" action="/signup">
-      <h1>Start your 14-day free trial</h1>
-      <p class="muted">No payment to start. After the trial, ETB {{ 299 }} a month or ETB 2,400 a year.</p>
+      <h1>Start your {{ TRIAL }}-day free trial</h1>
+      <p class="muted">No payment to start. After the trial, ETB {{ "{:,}".format(PRICES.ETB.month) }} a month or ETB {{ "{:,}".format(PRICES.ETB.year) }} a year. <a href="/pricing">Pricing</a></p>
       {% if error %}<p class="alert bad">{{ error }}</p>{% endif %}
       <div class="field"><label for="company">Company name</label><input id="company" name="company" value="{{ form.company }}" autocomplete="organization" required></div>
       <div class="field"><label for="name">Your name</label><input id="name" name="name" value="{{ form.name }}" autocomplete="name" required></div>

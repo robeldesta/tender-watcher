@@ -14,7 +14,7 @@
   <section class="card dark" aria-labelledby="plan-h">
     <h2 id="plan-h">{% if subscribed %}Subscribed until {{ c.paid_until | long_date }}{% elif access %}Free trial: {{ days_left }} day{{ "s" if days_left != 1 }} left{% else %}Your trial has ended{% endif %}</h2>
     <p class="muted" style="margin:0">{% if subscribed %}Paying again adds to the date above.{% elif access %}Until {{ c.trial_until | long_date }}. Paying now adds to the days you have left.{% else %}Subscribe to keep seeing full notices, your matches and morning alerts.{% endif %}</p>
-    {% if access and not subscribed %}<div class="trial-meter">{% set used = 14 - days_left %}<span class="bar"><i style="width:{{ [used * 100 // 14, 4]|max }}%"></i></span></div>{% endif %}
+    {% if access and not subscribed %}<div class="trial-meter">{% set used = TRIAL - days_left %}<span class="bar"><i style="width:{{ [used * 100 // (TRIAL or 1), 4]|max }}%"></i></span></div>{% endif %}
     <nav class="cur-switch dark" aria-label="Currency" style="margin-top:16px">
       <a href="/account" {% if cur == "ETB" %}aria-current="true"{% endif %}>Birr</a>
       <a href="/account?cur=USD" {% if cur == "USD" %}aria-current="true"{% endif %}>US dollars</a>

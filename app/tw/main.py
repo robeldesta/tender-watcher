@@ -18,7 +18,7 @@ from sqlalchemy import func, or_, select
 from . import notices
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import AlertSent, Company, LoginFailure, Payment, Tender, User, make_session, now
+from .db import AlertSent, Company, LoginFailure, Payment, Price, Setting, Tender, User, make_session, now
 from .sync import BoardSync
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
@@ -31,10 +31,12 @@ IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_PHOTO = 15_000_000
 LOCK_MINUTES, MAX_PHONE_FAILS, MAX_IP_FAILS = 15, 5, 20
 MIN_PASSWORD = 10
-TRIAL_DAYS = 14
+TRIAL_DAYS = 14  # starting value; admins change it on /admin/prices
 MAX_SIGNUPS_PER_HOUR = 5
-# Prices are set per currency, not converted. Foreign firms pay USD by card on Chapa.
-PRICES = {"ETB": {"month": 299, "year": 2400}, "USD": {"month": 12, "year": 99}}
+# Prices are set per currency, not converted; admins change them on /admin/prices.
+# These are only the starting values for a new database. Foreign firms pay USD by card on Chapa.
+DEFAULT_PRICES = {"ETB": {"month": 299, "year": 2400}, "USD": {"month": 12, "year": 99}}
+PRICE_CACHE_SECONDS = 10
 CURRENCIES = {"ETB": "ETB", "USD": "USD"}  # online checkout
 BANK_CURRENCIES = ("ETB", "USD", "EUR")  # recorded by an admin
 VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s*$", re.I)
@@ -123,7 +125,7 @@ def create_app(settings=None, claude=None):
     app = FastAPI(title="Tender Watcher", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
     tpl = Jinja2Templates(directory=os.path.join(HERE, "templates"))
-    tpl.env.globals.update(PRICES=PRICES, CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
+    tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host)
     tpl.env.globals.update(date_notes=date_notes)
     state = {"claude": claude}
@@ -158,13 +160,47 @@ def create_app(settings=None, claude=None):
             raise HTTPException(400, "This form has expired. Go back, reload the page and try again.")
 
     def page(request, name, u=None, status=200, **ctx):
-        ctx.update(request=request, me=u, csrf=csrf_token(u) if u else "", today=today())
+        ctx.update(request=request, me=u, csrf=csrf_token(u) if u else "", today=today(), PRICES=prices(), TRIAL=trial_days())
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
 
     with Session() as _s:  # tenders saved before multi-category get theirs once
         for _t in _s.scalars(select(Tender).where(or_(Tender.categories == "", Tender.reviewer_id.is_(None)))):
             notices.tag(_t, keep=notices.cats(_t))  # word lists grow; a reviewer's choice is left alone
         _s.commit()
+    with Session() as _s:  # prices start from the defaults; admins change them on /admin/prices
+        have = {(p.currency, p.plan) for p in _s.scalars(select(Price))}
+        for cur, plans in DEFAULT_PRICES.items():
+            for plan, amount in plans.items():
+                if (cur, plan) not in have:
+                    _s.add(Price(currency=cur, plan=plan, amount=amount))
+        try:
+            _s.commit()
+        except Exception:  # another worker seeded them first
+            _s.rollback()
+    _price_cache = {"at": 0.0, "v": None}
+
+    def prices(fresh=False):
+        """{currency: {plan: amount}} from the database, cached briefly across requests."""
+        return _load(fresh)["prices"]
+
+    def trial_days(fresh=False):
+        return _load(fresh)["trial"]
+
+    def _load(fresh):
+        import time
+        if fresh or not _price_cache["v"] or time.monotonic() - _price_cache["at"] > PRICE_CACHE_SECONDS:
+            with Session() as ps:
+                v = {}
+                for p in ps.scalars(select(Price)):
+                    v.setdefault(p.currency, {})[p.plan] = p.amount
+                t = ps.get(Setting, "trial_days")
+                trial = int(t.value) if t and t.value.isdigit() else TRIAL_DAYS
+            for cur, plans in DEFAULT_PRICES.items():
+                for plan, amount in plans.items():
+                    v.setdefault(cur, {}).setdefault(plan, amount)
+            _price_cache.update(at=time.monotonic(), v={"prices": v, "trial": trial})
+        return _price_cache["v"]
+
     sync = BoardSync(s.board_json)
     board_notices = os.path.join(os.path.dirname(os.path.abspath(s.board_json)), "notices") if s.board_json else ""
 
@@ -211,8 +247,8 @@ def create_app(settings=None, claude=None):
     def pricing(request: Request, session=Depends(db)):
         u = user_from(request, session)
         cur = currency_of(request)
-        return page(request, "pricing.html", u, cur=cur, prices=PRICES[cur], all_prices=PRICES,
-                    trial_days=TRIAL_DAYS, chapa_on=bool(app.state.chapa))
+        return page(request, "pricing.html", u, cur=cur, prices=prices()[cur], all_prices=prices(),
+                    trial_days=trial_days(), chapa_on=bool(app.state.chapa))
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, category: str = "", region: str = "", type: str = "", q: str = "",
@@ -241,7 +277,7 @@ def create_app(settings=None, claude=None):
                          latest=sorted(rows, key=lambda r: (r.published_at or r.created_at).replace(tzinfo=None), reverse=True)[:4])
         f = dict(category=category, region=region, type=type, q=q)
         return page(request, "list.html", u, rows=pg["rows"], total=len(rows), pg=pg, stats=stats, filtered=filtered,
-                    prices=PRICES["ETB"], f=f, qs=urlencode({k: v for k, v in f.items() if v}))
+                    prices=prices()["ETB"], f=f, qs=urlencode({k: v for k, v in f.items() if v}))
 
     @app.get("/t/{tid}", response_class=HTMLResponse)
     def tender_page(request: Request, tid: str, session=Depends(db)):
@@ -348,7 +384,7 @@ def create_app(settings=None, claude=None):
         if error:
             return page(request, "signup.html", None, status=400, error=error,
                         form=dict(company=company, name=name, phone=phone, tin=tin))
-        end = (dt.date.fromisoformat(today()) + dt.timedelta(days=TRIAL_DAYS)).isoformat()
+        end = (dt.date.fromisoformat(today()) + dt.timedelta(days=trial_days(fresh=True))).isoformat()
         c = Company(name=company.strip()[:200], tin=tin, trial_until=end)
         u = User(name=name.strip()[:120], phone=p, role="member", pw_hash=hash_password(password), company=c)
         session.add_all([c, u, LoginFailure(key=ip_key)])
@@ -363,7 +399,7 @@ def create_app(settings=None, claude=None):
         pays = session.scalars(select(Payment).where(Payment.company_id == c.id, Payment.status == "paid")
                                .order_by(Payment.paid_at.desc())).all()
         cur = currency_of(request)
-        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=PRICES[cur], cur=cur,
+        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=prices()[cur], cur=cur,
                     days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link,
                     pays=pays, methods=PAY_METHODS, chapa_on=bool(app.state.chapa),
                     payment=request.query_params.get("payment", ""))
@@ -429,12 +465,13 @@ def create_app(settings=None, claude=None):
         check_csrf(u, csrf)
         if currency not in CURRENCIES:
             raise HTTPException(400, "Pick ETB or USD.")
-        if plan not in PRICES[currency]:
+        price = prices(fresh=True)[currency]
+        if plan not in price:
             raise HTTPException(400, "Pick a plan.")
         if not app.state.chapa:
             raise HTTPException(503, "Online payment is not open yet. Pay by Telebirr or bank transfer for now.")
         p = Payment(tx_ref="TW-" + uuid.uuid4().hex[:16], company_id=u.company_id, plan=plan,
-                    amount=PRICES[currency][plan], currency=currency, days=PLAN_DAYS[plan])
+                    amount=price[plan], currency=currency, days=PLAN_DAYS[plan])
         session.add(p)
         session.commit()
         try:
@@ -470,7 +507,7 @@ def create_app(settings=None, claude=None):
     def payments_page(request, session, u, status=200, **ctx):
         rows = session.scalars(select(Payment).order_by(Payment.created_at.desc()).limit(200)).all()
         companies = session.scalars(select(Company).order_by(Company.name)).all()
-        return page(request, "payments.html", u, status=status, rows=rows, companies=companies, prices=PRICES,
+        return page(request, "payments.html", u, status=status, rows=rows, companies=companies, prices=prices(),
                     bank_currencies=BANK_CURRENCIES, methods=PAY_METHODS, chapa_on=bool(app.state.chapa), **ctx)
 
     @app.post("/admin/payments", response_class=HTMLResponse)
@@ -481,7 +518,7 @@ def create_app(settings=None, claude=None):
         check_csrf(u, csrf)
         c = session.get(Company, company_id)
         amount = amount.replace(",", "").strip()
-        listed = PRICES.get(currency, {}).get(plan)
+        listed = prices(fresh=True).get(currency, {}).get(plan)
         paid_amount = int(amount) if amount.isdigit() else listed
         error = ("Pick the company." if not c else "Pick a plan." if plan not in PLAN_DAYS else
                  "Pick ETB, USD or EUR." if currency not in BANK_CURRENCIES else
@@ -502,6 +539,57 @@ def create_app(settings=None, claude=None):
         session.commit()
         credit(session, p, reference=reference.strip(), by=u.id)
         return RedirectResponse("/admin/payments?added=1", 303)
+
+    @app.get("/admin/prices", response_class=HTMLResponse)
+    def prices_admin(request: Request, session=Depends(db)):
+        u = need(request, session, ("admin",))
+        return prices_page(request, session, u)
+
+    def prices_page(request, session, u, status=200, **ctx):
+        rows = {(p.currency, p.plan): p for p in session.scalars(select(Price))}
+        rows["trial"] = session.get(Setting, "trial_days")
+        people = {x.id: x.name for x in session.scalars(select(User).where(User.role == "admin"))}
+        return page(request, "prices.html", u, status=status, rows=rows, people=people,
+                    currencies=list(CURRENCIES), plans=list(PLAN_DAYS), **ctx)
+
+    @app.post("/admin/prices", response_class=HTMLResponse)
+    async def save_prices(request: Request, session=Depends(db)):
+        u = need(request, session, ("admin",))
+        form = await request.form()
+        check_csrf(u, form.get("csrf", ""))
+        new, errors = {}, []
+        for cur in CURRENCIES:
+            for plan in PLAN_DAYS:
+                raw = str(form.get(f"{cur}_{plan}", "")).replace(",", "").strip()
+                if not raw.isdigit() or not 0 < int(raw) <= 1_000_000:
+                    errors.append(f"{cur} {plan}ly price must be a whole number above 0.")
+                else:
+                    new[(cur, plan)] = int(raw)
+        raw = str(form.get("trial_days", "")).strip()
+        if not raw.isdigit() or not 0 <= int(raw) <= 90:
+            errors.append("Free trial must be 0 to 90 days.")
+        if errors:
+            return prices_page(request, session, u, status=400, error=" ".join(errors), form=form)
+        changed = 0
+        for (cur, plan), amount in new.items():
+            p = session.scalars(select(Price).where(Price.currency == cur, Price.plan == plan)).first()
+            if not p:
+                p = Price(currency=cur, plan=plan, amount=amount)
+                session.add(p)
+            elif p.amount == amount:
+                continue
+            p.amount, p.updated_by, p.updated_at = amount, u.id, now()
+            changed += 1
+        t = session.get(Setting, "trial_days")
+        if int(raw) != trial_days(fresh=True):
+            if not t:
+                t = Setting(key="trial_days", value=raw)
+                session.add(t)
+            t.value, t.updated_by, t.updated_at = str(int(raw)), u.id, now()
+            changed += 1
+        session.commit()
+        prices(fresh=True)
+        return RedirectResponse(f"/admin/prices?saved={changed}", 303)
 
     @app.post("/account/telegram/stop")
     def stop_telegram(request: Request, csrf: str = Form(""), session=Depends(db)):
