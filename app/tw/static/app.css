@@ -358,3 +358,53 @@ a.pg:hover{border-color:var(--green);color:var(--green)}
 .codes li{margin-bottom:6px}
 .grid.two{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
 code{font-family:var(--mono);font-size:.92em}
+
+/* Bid Room */
+.mono{font-family:var(--mono)}.nowrap{white-space:nowrap}
+.pill{display:inline-block;font-size:12px;font-weight:500;padding:0 7px;border-radius:4px;line-height:20px;background:var(--panel);color:var(--ink-2);white-space:nowrap;vertical-align:1px}
+.pill.ok{background:var(--stamp-soft);color:var(--stamp)}.pill.warn{background:var(--amber-soft);color:var(--amber)}.pill.bad{background:var(--red-soft);color:var(--red)}.pill.info{background:var(--green-soft);color:var(--green)}
+.alert.info{background:var(--green-soft);color:var(--green)}
+.page-head .act{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.page-head .meter-box{margin-left:auto;min-width:200px}
+.panel-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.panel-h h2{margin:0}
+.meter-box{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500;color:var(--ink-2)}
+.meter-box .bar{height:6px}
+.check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:400;color:var(--ink);margin:0;min-height:36px;cursor:pointer}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+.form-grid .span2{grid-column:1/-1}
+.profile-form .card,.room-main .card{margin-bottom:12px}
+.rows-table td{padding:4px}.rows-table input{min-width:120px}
+.add-row,#add-line{margin-top:8px}
+.room-head{display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap}
+.room-head .grow{flex:1;min-width:240px}
+.room-head h1{font-size:20px;margin:2px 0 4px}
+.room-actions{display:flex;gap:8px;flex-wrap:wrap}
+.room{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+.room-side{position:sticky;top:72px;display:flex;flex-direction:column;gap:12px}
+.room-side .card{padding:14px}
+.room-side h2{font-size:14px}
+.room-side ul{margin:0;padding-left:18px;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.room textarea{min-height:0;line-height:1.55}
+.save-state{font-size:13px;color:var(--muted);margin-bottom:10px}
+.save-state::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--stamp);margin-right:6px}
+.save-state.bad{color:var(--red)}.save-state.bad::before{background:var(--red)}
+.warn-card{border-color:color-mix(in srgb,var(--saffron) 50%,var(--rule));background:var(--amber-soft)}
+.warn-card h2,.warn-card li{color:var(--amber)}
+.reqs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.req{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;padding:10px 0;border-top:1px solid var(--rule);font-size:14px}
+.req:first-child{border-top:0}
+.req p{margin:2px 0 0;color:var(--ink-2)}
+.req b{font-weight:500}
+.req.done b{text-decoration:line-through;text-decoration-color:var(--muted);color:var(--muted)}
+.req .quote{font-size:13px;color:var(--muted);border-left:2px solid var(--rule-strong);padding-left:8px;margin-top:6px}
+.tick{display:flex;justify-content:center;align-self:start;padding-top:1px;margin:0;cursor:pointer}
+.tick input{width:18px;height:18px}
+.fin td{padding:4px 6px;vertical-align:middle}.fin input{min-height:32px}
+.fin .del-row{min-height:32px;width:32px;padding:0}
+.bidroom-card{border-color:var(--green);box-shadow:var(--shadow)}
+.bidroom-card form{margin:0}
+@media (max-width:960px){.room{grid-template-columns:minmax(0,1fr)}.room-side{position:static}}
+@media (max-width:720px){.form-grid{grid-template-columns:1fr}.page-head .act,.page-head .meter-box{margin-left:0;width:100%}}
+.fin input{min-width:64px}.room-main .card textarea{max-width:100%}
+.table-wrap{position:relative}.sr{top:0;left:0}

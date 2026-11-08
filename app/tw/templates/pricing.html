@@ -4,7 +4,7 @@
 {% set sym = cur %}
 <div class="section-head" style="margin-top:12px">
   <h1>Free for {{ trial_days }} days. Then {{ sym }} {{ prices.month }} a month.</h1>
-  <p>No card needed to start. Every open tender in Ethiopia, checked by a person, matched to what you bid on.</p>
+  <p>No card needed to start. Every open tender in Ethiopia, checked by a person, matched to what you bid on, and Bid Room to win them.</p>
 </div>
 
 <nav class="cur-switch" aria-label="Currency">
@@ -27,10 +27,11 @@
     <ul><li>{{ check() }}Everything in monthly</li><li>{{ check() }}One payment, one invoice for the year</li><li>{{ check() }}Same price all year</li></ul>
     <a class="btn mint big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') if me else '/signup' }}">{{ "Subscribe" if me else "Start free trial" }}</a>
   </div>
-  <div class="plan soon">
-    <h3>Bid assistant <span class="tag">Coming soon</span></h3>
-    <p class="muted" style="margin:0">Win the tenders you find. Subscribers get it first.</p>
-    <ul><li>{{ check() }}Start a bid from any tender</li><li>{{ check() }}A checklist from the bid document, so nothing is missed</li><li>{{ check() }}Technical and financial sections filled from your company profile</li><li>{{ check() }}Print-ready documents with your logo and stamp</li></ul>
+  <div class="plan">
+    <h3>Bid Room <span class="tag" style="margin-left:6px">Included</span></h3>
+    <p class="muted" style="margin:0">Win the tenders you find. In every plan and in the free trial.</p>
+    <ul><li>{{ check() }}Start a bid from any tender</li><li>{{ check() }}Every requirement as a checklist, checked against your profile</li><li>{{ check() }}Cover letter, company section and price schedule drafted for you</li><li>{{ check() }}Print-ready bid with your letterhead, signatory and stamp space</li></ul>
+    <a class="btn ghost big" href="{{ '/bids' if me else '/signup' }}">{{ "Open Bid Room" if me else "Try it free" }}</a>
   </div>
 </div>
 
@@ -43,7 +44,7 @@
       <tr><td>Full notice, photo of the original, bid security, document fee</td><td>–</td><td>{{ check() }}</td></tr>
       <tr><td>Tenders matched to your categories, regions and words</td><td>–</td><td>{{ check() }}</td></tr>
       <tr><td>Morning alerts in Telegram</td><td>–</td><td>{{ check() }}</td></tr>
-      <tr><td>Bid assistant</td><td>–</td><td>Coming soon</td></tr>
+      <tr><td>Bid Room: checklist, drafted bid, print-ready export</td><td>–</td><td>{{ check() }}</td></tr>
     </tbody>
   </table>
 </section>
@@ -53,6 +54,7 @@
   <details><summary>Do I need a card for the free trial?</summary><p>No. Sign up with your phone number and you get {{ trial_days }} days of everything. We only ask for payment when you choose to subscribe.</p></details>
   <details><summary>How can I pay?</summary><p>In Ethiopia: Telebirr, CBE Birr, a bank account or a card on Chapa's secure page, or a Telebirr or bank transfer to Sonador Systems that we record for you. From abroad: an international card in US dollars on Chapa, or a USD or EUR bank transfer.</p></details>
   <details><summary>Can my firm pay in US dollars?</summary><p>Yes. Pick US dollars above. Plans are {{ "USD {:,}".format(all_prices.USD.month) }} a month or {{ "USD {:,}".format(all_prices.USD.year) }} a year.</p></details>
+  <details><summary>What does Bid Room do?</summary><p>Press "Start this bid" on any tender. Bid Room reads the notice, and the bidding document if you paste it in, and lists every requirement as a checklist marked met, gap or check against your company profile. It drafts the cover letter, company section and technical offer from your profile, you add your prices, and it prints a bid with your letterhead, ready to sign and stamp. Anything it can't know is marked [TO CONFIRM] for you to fill in. It is included in every plan and in the free trial.</p></details>
   <details><summary>Do I get an invoice?</summary><p>Yes. Ask us and Sonador Systems sends an invoice for your payment, in your company's name and with your TIN.</p></details>
   <details><summary>What happens when my trial or subscription ends?</summary><p>You can still browse open tenders. The full notices, your matches and the morning alerts stop until you pay. There is nothing to cancel and nothing renews on its own.</p></details>
   <details><summary>Where do the tenders come from?</summary><p>Our collectors photograph notices in the newspapers and on buyers' boards, and our software reads government, bank, NGO and donor websites. A person checks every tender before it goes up.</p></details>

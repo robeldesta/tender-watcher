@@ -440,7 +440,7 @@ def test_pricing_page_is_public(env):
     c = TestClient(app)
     r = c.get("/pricing")
     assert r.status_code == 200 and "ETB 299" in r.text and "ETB 2,400" in r.text and "14 days" in r.text
-    assert "Saves ETB 1,188" in r.text and "Bid assistant" in r.text and "US dollars" in r.text
+    assert "Saves ETB 1,188" in r.text and "Bid Room" in r.text and "Coming soon" not in r.text and "US dollars" in r.text
     usd = c.get("/pricing?cur=USD").text
     assert "USD 12" in usd and "USD 99" in usd and "Saves USD 45" in usd and "ETB 299" not in usd
     assert c.get("/pricing?cur=XYZ").text.count("ETB 299") >= 1
@@ -647,3 +647,94 @@ def test_security_headers_links_and_uploads(env):
     with app.state.Session() as db:
         assert db.get(Tender, tid).url == ""
     assert "javascript:" not in client(app, "0911000001").get(f"/entry/{tid}").text
+
+
+DRAFT = {"requirements": [
+    {"requirement": "Valid trade licence", "category": "licence", "notice_says": "renewed trade licence",
+     "status": "met", "action": "Attach the licence."},
+    {"requirement": "Bid security of ETB 50,000", "category": "bid_security", "notice_says": "CPO ETB 50,000",
+     "status": "check", "action": "Get a CPO from your bank."}],
+    "relevant_project_ids": ["p1", "p9"],
+    "cover_letter": ["We submit our bid for the supply of servers.", "Our bid is valid for [TO CONFIRM: validity period]."],
+    "profile_section": ["Sonador Systems is a licensed IT firm."],
+    "technical_offer": ["We will deliver and install the servers within 30 days."],
+    "open_questions": ["Which lot to bid for?"]}
+
+
+def test_bid_room(env):
+    app, claude, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-1", "buyer": "ESS", "title": "Supply of servers", "closes": "2026-11-20", "category": "it",
+         "region": "Addis Ababa", "notice": "Full text here", "bid_security": "ETB 50,000"}]}))
+    calls = []
+    claude.beta = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: calls.append(kw) or SimpleNamespace(
+        stop_reason="end_turn", content=[SimpleNamespace(type="text", text=json.dumps(DRAFT))])))
+    app.state.bid_room.sync_drafts = True
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Sonador Systems", "name": "Robel D", "phone": "0933444555",
+                            "password": "longenough1", "tin": "0088565182"})
+    page = c.get("/t/wb-1").text
+    assert "Start this bid" in page and "Coming soon" not in c.get("/pricing").text and "Soon:" not in c.get("/").text
+    assert 'href="/bids"' in page  # in the member nav
+
+    # the profile, once
+    tok = csrf(c, "/profile")
+    r = c.post("/profile", data={"csrf": tok, "legal_name": "Sonador Systems PLC", "tin": "0088565182", "address": "Bole, Woreda 03",
+                                 "signatory_name": "Robel Desta", "signatory_title": "General Manager", "work_types": "IT, data centre",
+                                 "licences.name": ["Software licence", ""], "licences.number": ["39141", ""],
+                                 "licences.issuer": ["MInT", ""], "licences.expires": ["2027-07-07", ""],
+                                 "projects.name": ["Bank data centre"], "projects.client": ["CBE"], "projects.value_etb": ["4,500,000"],
+                                 "projects.year_completed": ["2025"], "projects.region": [""], "projects.role": ["Main contractor"],
+                                 "projects.scope": ["Racks and cooling"]}, follow_redirects=False)
+    assert r.headers["location"] == "/profile?saved=1"
+    prof = c.get("/profile").text
+    assert "Sonador Systems PLC" in prof and "39141" in prof and "Key staff" in prof
+
+    # start the bid (twice opens the same one)
+    r = c.post("/t/wb-1/bid", data={"csrf": tok}, follow_redirects=False)
+    url = r.headers["location"]
+    assert c.post("/t/wb-1/bid", data={"csrf": tok}, follow_redirects=False).headers["location"] == url
+    assert c.post("/t/wb-1/bid", data={"csrf": "bad"}).status_code == 400
+    bid_id = url.rsplit("/", 1)[1]
+    room = c.get(url).text
+    assert "Draft this bid" in room and "Supply of servers" in room
+
+    # draft with Claude: checklist, letter, technical offer; facts it lacks are listed to confirm
+    r = c.post(f"/bids/{bid_id}/draft", data={"csrf": tok, "doc_text": "ITB 5: bidders submit a CPO."}, follow_redirects=False)
+    assert r.status_code == 303 and len(calls) == 1
+    sent = calls[0]["messages"][0]["content"]
+    assert "ITB 5: bidders submit a CPO." in sent and "Sonador Systems PLC" in sent and "39141" in sent
+    room = c.get(url).text
+    assert "Valid trade licence" in room and "Get a CPO" in room and "within 30 days" in room
+    assert "validity period" in room and "Which lot" in room and "Bank data centre" in room
+    assert c.get(f"/bids/{bid_id}/state").json() == {"state": "open", "error": ""}
+
+    # autosave: edits, ticks, prices, submitted
+    h = {"x-csrf": tok}
+    j = c.post(f"/bids/{bid_id}/save", headers=h, json={"cover_letter": "Our own letter.", "done": [1],
+               "financial": [{"item": "Server", "unit": "pcs", "qty": "2", "price": "1,000,000"}, {"item": ""}],
+               "state": "submitted", "evil": "x"}).json()
+    assert j["ok"] and j["total"] == 2000000 and j["progress"] == {"done": 1, "total": 2, "gaps": 0} and j["confirm"] == []
+    assert c.post(f"/bids/{bid_id}/save", headers={"x-csrf": "bad"}, json={}).status_code == 400
+    assert c.post(f"/bids/{bid_id}/save", headers=h, content=b"[1]").status_code == 400
+    lst = c.get("/bids").text
+    assert "Supply of servers" in lst and "Submitted" in lst and "1 of 2 done" in lst
+
+    # drafting again keeps the firm's own letter and ticks
+    c.post(f"/bids/{bid_id}/draft", data={"csrf": tok}, follow_redirects=False)
+    room = c.get(url).text
+    assert "Our own letter." in room and "We submit our bid" not in room and 'data-done="1" checked' in room
+
+    # print: letterhead, letter, tables, prices
+    pr = c.get(f"/bids/{bid_id}/print").text
+    assert "Sonador Systems PLC" in pr and "TIN 0088565182" in pr and "Our own letter." in pr and "ESS" in pr
+    assert "2,000,000.00" in pr and "Bank data centre" in pr and "Software licence" in pr and "Robel Desta, General Manager" in pr
+
+    # other firms and non-members can't reach it
+    other = TestClient(app)
+    other.post("/signup", data={"company": "Other PLC", "name": "Other", "phone": "0933444666", "password": "longenough1"})
+    for path in (url, f"/bids/{bid_id}/print", f"/bids/{bid_id}/state"):
+        assert other.get(path).status_code == 404
+    assert other.post(f"/bids/{bid_id}/save", headers={"x-csrf": csrf(other, "/profile")}, json={}).status_code == 404
+    assert client(app, "0911000002").get("/bids").status_code == 403
+    assert TestClient(app).get("/bids", follow_redirects=False).status_code in (303, 307)

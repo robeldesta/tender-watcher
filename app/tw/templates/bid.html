@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% from "_due.html" import leaf, left_text %}{% block title %}Bid: {{ t.title }} | Tender Watcher{% endblock %}
+{% block page_id %}bid{% endblock %}
+{% block body %}
+<div id="room" data-bid="{{ b.id }}" data-csrf="{{ csrf }}" data-state="{{ b.state }}">
+<p class="small" style="margin:0 0 8px"><a href="/bids">← Bid Room</a> · <a href="/t/{{ t.id }}">The tender</a></p>
+<div class="room-head">
+  {{ leaf(t, today) }}
+  <div class="grow"><span class="small muted">{{ t.buyer }}{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}</span>
+    <h1>{{ t.title }}</h1>
+    <p class="small muted" style="margin:0">{{ left_text(t, today) }}{% if t.bid_security %} · Bid security: {{ t.bid_security }}{% endif %}</p></div>
+  <div class="room-actions">
+    <form method="post" action="/bids/{{ b.id }}/draft" id="draft-form"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" type="submit" {{ "disabled" if drafting }}>{% if drafting %}Drafting…{% elif d.drafted_at %}Draft again{% else %}Draft this bid{% endif %}</button></form>
+    <a class="btn ghost" href="/bids/{{ b.id }}/print" target="_blank" rel="noopener">Print or save PDF</a>
+  </div>
+</div>
+{% if drafting %}<p class="alert info" id="drafting-note" role="status">Reading the tender and your profile, building the checklist and writing the letter. This takes about a minute; the page updates by itself.</p>{% endif %}
+{% if b.draft_error %}<p class="alert bad" role="alert">{{ b.draft_error }}</p>{% endif %}
+{% if request.query_params.get("profile") %}<p class="alert ok">Profile saved. Draft again to use it in this bid.</p>{% endif %}
+
+<div class="room">
+  <div class="room-main">
+    <section class="card" id="checklist" aria-labelledby="cl-h">
+      <div class="panel-h"><h2 id="cl-h">What the tender requires</h2><span class="small muted" data-progress>{{ prog.done }} of {{ prog.total }} done</span></div>
+      {% if d.checklist %}
+      <ol class="reqs">
+      {% for r in d.checklist %}<li class="req {{ r.status }}{{ ' done' if r.done }}">
+        <label class="tick"><input type="checkbox" data-done="{{ loop.index0 }}" {{ "checked" if r.done }}><span class="sr">Done</span></label>
+        <div><b>{{ r.requirement }}</b> <span class="pill {{ {'met': 'ok', 'gap': 'bad', 'check': 'warn'}[r.status] }}">{{ STATUS[r.status] }}</span>
+          <p>{{ r.action }}</p>{% if r.notice_says %}<p class="quote">“{{ r.notice_says }}”</p>{% endif %}</div></li>{% endfor %}
+      </ol>
+      {% else %}
+      <p class="muted">Press <b>Draft this bid</b>. Bid Room reads the notice and lists every requirement: eligibility, licences, experience, bid security, documents and how to submit, each marked met, gap or check against your profile.</p>
+      {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="doc-h">
+      <h2 id="doc-h">The bidding document</h2>
+      <p class="small muted">Newspaper notices are short. Paste the bidding document's instructions and qualification criteria (ITB, Section III, data sheet) for a complete checklist, then press Draft again.</p>
+      <textarea name="doc_text" form="draft-form" data-field="doc_text" rows="5" aria-label="Bidding document text" placeholder="Paste the bidding document text here">{{ d.doc_text }}</textarea>
+    </section>
+
+    {% for key, label, hint in [("cover_letter", "Cover letter", "The body of your bid submission letter. Address, date and signature are added when you print."),
+                                ("profile_section", "Company section", "Who you are, your licences, capacity and why you suit this contract."),
+                                ("technical", "Technical offer", "Your approach, specifications, delivery schedule, warranty and support.")] %}
+    <section class="card" aria-labelledby="{{ key }}-h">
+      <h2 id="{{ key }}-h">{{ label }}</h2><p class="small muted">{{ hint }}</p>
+      <textarea data-field="{{ key }}" rows="{{ 10 if key != 'technical' else 8 }}" aria-labelledby="{{ key }}-h">{{ d[key] }}</textarea>
+    </section>
+    {% endfor %}
+
+    <section class="card" aria-labelledby="fin-h">
+      <div class="panel-h"><h2 id="fin-h">Financial offer</h2><span class="small">Total: <b data-total>{{ "{:,.2f}".format(total) }}</b> ETB</span></div>
+      <div class="table-wrap"><table class="fin" id="fin">
+        <thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th><span class="sr">Remove</span></th></tr></thead>
+        <tbody>{% for r in (d.financial or []) + [{}] %}<tr>
+          <td><input data-col="item" value="{{ r.item }}" aria-label="Item"></td><td><input data-col="unit" value="{{ r.unit }}" aria-label="Unit" style="width:80px"></td>
+          <td class="num"><input data-col="qty" value="{{ r.qty }}" inputmode="decimal" aria-label="Quantity" style="width:80px"></td>
+          <td class="num"><input data-col="price" value="{{ r.price }}" inputmode="decimal" aria-label="Unit price" style="width:120px"></td>
+          <td class="num" data-amount></td><td><button class="btn ghost del-row" type="button" aria-label="Remove line">×</button></td></tr>{% endfor %}</tbody>
+      </table></div>
+      <button class="btn ghost" type="button" id="add-line">Add a line</button>
+      <p class="hint">Prices stay in your bid only. Check VAT and the price schedule format the tender asks for.</p>
+    </section>
+  </div>
+
+  <aside class="room-side">
+    <div class="card">
+      <div class="save-state" data-save>{{ "Saved " ~ b.updated_at.strftime("%H:%M") }}</div>
+      <div class="meter-box"><span>{{ prog.done }} of {{ prog.total }} requirements done</span><span class="bar"><i data-bar style="width:{{ (prog.done * 100 // prog.total) if prog.total else 0 }}%"></i></span></div>
+      <label class="check" style="margin-top:12px"><input type="checkbox" data-submitted {{ "checked" if b.state == "submitted" }}> Bid submitted</label>
+    </div>
+    {% if d.warnings %}<div class="card warn-card"><h2>Before you send</h2><ul>{% for w in d.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+    <div class="card" data-confirm-box {{ "hidden" if not confirm }}><h2>To confirm</h2><p class="small muted">Facts the draft needs and your profile doesn't have. Replace each [TO CONFIRM] in the text.</p><ul data-confirm>{% for c in confirm %}<li>{{ c }}</li>{% endfor %}</ul></div>
+    {% if d.open_questions %}<div class="card"><h2>Decide before submitting</h2><ul>{% for q in d.open_questions %}<li>{{ q }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if d.projects %}<div class="card"><h2>Experience to show</h2><ul>{% for i in d.projects if i in projects %}{% set x = projects[i] %}<li>{{ x.name }}<span class="small muted"> · {{ x.client }}{% if x.year_completed %}, {{ x.year_completed }}{% endif %}</span></li>{% endfor %}</ul></div>{% endif %}
+    <div class="card"><h2>Company profile</h2><div class="meter-box"><span>{{ pct }}% ready</span><span class="bar"><i style="width:{{ [pct, 4]|max }}%"></i></span></div>
+      {% if missing %}<p class="small muted">Missing: {{ missing|join(", ") }}.</p>{% endif %}<a class="btn ghost block" href="/profile?back=/bids/{{ b.id }}">Edit profile</a></div>
+  </aside>
+</div>
+</div>
+{% endblock %}

@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-import yaml
 
 
 @dataclass
@@ -86,6 +85,7 @@ def from_dict(d: dict) -> BidProfile:
 
 def load_profiles(path: str | Path) -> dict[str, BidProfile]:
     """YAML file with a top-level `firms:` list -> {legal_name: BidProfile}."""
+    import yaml
     data = yaml.safe_load(Path(path).read_text()) or {}
     return {p.legal_name: p for p in map(from_dict, data.get("firms", []))}
 

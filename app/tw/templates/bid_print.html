@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bid: {{ t.title }} | {{ p.legal_name }}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+Ethiopic:wght@400;600&display=swap">
+<style>
+  :root{--ink:#101828;--muted:#5D6B82;--rule:#CBD2DC;--navy:#0B2F65;--warn:#8A5300;--warn-bg:#FFF2D2}
+  *{box-sizing:border-box}
+  body{margin:0;background:#EEF1F5;color:var(--ink);font:14px/1.55 "IBM Plex Sans","Noto Sans Ethiopic",system-ui,sans-serif}
+  .bar{position:sticky;top:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--navy);color:#fff;font-size:13px;z-index:1}
+  .bar a{color:#fff}.bar .grow{flex:1}
+  .bar button{font:500 14px inherit;font-family:inherit;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #00B8EC;background:#00B8EC;color:var(--navy);cursor:pointer}
+  .confirm{max-width:210mm;margin:12px auto 0;padding:10px 14px;border-radius:8px;background:var(--warn-bg);color:var(--warn);font-size:13px}
+  .sheet{max-width:210mm;margin:12px auto 32px;background:#fff;padding:18mm 18mm 20mm;box-shadow:0 1px 3px rgba(16,24,40,.12)}
+  .letterhead{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid var(--navy);padding-bottom:10px;margin-bottom:18px}
+  .letterhead .name{font-size:18px;font-weight:600;color:var(--navy);line-height:1.2}
+  .letterhead .meta{font-size:12px;color:var(--muted);text-align:right;line-height:1.5}
+  h1{font-size:16px;margin:0 0 4px;line-height:1.25}
+  h2{font-size:14px;margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--rule);color:var(--navy);text-transform:uppercase;letter-spacing:.04em}
+  p{margin:0 0 .8em}
+  .to{margin:14px 0}.to b{display:block}
+  .subject{font-weight:600;margin:12px 0}
+  table{width:100%;border-collapse:collapse;margin:6px 0 4px;font-size:12.5px}
+  th,td{border:1px solid var(--rule);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:#F3F5F8;font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tfoot td{font-weight:600}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:28px;page-break-inside:avoid}
+  .sign .line{border-top:1px solid var(--ink);padding-top:4px;margin-top:44px;font-size:12px;color:var(--muted)}
+  .stamp{border:1px dashed var(--rule);border-radius:50%;width:34mm;height:34mm;display:grid;place-items:center;color:var(--muted);font-size:11px;justify-self:end}
+  .page-break{page-break-before:always;break-before:page}
+  .muted{color:var(--muted)}
+  .tc{background:var(--warn-bg)}
+  ol.annex{padding-left:20px}ol.annex li{margin-bottom:4px}
+  @media print{
+    @page{size:A4;margin:14mm}
+    body{background:#fff}
+    .bar,.confirm{display:none}
+    .sheet{box-shadow:none;margin:0;padding:0;max-width:none}
+    .tc{background:none}
+  }
+</style>
+</head>
+<body>
+<div class="bar"><a href="/bids/{{ b.id }}">← Back to the bid</a><span class="grow"></span><span>Print, or choose "Save as PDF" in the print window.</span><button type="button" data-print>Print</button></div>
+{% if confirm %}<div class="confirm"><b>{{ confirm|length }} fact{{ "s" if confirm|length != 1 }} still marked [TO CONFIRM]:</b> {{ confirm|join("; ") }}. Fill them in the bid before you print the final copy.</div>{% endif %}
+
+{% macro letterhead() %}
+<div class="letterhead">
+  <div><div class="name">{{ p.legal_name }}</div>{% if p.work_types %}<div class="muted" style="font-size:12px">{{ p.work_types }}</div>{% endif %}</div>
+  <div class="meta">{% if p.address %}{{ p.address }}<br>{% endif %}{% if p.phone %}Tel. {{ p.phone }}{% endif %}{% if p.phone and p.email %} · {% endif %}{{ p.email }}<br>{% if p.tin %}TIN {{ p.tin }}{% endif %}{% if p.vat_registered %} · VAT registered{% endif %}</div>
+</div>
+{% endmacro %}
+{% macro paras(text) %}{% for para in (text or "").split("\n\n") if para.strip() %}<p{% if "[TO CONFIRM" in para %} class="tc"{% endif %}>{{ para.strip() | replace("\n", " ") }}</p>{% endfor %}{% endmacro %}
+{% macro signature() %}
+<div class="sign">
+  <div><p style="margin:0">Yours faithfully,</p><div class="line">{{ p.signatory_name or "Name" }}{% if p.signatory_title %}, {{ p.signatory_title }}{% endif %}<br>Signature and date</div></div>
+  <div class="stamp">Company stamp</div>
+</div>
+{% endmacro %}
+
+<div class="sheet">
+  {{ letterhead() }}
+  <p style="text-align:right">Date: {{ today | long_date }}</p>
+  <div class="to"><span class="muted">To:</span><b>{{ t.buyer }}</b>{% if t.place %}{{ t.place }}{% endif %}</div>
+  <p class="subject">Subject: Submission of bid for {{ t.title }}{% if t.reference %}, reference {{ t.reference }}{% endif %}</p>
+  {{ paras(d.cover_letter) if d.cover_letter else '<p class="muted">The cover letter is empty. Write it in Bid Room or press Draft.</p>' | safe }}
+  {{ signature() }}
+</div>
+
+<div class="sheet page-break">
+  {{ letterhead() }}
+  <h1>Company profile</h1>
+  {{ paras(d.profile_section) }}
+  <table><tbody>
+    <tr><th style="width:34%">Legal name</th><td>{{ p.legal_name }}</td></tr>
+    {% if p.tin %}<tr><th>TIN</th><td>{{ p.tin }}{% if p.vat_registered %}, VAT registered{% endif %}</td></tr>{% endif %}
+    {% if p.address %}<tr><th>Address</th><td>{{ p.address }}</td></tr>{% endif %}
+    {% if p.year_established %}<tr><th>Established</th><td>{{ p.year_established }}</td></tr>{% endif %}
+    {% if p.staff_count %}<tr><th>Permanent staff</th><td>{{ p.staff_count }}</td></tr>{% endif %}
+    {% if p.grade %}<tr><th>Grade or class</th><td>{{ p.grade }}</td></tr>{% endif %}
+    {% if p.regions %}<tr><th>Regions</th><td>{{ p.regions }}</td></tr>{% endif %}
+    {% if p.equipment %}<tr><th>Equipment</th><td>{{ p.equipment }}</td></tr>{% endif %}
+  </tbody></table>
+  {% if p.licences %}<h2>Licences and certificates</h2>
+  <table><thead><tr><th>Licence</th><th>Number</th><th>Issued by</th><th>Valid until</th></tr></thead><tbody>
+  {% for x in p.licences %}<tr><td>{{ x.name }}</td><td>{{ x.number }}</td><td>{{ x.issuer }}</td><td class="num">{{ x.expires }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  {% if chosen %}<h2>Similar experience</h2>
+  <table><thead><tr><th>Project</th><th>Client</th><th class="num">Value, ETB</th><th class="num">Year</th><th>Role and scope</th></tr></thead><tbody>
+  {% for x in chosen %}<tr><td>{{ x.name }}</td><td>{{ x.client }}</td><td class="num">{% set v = num(x.value_etb) %}{{ "{:,.0f}".format(v) if v is not none else x.value_etb }}</td><td class="num">{{ x.year_completed }}</td><td>{{ x.role }}{% if x.role and x.scope %}: {% endif %}{{ x.scope }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  {% if p.key_personnel %}<h2>Key staff</h2>
+  <table><thead><tr><th>Role</th><th>Name</th><th>Qualification</th><th class="num">Years</th></tr></thead><tbody>
+  {% for x in p.key_personnel %}<tr><td>{{ x.role }}</td><td>{{ x.name }}</td><td>{{ x.qualification }}</td><td class="num">{{ x.years_experience }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+</div>
+
+{% if d.technical %}
+<div class="sheet page-break">
+  {{ letterhead() }}
+  <h1>Technical offer</h1>
+  <p class="muted">For: {{ t.title }}{% if t.reference %} ({{ t.reference }}){% endif %}</p>
+  {{ paras(d.technical) }}
+  {{ signature() }}
+</div>
+{% endif %}
+
+{% if d.financial %}
+<div class="sheet page-break">
+  {{ letterhead() }}
+  <h1>Financial offer</h1>
+  <p class="muted">For: {{ t.title }}{% if t.reference %} ({{ t.reference }}){% endif %}</p>
+  <table><thead><tr><th style="width:36px">No.</th><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price, ETB</th><th class="num">Amount, ETB</th></tr></thead><tbody>
+  {% for r in d.financial %}{% set q, pr = num(r.qty), num(r.price) %}<tr><td class="num">{{ loop.index }}</td><td>{{ r.item }}</td><td>{{ r.unit }}</td><td class="num">{{ r.qty }}</td>
+    <td class="num">{{ "{:,.2f}".format(pr) if pr is not none else r.price }}</td><td class="num">{{ "{:,.2f}".format(q * pr) if q is not none and pr is not none else "" }}</td></tr>{% endfor %}
+  </tbody><tfoot><tr><td colspan="5" class="num">Total</td><td class="num">{{ "{:,.2f}".format(total) }}</td></tr></tfoot></table>
+  <p class="muted" style="font-size:12px">State whether prices include VAT and how long the offer is valid, as the bidding document asks.</p>
+  {{ signature() }}
+</div>
+{% endif %}
+
+{% if d.checklist %}
+<div class="sheet page-break">
+  {{ letterhead() }}
+  <h1>Annex: documents and requirements</h1>
+  <p class="muted">What the tender asks for, and what is enclosed.</p>
+  <table><thead><tr><th style="width:36px">No.</th><th>Requirement</th><th>Status</th><th style="width:70px">Enclosed</th></tr></thead><tbody>
+  {% for r in d.checklist %}<tr><td class="num">{{ loop.index }}</td><td>{{ r.requirement }}</td><td>{{ STATUS[r.status] }}</td><td>{{ "Yes" if r.done else "" }}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+<script src="/static/app.js?v=2" defer></script>
+</body>
+</html>

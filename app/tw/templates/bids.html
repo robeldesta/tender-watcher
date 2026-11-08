@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Bid Room | Tender Watcher{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Bid Room</h1><p class="sub">Your bids in progress. Start one from any tender with "Start this bid".</p></div>
+  <div class="act"><a class="btn ghost" href="/profile">Company profile</a><a class="btn" href="/my">Find a tender</a></div></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Tender</th><th class="num">Closes</th><th>Checklist</th><th>State</th><th class="num">Last saved</th></tr></thead><tbody>
+{% for b in rows %}{% set pr = prog[b.id] %}<tr>
+  <td><a href="/bids/{{ b.id }}">{{ b.tender.title }}</a><div class="small muted">{{ b.tender.buyer }}</div></td>
+  <td class="num nowrap">{{ b.tender.closes | short_date if b.tender.closes else "–" }}</td>
+  <td>{% if pr.total %}{{ pr.done }} of {{ pr.total }} done{% if pr.gaps %} <span class="pill bad">{{ pr.gaps }} gap{{ "s" if pr.gaps != 1 }}</span>{% endif %}{% else %}<span class="muted">Not drafted yet</span>{% endif %}</td>
+  <td>{% if b.state == "submitted" %}<span class="pill ok">Submitted</span>{% elif b.state == "drafting" %}<span class="pill info">Drafting</span>{% else %}<span class="pill">In progress</span>{% endif %}</td>
+  <td class="num small muted">{{ b.updated_at.strftime("%d %b %H:%M") }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">No bids yet. Open a tender and press "Start this bid": Bid Room reads the notice, builds the checklist and drafts the letter from your company profile.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

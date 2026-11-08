@@ -20,6 +20,7 @@ class Company(Base):
     trial_until: Mapped[str] = mapped_column(String(10), default="")
     paid_until: Mapped[str] = mapped_column(String(10), default="")
     interests: Mapped[str] = mapped_column(Text, default="")  # JSON: {"categories": [], "regions": [], "keywords": []}
+    profile: Mapped[str] = mapped_column(Text, default="")  # JSON bid profile: licences, projects, staff (bids.py)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
@@ -122,6 +123,23 @@ class Price(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
+class Bid(Base):
+    """A company's bid for one tender: its checklist, sections and price lines, saved as it is written."""
+    __tablename__ = "bids"
+    __table_args__ = (UniqueConstraint("company_id", "tender_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    tender_id: Mapped[str] = mapped_column(ForeignKey("tenders.id"))
+    state: Mapped[str] = mapped_column(String(12), default="open")  # open, drafting, submitted
+    data: Mapped[str] = mapped_column(Text, default="")  # JSON, see bids.blank()
+    draft_error: Mapped[str] = mapped_column(String(300), default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=now)
+    tender: Mapped[Tender] = relationship()
+    company: Mapped[Company] = relationship()
+
+
 class Setting(Base):
     """A value an admin can change on the site, such as the trial length."""
     __tablename__ = "settings"
@@ -153,7 +171,8 @@ ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
                  ("users", "totp_secret", "VARCHAR(64) NOT NULL DEFAULT ''"),
                  ("users", "totp_step", "INTEGER NOT NULL DEFAULT 0"),
                  ("users", "totp_backup", "TEXT NOT NULL DEFAULT ''"),
-                 ("users", "last_login", "TIMESTAMP")]
+                 ("users", "last_login", "TIMESTAMP"),
+                 ("companies", "profile", "TEXT NOT NULL DEFAULT ''")]
 
 
 def upgrade(engine):

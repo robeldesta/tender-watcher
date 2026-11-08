@@ -40,6 +40,7 @@
         <ul>
           <li>{{ check() }}Bid security, document fee and where to buy the documents</li>
           <li>{{ check() }}{% if t.photo %}A photo of the original notice{% elif t.notice %}The complete notice text{% else %}Every detail we collected{% endif %}</li>
+          <li>{{ check() }}Bid Room for this tender: every requirement as a checklist, and your bid drafted from your company profile</li>
           <li>{{ check() }}Every other open tender that matches your business, each morning in Telegram</li>
         </ul>
         <div class="btns">{% if me %}<a class="btn big" href="/account">Subscribe</a>{% else %}<a class="btn big" href="/signup">Start {{ TRIAL }}-day free trial</a><a class="btn big ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}</div>
@@ -57,6 +58,21 @@
       <p>{% if t.closes %}Bids close {{ t.closes | long_date }}{% if t.time %} at {{ t.time }}{% endif %}.{% else %}The notice gives no closing date. Check it before you prepare a bid.{% endif %}</p>
       {% for n in date_notes(t, today) %}<p class="note">{{ n }}</p>{% endfor %}
     </div>
+    {% if not me or me.role == "member" %}
+    <div class="card bidroom-card">
+      <h2>Bid Room</h2>
+      {% if bid %}
+        <p class="small muted">Your bid for this tender is in progress{% if bid.state == "submitted" %} and marked submitted{% endif %}.</p>
+        <a class="btn block" href="/bids/{{ bid.id }}">Open your bid</a>
+      {% elif full %}
+        <p class="small muted">Everything this tender requires, as a checklist checked against your profile. The cover letter, company section and price schedule drafted for you, ready to print and stamp.</p>
+        <form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn block" type="submit">Start this bid</button></form>
+      {% else %}
+        <p class="small muted">Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp.</p>
+        <a class="btn block" href="{{ '/account' if me else '/signup' }}">{{ "Subscribe to open Bid Room" if me else "Start your trial to open Bid Room" }}</a>
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="origin">
       <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/><path d="M10 14.3l2.7 2.7L18.5 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div>{% if t.id.startswith("wb-") %}<b>From the World Bank's official feed</b>Published by the World Bank for a project it finances in Ethiopia.

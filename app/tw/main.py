@@ -19,7 +19,7 @@ from . import notices
 from . import auth
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import AlertSent, AuditLog, Company, LoginFailure, Payment, Price, Setting, Tender, User, make_session, now
+from .db import AlertSent, AuditLog, Bid, Company, LoginFailure, Payment, Price, Setting, Tender, User, make_session, now
 from .sync import BoardSync
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
@@ -356,7 +356,10 @@ def create_app(settings=None, claude=None):
         if not t or (t.status != "published" and not (u and u.role in STAFF)):
             return page(request, "message.html", u, status=404, title="This tender has closed or is no longer listed",
                         text="Tenders leave the list after their closing date.", link=("/", "See all open tenders"))
-        return page(request, "tender.html", u, t=t, full=has_access(u))
+        bid = None
+        if u and u.role == "member" and u.company_id:
+            bid = session.scalars(select(Bid).where(Bid.company_id == u.company_id, Bid.tender_id == tid)).first()
+        return page(request, "tender.html", u, t=t, full=has_access(u), bid=bid)
 
     @app.get("/notices/{name}")
     def photo(request: Request, name: str, session=Depends(db)):
@@ -1187,5 +1190,9 @@ def create_app(settings=None, claude=None):
     admin_console.register(app, SimpleNamespace(db=db, need=need, page=page, audit=audit, today=today, now=now,
                                                 paginate=paginate, check_csrf=check_csrf, TZ=TZ, sync=sync,
                                                 board_json=s.board_json, site_url=s.site_url, photos=photos))
+    from . import bidroom
+    bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
+                                          TZ=TZ, has_access=has_access, get_claude=get_claude, Session=Session,
+                                          sync_drafts=False))
     app.state.Session = Session
     return app
