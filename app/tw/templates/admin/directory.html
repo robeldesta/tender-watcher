@@ -1,0 +1,23 @@
+{% extends layout %}{% block title %}Buyers and sources | Admin{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Buyers and sources</h1><p class="sub">Who publishes tenders, and the websites we read every morning.</p></div>
+  <div class="act"><a class="btn ghost" href="/buyers.html" target="_blank" rel="noopener">Public buyer directory</a></div></div>
+<div class="two-col">
+<section>
+  <div class="panel-h"><h2>Buyers <span class="muted">({{ buyers|length }})</span></h2></div>
+  <form class="toolbar" method="get" action="/admin/directory" role="search"><label class="sr" for="q">Search buyers</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="Buyer name"><button class="btn ghost" type="submit">Search</button></form>
+  <div class="table-wrap"><table><thead><tr><th>Buyer</th><th>Type</th><th class="num">Open</th><th class="num">Tenders</th><th class="num">Latest</th></tr></thead><tbody>
+  {% for name, type, n, latest, open in buyers %}<tr><td><a href="/admin/tenders?status=all&q={{ name | urlencode }}">{{ name }}</a></td><td class="small">{{ TYPES.get(type, type) }}</td>
+    <td class="num">{{ open or 0 }}</td><td class="num">{{ n }}</td><td class="num small muted">{{ latest.strftime("%d %b") if latest else "–" }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">No buyers match.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<section>
+  <div class="panel-h"><h2>Websites we watch <span class="muted">({{ sources|length }})</span></h2></div>
+  {% if src_error %}<p class="alert warn">{{ src_error }}</p>{% endif %}
+  <div class="table-wrap"><table><thead><tr><th>Source</th><th class="num">Finds</th></tr></thead><tbody>
+  {% for src in sources %}{% set name = src.name or src.url %}<tr><td>{{ name }}<div class="small muted">{{ (src.url or "") | host }}</div></td><td class="num">{{ finds.get(name ~ " website", 0) }}</td></tr>
+  {% else %}{% if not src_error %}<tr><td colspan="2" class="muted">No websites set up yet.</td></tr>{% endif %}{% endfor %}</tbody></table></div>
+  <p class="hint">Websites are read every morning at 6:00; finds wait in the review queue.</p>
+</section>
+</div>
+{% endblock %}

@@ -33,7 +33,7 @@
     {% if full %}
       {% if t.photo %}<h2>The notice</h2><div class="photo" style="margin-bottom:28px"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div>{% endif %}
       {% if t.notice %}<h2>Full notice</h2><div class="notice-text">{{ t.notice }}</div>{% endif %}
-      {% if t.url %}<p class="small muted" style="margin-top:16px">Buyer's own page: <a href="{{ t.url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
+      {% if t.url | safe_url %}<p class="small muted" style="margin-top:16px">Buyer's own page: <a href="{{ t.url | safe_url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
     {% else %}
       <div class="lock-card">
         <h2>See the full notice and everything that fits you</h2>

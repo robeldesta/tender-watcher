@@ -16,9 +16,10 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import func, or_, select
 
 from . import notices
+from . import auth
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import AlertSent, Company, LoginFailure, Payment, Price, Setting, Tender, User, make_session, now
+from .db import AlertSent, AuditLog, Company, LoginFailure, Payment, Price, Setting, Tender, User, make_session, now
 from .sync import BoardSync
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
@@ -46,10 +47,14 @@ CHECK_HOURS = 48  # stop asking Chapa about a checkout after this
 
 
 PER_PAGE = 20
+CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; "
+       "frame-ancestors 'none'; form-action 'self' https://checkout.chapa.co; base-uri 'none'; object-src 'none'")
 
 
-def paginate(rows, p):
-    pages = max(1, -(-len(rows) // PER_PAGE))
+def paginate(rows, p, per=None):
+    per = per or PER_PAGE
+    pages = max(1, -(-len(rows) // per))
     p = min(max(1, p), pages)
     near = sorted({1, pages, p - 1, p, p + 1} & set(range(1, pages + 1)))
     shown, last = [], 0
@@ -58,8 +63,8 @@ def paginate(rows, p):
             shown.append(None)
         shown.append(n)
         last = n
-    return {"rows": rows[(p - 1) * PER_PAGE: p * PER_PAGE], "page": p, "pages": pages, "shown": shown,
-            "first": (p - 1) * PER_PAGE + 1, "last": min(p * PER_PAGE, len(rows))}
+    return {"rows": rows[(p - 1) * per: p * per], "page": p, "pages": pages, "shown": shown,
+            "first": (p - 1) * per + 1, "last": min(p * per, len(rows)), "total": len(rows)}
 
 
 def today():
@@ -106,6 +111,19 @@ def date_notes(t, ref):
     return notes
 
 
+MAGIC = {"image/jpeg": (b"\xff\xd8\xff",), "image/png": (b"\x89PNG\r\n\x1a\n",), "image/webp": (b"RIFF",)}
+
+
+def looks_like_image(body, media):
+    return body.startswith(MAGIC.get(media, ())) and (media != "image/webp" or body[8:12] == b"WEBP")
+
+
+def safe_url(url):
+    """Only http(s) links reach a page; anything else (javascript:, data:) is dropped."""
+    url = str(url or "").strip()
+    return url if re.match(r"https?://[^\s\"'<>]+$", url, re.I) else ""
+
+
 def host(url):
     from urllib.parse import urlsplit
     return urlsplit(url).hostname or url
@@ -115,6 +133,14 @@ class LoginRequired(Exception):
     pass
 
 
+class TwoStepRequired(Exception):
+    """Admins and reviewers must turn on two-step sign-in before any staff page opens."""
+
+
+TWO_STEP_ROLES = ("admin", "reviewer")
+ADMIN_LAYOUT = "admin/_layout.html"
+
+
 def create_app(settings=None, claude=None):
     s = settings or Settings()
     Session = make_session(s.database_url)
@@ -122,11 +148,29 @@ def create_app(settings=None, claude=None):
     os.makedirs(photos, exist_ok=True)
     signer = URLSafeTimedSerializer(s.secret, salt="tw-session")
     tg_signer = URLSafeTimedSerializer(s.secret, salt="tw-telegram-link")
+    step_signer = URLSafeTimedSerializer(s.secret, salt="tw-two-step")
+    setup_signer = URLSafeTimedSerializer(s.secret, salt="tw-two-step-setup")
     app = FastAPI(title="Tender Watcher", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
+
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        r = await call_next(request)
+        h = r.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
+        h.setdefault("Content-Security-Policy", CSP)
+        if s.secure_cookies:
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if request.url.path.startswith(("/admin", "/account", "/entry", "/security", "/login", "/collect", "/mine")):
+            h.setdefault("Cache-Control", "no-store")
+        return r
     tpl = Jinja2Templates(directory=os.path.join(HERE, "templates"))
     tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
-    tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host)
+    tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host,
+                           safe_url=safe_url)
     tpl.env.globals.update(date_notes=date_notes)
     state = {"claude": claude}
 
@@ -160,6 +204,11 @@ def create_app(settings=None, claude=None):
             raise HTTPException(400, "This form has expired. Go back, reload the page and try again.")
 
     def page(request, name, u=None, status=200, **ctx):
+        ctx.setdefault("layout", ADMIN_LAYOUT if u and u.role in TWO_STEP_ROLES and ctx.pop("admin", False) else "base.html")
+        ctx.pop("admin", None)
+        if ctx["layout"] == ADMIN_LAYOUT and "side" not in ctx:
+            with Session() as ss:
+                ctx["side"] = side_counts(ss)
         ctx.update(request=request, me=u, csrf=csrf_token(u) if u else "", today=today(), PRICES=prices(), TRIAL=trial_days())
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
 
@@ -225,11 +274,31 @@ def create_app(settings=None, claude=None):
             raise LoginRequired()
         if u.role not in roles:
             raise HTTPException(403, "You don't have access to this page.")
+        if u.role in TWO_STEP_ROLES and not u.totp_secret:
+            raise TwoStepRequired()
         return u
+
+    def side_counts(session):
+        return {"pending": session.scalar(select(func.count()).select_from(Tender).where(Tender.status == "pending")),
+                "waiting": session.scalar(select(func.count()).select_from(Payment).where(Payment.status == "pending"))}
+
+    def spage(request, session, u, name, nav, status=200, **ctx):
+        """A staff page: inside the admin console for admins and reviewers, plain for collectors."""
+        if u.role in TWO_STEP_ROLES:
+            return page(request, name, u, status=status, admin=True, nav=nav, side=side_counts(session), **ctx)
+        return page(request, name, u, status=status, **ctx)
+
+    def audit(session, u, action, target="", detail="", request=None):
+        session.add(AuditLog(actor_id=u.id if u else None, action=action, target=str(target)[:120],
+                             detail=str(detail)[:500], ip=client_ip(request)[:60] if request else ""))
 
     @app.exception_handler(LoginRequired)
     async def _login(request, exc):
         return RedirectResponse("/login?next=" + request.url.path, 303)
+
+    @app.exception_handler(TwoStepRequired)
+    async def _two_step(request, exc):
+        return RedirectResponse("/security?required=1", 303)
 
     @app.exception_handler(HTTPException)
     async def _http(request, exc):
@@ -328,6 +397,8 @@ def create_app(settings=None, claude=None):
                             error=f"Too many tries. Wait {LOCK_MINUTES} minutes, then try again.")
         u = session.scalars(select(User).where(User.phone == p)).first() if p else None
         if not u or not u.active or not check_password(password, u.pw_hash):
+            if u and u.role in STAFF:
+                audit(session, u, "password_wrong", u.phone, "", request)
             session.add_all([LoginFailure(key=k) for k in keys])
             session.commit()
             return page(request, "login.html", None, status=400, next=next,
@@ -337,12 +408,71 @@ def create_app(settings=None, claude=None):
         session.commit()
         if not next.startswith("/") or next.startswith("//"):
             next = "/"
+        if u.totp_secret:  # password was right; the code from the app comes next
+            r = RedirectResponse("/login/code?next=" + next, 303)
+            r.set_cookie("tw2", step_signer.dumps([u.id, u.session_ver]), max_age=600, httponly=True,
+                         samesite="lax", secure=s.secure_cookies)
+            return r
+        return finish_login(request, session, u, next)
+
+    def landing(u):
+        return "/admin" if u.role in TWO_STEP_ROLES else "/collect" if u.role in STAFF else "/my"
+
+    def finish_login(request, session, u, next):
         if next == "/":
-            next = "/collect" if u.role in STAFF else "/my"
+            next = landing(u)
+        u.last_login = now()
+        if u.role in STAFF:
+            audit(session, u, "sign_in", u.phone, "two-step" if u.totp_secret else "password only", request)
+        session.commit()
         r = RedirectResponse(next, 303)
+        r.delete_cookie("tw2")
         r.set_cookie("tw", signer.dumps([u.id, u.session_ver]), max_age=30 * 86400, httponly=True,
                      samesite="lax", secure=s.secure_cookies)
         return r
+
+    def pending_step(request, session):
+        try:
+            uid, ver = step_signer.loads(request.cookies.get("tw2", ""), max_age=600)
+        except (BadSignature, ValueError, TypeError):
+            return None
+        u = session.get(User, uid)
+        return u if u and u.active and u.session_ver == ver and u.totp_secret else None
+
+    @app.get("/login/code", response_class=HTMLResponse)
+    def code_form(request: Request, next: str = "/", session=Depends(db)):
+        if not pending_step(request, session):
+            return RedirectResponse("/login", 303)
+        return page(request, "code.html", None, next=next)
+
+    @app.post("/login/code")
+    def code_check(request: Request, code: str = Form(""), next: str = Form("/"), session=Depends(db)):
+        u = pending_step(request, session)
+        if not u:
+            return RedirectResponse("/login", 303)
+        if not next.startswith("/") or next.startswith("//"):
+            next = "/"
+        key = f"code:{u.id}"
+        since = now() - dt.timedelta(minutes=LOCK_MINUTES)
+        if session.scalar(select(func.count()).select_from(LoginFailure)
+                          .where(LoginFailure.key == key, LoginFailure.at >= since)) >= MAX_PHONE_FAILS:
+            return page(request, "code.html", None, status=429, next=next,
+                        error=f"Too many wrong codes. Wait {LOCK_MINUTES} minutes, then sign in again.")
+        step = auth.totp_step(u.totp_secret, code, u.totp_step)
+        if step:
+            u.totp_step = step
+            return finish_login(request, session, u, next)
+        left = auth.use_backup_code(code, json.loads(u.totp_backup or "[]"))
+        if left is not None:
+            u.totp_backup = json.dumps(left)
+            audit(session, u, "backup_code_used", u.phone, f"{len(left)} backup codes left", request)
+            return finish_login(request, session, u, next)
+        session.add(LoginFailure(key=key))
+        if u.role in STAFF:
+            audit(session, u, "code_wrong", u.phone, "", request)
+        session.commit()
+        return page(request, "code.html", None, status=400, next=next,
+                    error="That code didn't work. Codes change every 30 seconds; use the newest one.")
 
     @app.post("/logout")
     def logout(request: Request, session=Depends(db)):
@@ -507,7 +637,7 @@ def create_app(settings=None, claude=None):
     def payments_page(request, session, u, status=200, **ctx):
         rows = session.scalars(select(Payment).order_by(Payment.created_at.desc()).limit(200)).all()
         companies = session.scalars(select(Company).order_by(Company.name)).all()
-        return page(request, "payments.html", u, status=status, rows=rows, companies=companies, prices=prices(),
+        return spage(request, session, u, "payments.html", "payments", status=status, rows=rows, companies=companies, prices=prices(),
                     bank_currencies=BANK_CURRENCIES, methods=PAY_METHODS, chapa_on=bool(app.state.chapa), **ctx)
 
     @app.post("/admin/payments", response_class=HTMLResponse)
@@ -538,6 +668,8 @@ def create_app(settings=None, claude=None):
         session.add(p)
         session.commit()
         credit(session, p, reference=reference.strip(), by=u.id)
+        audit(session, u, "payment_recorded", f"company:{c.id}", f"{currency} {paid_amount} {plan} by {method}, ref {reference.strip()[:60]}", request)
+        session.commit()
         return RedirectResponse("/admin/payments?added=1", 303)
 
     @app.get("/admin/prices", response_class=HTMLResponse)
@@ -549,7 +681,7 @@ def create_app(settings=None, claude=None):
         rows = {(p.currency, p.plan): p for p in session.scalars(select(Price))}
         rows["trial"] = session.get(Setting, "trial_days")
         people = {x.id: x.name for x in session.scalars(select(User).where(User.role == "admin"))}
-        return page(request, "prices.html", u, status=status, rows=rows, people=people,
+        return spage(request, session, u, "prices.html", "prices", status=status, rows=rows, people=people,
                     currencies=list(CURRENCIES), plans=list(PLAN_DAYS), **ctx)
 
     @app.post("/admin/prices", response_class=HTMLResponse)
@@ -578,6 +710,7 @@ def create_app(settings=None, claude=None):
                 session.add(p)
             elif p.amount == amount:
                 continue
+            audit(session, u, "price_changed", f"{cur} {plan}", f"{p.amount if p.amount else 'none'} -> {amount}", request)
             p.amount, p.updated_by, p.updated_at = amount, u.id, now()
             changed += 1
         t = session.get(Setting, "trial_days")
@@ -585,11 +718,98 @@ def create_app(settings=None, claude=None):
             if not t:
                 t = Setting(key="trial_days", value=raw)
                 session.add(t)
+            audit(session, u, "trial_changed", "trial days", f"{trial_days()} -> {int(raw)}", request)
             t.value, t.updated_by, t.updated_at = str(int(raw)), u.id, now()
             changed += 1
         session.commit()
         prices(fresh=True)
         return RedirectResponse(f"/admin/prices?saved={changed}", 303)
+
+    # -- security: password and two-step sign-in, for every account
+    def security_page(request, session, u, status=200, **ctx):
+        setup = {}
+        if not u.totp_secret:
+            secret = auth.new_totp_secret()
+            import segno
+            uri = auth.otpauth_uri(secret, u.phone)
+            setup = dict(token=setup_signer.dumps([u.id, secret]), key=" ".join(secret[i:i + 4] for i in range(0, len(secret), 4)),
+                         qr=segno.make(uri, error="m").svg_inline(scale=4, dark="#101828", light="#ffffff"))
+        left = len(json.loads(u.totp_backup or "[]")) if u.totp_secret else 0
+        return page(request, "security.html", u, status=status, setup=setup, backup_left=left,
+                    must=u.role in TWO_STEP_ROLES, admin=bool(u.totp_secret), **ctx)
+
+    def signed_in(request, session):
+        u = user_from(request, session)
+        if not u:
+            raise LoginRequired()
+        return u
+
+    @app.get("/security", response_class=HTMLResponse)
+    def security(request: Request, session=Depends(db)):
+        return security_page(request, session, signed_in(request, session))
+
+    @app.post("/security/two-step/on", response_class=HTMLResponse)
+    def two_step_on(request: Request, token: str = Form(""), code: str = Form(""), csrf: str = Form(""),
+                    session=Depends(db)):
+        u = signed_in(request, session)
+        check_csrf(u, csrf)
+        try:
+            uid, secret = setup_signer.loads(token, max_age=1800)
+        except BadSignature:
+            uid, secret = None, ""
+        if uid != u.id or u.totp_secret:
+            return RedirectResponse("/security", 303)
+        step = auth.totp_step(secret, code)
+        if not step:
+            return security_page(request, session, u, status=400,
+                                 error="That code didn't match. Scan the new QR code below and enter the code your app shows now.")
+        codes, hashes = auth.new_backup_codes()
+        u.totp_secret, u.totp_step, u.totp_backup = secret, step, json.dumps(hashes)
+        u.session_ver += 1  # other devices sign in again, with the code
+        audit(session, u, "two_step_on", u.phone, "", request)
+        session.commit()
+        r = page(request, "backup_codes.html", u, codes=codes)
+        return set_login(r, u)
+
+    @app.post("/security/two-step/off")
+    def two_step_off(request: Request, code: str = Form(""), csrf: str = Form(""), session=Depends(db)):
+        u = signed_in(request, session)
+        check_csrf(u, csrf)
+        if u.role in TWO_STEP_ROLES:
+            raise HTTPException(403, "Admins and reviewers must keep two-step sign-in on.")
+        if not u.totp_secret or not auth.totp_step(u.totp_secret, code, u.totp_step):
+            return security_page(request, session, u, status=400, error="Enter the current code from your app to turn it off.")
+        u.totp_secret, u.totp_step, u.totp_backup = "", 0, ""
+        audit(session, u, "two_step_off", u.phone, "", request)
+        session.commit()
+        return RedirectResponse("/security?off=1", 303)
+
+    @app.post("/security/backup-codes", response_class=HTMLResponse)
+    def new_backup(request: Request, code: str = Form(""), csrf: str = Form(""), session=Depends(db)):
+        u = signed_in(request, session)
+        check_csrf(u, csrf)
+        step = u.totp_secret and auth.totp_step(u.totp_secret, code, u.totp_step)
+        if not step:
+            return security_page(request, session, u, status=400, error="Enter the current code from your app to get new backup codes.")
+        codes, hashes = auth.new_backup_codes()
+        u.totp_step, u.totp_backup = step, json.dumps(hashes)
+        audit(session, u, "backup_codes_new", u.phone, "", request)
+        session.commit()
+        return page(request, "backup_codes.html", u, codes=codes)
+
+    @app.post("/security/password", response_class=HTMLResponse)
+    def change_password(request: Request, current: str = Form(""), new: str = Form(""), csrf: str = Form(""),
+                        session=Depends(db)):
+        u = signed_in(request, session)
+        check_csrf(u, csrf)
+        if not check_password(current, u.pw_hash):
+            return security_page(request, session, u, status=400, error="Your current password isn't right.")
+        if len(new) < MIN_PASSWORD:
+            return security_page(request, session, u, status=400, error=f"Use a new password of at least {MIN_PASSWORD} characters.")
+        u.pw_hash, u.session_ver = hash_password(new), u.session_ver + 1
+        audit(session, u, "password_changed", u.phone, "", request)
+        session.commit()
+        return set_login(RedirectResponse("/security?password=1", 303), u)
 
     @app.post("/account/telegram/stop")
     def stop_telegram(request: Request, csrf: str = Form(""), session=Depends(db)):
@@ -625,7 +845,7 @@ def create_app(settings=None, claude=None):
         """Tenders the website watcher found: they wait in the web Review list like collectors' entries."""
         internal(request)
         body = await request.json()
-        name, url = str(body.get("source", ""))[:150], str(body.get("url", ""))[:500]
+        name, url = str(body.get("source", ""))[:150], safe_url(str(body.get("url", ""))[:500])
         created = 0
         for e in body.get("entries", [])[:20]:
             if not isinstance(e, dict) or not str(e.get("title", "")).strip():
@@ -746,7 +966,7 @@ def create_app(settings=None, claude=None):
         u = need(request, session, STAFF)
         mine = session.scalars(select(Tender).where(Tender.collector_id == u.id)
                                .order_by(Tender.created_at.desc()).limit(10)).all()
-        return page(request, "collect.html", u, mine=mine)
+        return spage(request, session, u, "collect.html", "collect", mine=mine)
 
     @app.post("/collect", response_class=HTMLResponse)
     async def collect(request: Request, photo: UploadFile = File(...), source: str = Form(""),
@@ -759,17 +979,17 @@ def create_app(settings=None, claude=None):
             media = "image/jpeg"
         elif body[:8] == b"\x89PNG\r\n\x1a\n":
             media = "image/png"
-        if media not in IMAGE_TYPES or not body:
-            return page(request, "collect.html", u, status=400, error="Send the notice as a JPG or PNG photo.")
+        if media not in IMAGE_TYPES or not body or not looks_like_image(body, media):
+            return spage(request, session, u, "collect.html", "collect", status=400, error="Send the notice as a JPG or PNG photo.")
         if len(body) > MAX_PHOTO:
-            return page(request, "collect.html", u, status=400, error="That photo is over 15 MB. Take it again at normal size.")
+            return spage(request, session, u, "collect.html", "collect", status=400, error="That photo is over 15 MB. Take it again at normal size.")
         try:
             out = notices.extract(get_claude(), body, media, source)
         except notices.ExtractError as e:
-            return page(request, "collect.html", u, status=422, error=f"{e} Try again with a clearer photo.")
+            return spage(request, session, u, "collect.html", "collect", status=422, error=f"{e} Try again with a clearer photo.")
         if not out.get("tenders"):
             why = out.get("problem") or "No tender found in the photo."
-            return page(request, "collect.html", u, status=422, error=f"{why} Take a clear photo of one notice.")
+            return spage(request, session, u, "collect.html", "collect", status=422, error=f"{why} Take a clear photo of one notice.")
         name = uuid.uuid4().hex[:16] + IMAGE_TYPES[media]
         with open(os.path.join(photos, name), "wb") as f:
             f.write(body)
@@ -812,7 +1032,7 @@ def create_app(settings=None, claude=None):
             raise HTTPException(404, "Not found.")
         siblings = session.scalars(select(Tender).where(Tender.photo == t.photo, Tender.photo != "",
                                                         Tender.id != t.id)).all() if t.photo else []
-        return page(request, "entry.html", u, t=t, new=new, siblings=siblings, editable=can_edit(u, t))
+        return spage(request, session, u, "entry.html", "review", t=t, new=new, siblings=siblings, editable=can_edit(u, t))
 
     @app.post("/entry/{tid}")
     async def save_entry(request: Request, tid: str, session=Depends(db)):
@@ -825,6 +1045,8 @@ def create_app(settings=None, claude=None):
         for k in EDITABLE:
             if k in form:
                 setattr(t, k, str(form[k]).strip()[:8000 if k == "notice" else 500])
+        if t.url and not safe_url(t.url):
+            t.url = ""  # only http(s) links: a javascript: link would run in the reviewer's session
         errors = []
         ed, em, ey = (str(form.get(k, "")).strip() for k in ("eth_day", "eth_month", "eth_year"))
         if ed or em or ey:
@@ -857,12 +1079,14 @@ def create_app(settings=None, claude=None):
                 errors.append("Add the closing date, or tick 'The notice gives no closing date'.")
             if not errors:
                 t.status, t.reviewer_id, t.published_at = "published", u.id, now()
+                audit(session, u, "tender_approved", t.id, t.title[:200], request)
         elif action == "reject" and u.role in REVIEWERS:
             t.status, t.reviewer_id = "rejected", u.id
+            audit(session, u, "tender_rejected", t.id, t.title[:200], request)
         if errors:
             session.rollback()
             t = session.get(Tender, tid)
-            return page(request, "entry.html", u, status=400, t=t, new=0, siblings=[], editable=True,
+            return spage(request, session, u, "entry.html", "review", status=400, t=t, new=0, siblings=[], editable=True,
                         errors=errors, form=form)
         session.commit()
         if t.status == "published" and action == "approve":
@@ -873,7 +1097,7 @@ def create_app(settings=None, claude=None):
         if action in ("approve", "reject"):
             nxt = session.scalars(select(Tender).where(Tender.status == "pending")
                                   .order_by(Tender.created_at)).first()
-            return RedirectResponse(f"/entry/{nxt.id}" if nxt else "/review", 303)
+            return RedirectResponse(f"/entry/{nxt.id}" if nxt else "/admin/review", 303)
         return RedirectResponse(f"/entry/{t.id}?saved=1", 303)
 
     @app.get("/mine", response_class=HTMLResponse)
@@ -886,16 +1110,16 @@ def create_app(settings=None, claude=None):
         for r in rows:
             if r.created_at.astimezone(TZ).date().isoformat()[:7] == month:
                 counts[r.status] = counts.get(r.status, 0) + 1
-        return page(request, "mine.html", u, rows=rows, counts=counts, month=month)
+        return spage(request, session, u, "mine.html", "collect", rows=rows, counts=counts, month=month)
 
     # -- reviewers
-    @app.get("/review", response_class=HTMLResponse)
+    @app.get("/admin/review", response_class=HTMLResponse)
     def review(request: Request, session=Depends(db)):
         u = need(request, session, REVIEWERS)
         rows = session.scalars(select(Tender).where(Tender.status == "pending").order_by(Tender.created_at)).all()
-        return page(request, "review.html", u, rows=rows)
+        return spage(request, session, u, "review.html", "review", rows=rows)
 
-    @app.get("/admin/stats", response_class=HTMLResponse)
+    @app.get("/admin/collectors", response_class=HTMLResponse)
     def stats(request: Request, month: str = "", session=Depends(db)):
         u = need(request, session, REVIEWERS)
         month = month if re.fullmatch(r"\d{4}-\d\d", month) else today()[:7]
@@ -906,13 +1130,13 @@ def create_app(settings=None, claude=None):
         table = {}
         for name, status, n in session.execute(q):
             table.setdefault(name, {"published": 0, "pending": 0, "rejected": 0})[status] = n
-        return page(request, "stats.html", u, table=sorted(table.items()), month=month)
+        return spage(request, session, u, "stats.html", "collectors", table=sorted(table.items()), month=month)
 
     @app.get("/admin/team", response_class=HTMLResponse)
     def team(request: Request, session=Depends(db)):
         u = need(request, session, ("admin",))
         people = session.scalars(select(User).where(User.role.in_(STAFF)).order_by(User.role, User.name)).all()
-        return page(request, "team.html", u, people=people)
+        return spage(request, session, u, "team.html", "team", people=people)
 
     @app.post("/admin/team", response_class=HTMLResponse)
     def add_person(request: Request, name: str = Form(""), phone: str = Form(""), role: str = Form("collector"),
@@ -928,9 +1152,10 @@ def create_app(settings=None, claude=None):
                  "Someone already uses that phone number." if session.scalars(select(User).where(User.phone == p)).first()
                  else "")
         if error:
-            return page(request, "team.html", u, status=400, people=people, error=error,
+            return spage(request, session, u, "team.html", "team", status=400, people=people, error=error,
                         form=dict(name=name, phone=phone, role=role))
         session.add(User(name=name.strip()[:120], phone=p, role=role, pw_hash=hash_password(password)))
+        audit(session, u, "staff_added", p, f"{name.strip()[:80]} as {role}", request)
         session.commit()
         return RedirectResponse("/admin/team?added=1", 303)
 
@@ -942,8 +1167,25 @@ def create_app(settings=None, claude=None):
         if p and p.id != u.id:
             p.active = not p.active
             p.session_ver += 1
+            audit(session, u, "staff_on" if p.active else "staff_off", p.phone, f"{p.name} ({p.role})", request)
             session.commit()
         return RedirectResponse("/admin/team", 303)
 
+    @app.post("/admin/team/{uid}/reset-two-step")
+    def reset_two_step(request: Request, uid: int, csrf: str = Form(""), session=Depends(db)):
+        u = need(request, session, ("admin",))
+        check_csrf(u, csrf)
+        p = session.get(User, uid)
+        if p and p.id != u.id and p.totp_secret:
+            p.totp_secret, p.totp_step, p.totp_backup, p.session_ver = "", 0, "", p.session_ver + 1
+            audit(session, u, "two_step_reset", p.phone, f"{p.name} ({p.role}) sets it up again at next sign-in", request)
+            session.commit()
+        return RedirectResponse("/admin/team?reset=1", 303)
+
+    from types import SimpleNamespace
+    from . import admin as admin_console
+    admin_console.register(app, SimpleNamespace(db=db, need=need, page=page, audit=audit, today=today, now=now,
+                                                paginate=paginate, check_csrf=check_csrf, TZ=TZ, sync=sync,
+                                                board_json=s.board_json, site_url=s.site_url, photos=photos))
     app.state.Session = Session
     return app

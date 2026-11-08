@@ -86,3 +86,15 @@ def tag(t, keep=()):
 
 def cats(t):
     return [c for c in (t.categories or f",{t.category},").strip(",").split(",") if c]
+
+
+def remove_from_board(path, tid):
+    """Take a tender off the static board file (a reviewer took it down)."""
+    if not path or not os.path.exists(path):
+        return
+    import json
+    with eb.board_lock(path):
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        data["tenders"] = [x for x in data.get("tenders", []) if x.get("id") != tid]
+        eb.write_json_atomic(path, data)

@@ -1,0 +1,49 @@
+{% extends layout %}{% block title %}Security | Tender Watcher{% endblock %}
+{% block body %}
+<div class="narrow">
+<div class="page-head"><div><h1>Security</h1><p class="sub">{{ me.name }}, {{ me.phone }}</p></div></div>
+{% if request.query_params.get("required") %}<p class="alert warn">Admins and reviewers turn on two-step sign-in before the admin console opens. It takes a minute.</p>{% endif %}
+{% if request.query_params.get("password") %}<p class="alert ok">Password changed. Other devices are signed out.</p>{% endif %}
+{% if request.query_params.get("off") %}<p class="alert ok">Two-step sign-in is off.</p>{% endif %}
+{% if error %}<p class="alert bad" role="alert">{{ error }}</p>{% endif %}
+
+<section class="card" aria-labelledby="ts-h">
+  <h2 id="ts-h">Two-step sign-in {% if me.totp_secret %}<span class="status">On</span>{% else %}<span class="status ended">Off</span>{% endif %}</h2>
+  {% if me.totp_secret %}
+    <p class="muted">You sign in with your password and a code from your authenticator app. {{ backup_left }} backup code{{ "s" if backup_left != 1 }} left.</p>
+    <div class="grid two">
+      <form method="post" action="/security/backup-codes"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field"><label for="bc">Code from your app</label><input id="bc" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+        <button class="btn ghost" type="submit">Get new backup codes</button></form>
+      {% if not must %}<form method="post" action="/security/two-step/off"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field"><label for="oc">Code from your app</label><input id="oc" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+        <button class="btn danger" type="submit">Turn off two-step sign-in</button></form>{% endif %}
+    </div>
+  {% else %}
+    <p class="muted">Protect this account with a code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy or 1Password) as well as your password.</p>
+    <ol class="setup">
+      <li><b>Scan this code</b> with your authenticator app.
+        <div class="qr" aria-hidden="true">{{ setup.qr | safe }}</div>
+        <p class="small muted">Can't scan? Add it by hand with this key: <code>{{ setup.key }}</code></p></li>
+      <li><b>Enter the 6-digit code</b> the app now shows for Tender Watcher.
+        <form method="post" action="/security/two-step/on" class="inline-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="token" value="{{ setup.token }}">
+          <label class="sr" for="code">Code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required class="code-input">
+          <button class="btn" type="submit">Turn on</button>
+        </form></li>
+    </ol>
+  {% endif %}
+</section>
+
+<section class="card" aria-labelledby="pw-h" style="margin-top:12px">
+  <h2 id="pw-h">Password</h2>
+  <form method="post" action="/security/password"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="grid two">
+      <div class="field"><label for="current">Current password</label><input id="current" name="current" type="password" autocomplete="current-password" required></div>
+      <div class="field"><label for="new">New password ({{ 10 }}+ characters)</label><input id="new" name="new" type="password" autocomplete="new-password" minlength="10" required></div>
+    </div>
+    <button class="btn ghost" type="submit">Change password</button>
+  </form>
+</section>
+</div>
+{% endblock %}

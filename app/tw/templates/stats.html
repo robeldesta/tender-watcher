@@ -1,6 +1,6 @@
-{% extends "base.html" %}{% block title %}Collectors | Tender Watcher{% endblock %}
+{% extends layout %}{% block title %}Collectors | Tender Watcher{% endblock %}
 {% block body %}
-<h1>Collectors, {{ month }}</h1>
+<div class="page-head"><div><h1>Collectors</h1><p class="sub">Entries per collector in {{ month }}.</p></div></div>
 <form method="get" class="small" style="margin-bottom:12px"><label for="month">Month</label><input id="month" name="month" type="month" value="{{ month }}" style="max-width:200px"> <button class="btn ghost" type="submit">Show</button></form>
 <table><thead><tr><th>Collector</th><th>Published</th><th>Waiting</th><th>Rejected</th></tr></thead><tbody>
 {% for name, c in table %}<tr><td>{{ name }}</td><td><b>{{ c.published }}</b></td><td>{{ c.pending }}</td><td>{{ c.rejected }}</td></tr>

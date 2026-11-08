@@ -1,34 +1,41 @@
-{% extends "base.html" %}{% block title %}Payments | Tender Watcher{% endblock %}
+{% extends layout %}{% import "admin/_bits.html" as b with context %}{% block title %}Payments | Admin{% endblock %}
 {% block body %}
-<h1>Payments</h1>
-{% if request.query_params.get("added") %}<p class="alert ok">Recorded. The company's subscription is extended.</p>{% endif %}
-{% if error %}<p class="alert bad">{{ error }}</p>{% endif %}
-<p class="small muted">Online payment through Chapa is {{ "on (test mode until you switch to the live key)" if chapa_on else "off" }}. Chapa payments appear here on their own.</p>
-<h2>Record a Telebirr or bank payment (ETB, USD or EUR)</h2>
-<form class="panel" method="post" action="/admin/payments" style="margin-bottom:24px">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="grid">
-    <div class="field"><label for="company_id">Company</label><select id="company_id" name="company_id" required>
-      <option value="">Pick a company</option>
-      {% for c in companies %}<option value="{{ c.id }}" {{ "selected" if form and form.company_id == c.id }}>{{ c.name }}{% if c.tin %} (TIN {{ c.tin }}){% endif %}</option>{% endfor %}</select></div>
-    <div class="field"><label for="plan">Plan</label><select id="plan" name="plan">
-      <option value="month" {{ "selected" if form and form.plan == "month" }}>Month: ETB {{ prices.ETB.month }} / USD {{ prices.USD.month }}</option>
-      <option value="year" {{ "selected" if form and form.plan == "year" }}>Year: ETB {{ "{:,}".format(prices.ETB.year) }} / USD {{ prices.USD.year }}</option></select></div>
-    <div class="field"><label for="currency">Currency</label><select id="currency" name="currency">
-      {% for k in bank_currencies %}<option value="{{ k }}" {{ "selected" if form and form.currency == k }}>{{ k }}</option>{% endfor %}</select></div>
-    <div class="field"><label for="amount">Amount received</label><input id="amount" name="amount" inputmode="numeric" value="{{ form.amount if form }}">
-      <p class="hint">Leave empty for the plan's ETB or USD price. Needed for EUR.</p></div>
-    <div class="field"><label for="method">Paid by</label><select id="method" name="method">
-      <option value="telebirr" {{ "selected" if form and form.method == "telebirr" }}>Telebirr</option>
-      <option value="bank" {{ "selected" if form and form.method == "bank" }}>Bank transfer</option></select></div>
-    <div class="field"><label for="reference">Transaction number</label><input id="reference" name="reference" value="{{ form.reference if form }}" required></div>
-  </div>
-  <button class="btn" type="submit">Record payment</button>
-</form>
-<table><thead><tr><th>Date</th><th>Company</th><th>Plan</th><th>Amount</th><th>By</th><th>Status</th><th>Paid until</th></tr></thead><tbody>
-{% for p in rows %}<tr><td>{{ p.created_at.strftime("%d %b %Y") }}</td><td>{{ p.company.name }}</td><td>{{ p.plan|capitalize }}</td>
-<td>{{ p.currency }} {{ "{:,}".format(p.amount) }}</td><td>{{ methods.get(p.method, p.method) }}{% if p.reference %} <span class="small muted">{{ p.reference }}</span>{% endif %}</td>
-<td>{{ {"paid": "Paid", "pending": "Waiting for Chapa", "expired": "Not paid"}.get(p.status, p.status) }}</td><td>{{ p.paid_until | long_date if p.paid_until }}</td></tr>
+<div class="page-head"><div><h1>Payments</h1>
+  <p class="sub">Chapa checkouts appear on their own{{ " (test mode until the live key is switched on)" if chapa_on else " (online payment is off)" }}. Record Telebirr and bank transfers below.</p></div></div>
+{% if request.query_params.get("added") %}<p class="alert ok">Recorded. The company's access is extended and it's in the activity log.</p>{% endif %}
+{% if error %}<p class="alert bad" role="alert">{{ error }}</p>{% endif %}
+<div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Company</th><th>Plan</th><th>Method</th><th>Status</th><th class="num">Amount</th><th class="num">Paid until</th></tr></thead><tbody>
+{% for p in rows %}<tr><td class="nowrap">{{ b.when(p.created_at) }}</td><td><a href="/admin/companies/{{ p.company_id }}">{{ p.company.name }}</a></td><td>{{ p.plan|capitalize }}</td>
+<td>{{ methods.get(p.method, p.method) }}{% if p.reference %}<div class="mono muted">{{ p.reference }}</div>{% endif %}</td>
+<td>{% if p.status == "paid" %}<span class="pill ok">Paid</span>{% elif p.status == "pending" %}<span class="pill warn">Waiting for Chapa</span>{% else %}<span class="pill">Not paid</span>{% endif %}</td>
+<td class="num">{{ b.money(p.currency, p.amount) }}</td><td class="num">{{ p.paid_until or "–" }}</td></tr>
 {% else %}<tr><td colspan="7" class="muted">No payments yet.</td></tr>{% endfor %}
-</tbody></table>
+</tbody></table></div>
+
+<section class="card" style="margin-top:16px;max-width:880px" aria-labelledby="rec-h">
+  <h2 id="rec-h">Record a Telebirr or bank payment</h2>
+  <form method="post" action="/admin/payments">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="form-row">
+      <div class="field wide"><label for="company_id">Company</label><select id="company_id" name="company_id" required>
+        <option value="">Pick a company</option>
+        {% for c in companies %}<option value="{{ c.id }}" {{ "selected" if form and form.company_id == c.id }}>{{ c.name }}{% if c.tin %} (TIN {{ c.tin }}){% endif %}</option>{% endfor %}</select></div>
+      <div class="field"><label for="plan">Plan</label><select id="plan" name="plan">
+        <option value="month" {{ "selected" if form and form.plan == "month" }}>Month</option>
+        <option value="year" {{ "selected" if form and form.plan == "year" }}>Year</option></select></div>
+      <div class="field"><label for="method">Paid by</label><select id="method" name="method">
+        <option value="telebirr" {{ "selected" if form and form.method == "telebirr" }}>Telebirr</option>
+        <option value="bank" {{ "selected" if form and form.method == "bank" }}>Bank transfer</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label for="currency">Currency</label><select id="currency" name="currency">
+        {% for k in bank_currencies %}<option value="{{ k }}" {{ "selected" if form and form.currency == k }}>{{ k }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="amount">Amount received</label><input id="amount" name="amount" inputmode="numeric" value="{{ form.amount if form }}" placeholder="Plan price"></div>
+      <div class="field wide"><label for="reference">Transaction number</label><input id="reference" name="reference" class="mono" value="{{ form.reference if form }}" required></div>
+    </div>
+    <p class="hint" style="margin-top:0">Leave the amount empty to use the plan's price: ETB {{ "{:,}".format(prices.ETB.month) }} / {{ "{:,}".format(prices.ETB.year) }}, USD {{ prices.USD.month }} / {{ prices.USD.year }}. EUR needs the amount.</p>
+    <button class="btn" type="submit">Record payment</button>
+  </form>
+</section>
 {% endblock %}

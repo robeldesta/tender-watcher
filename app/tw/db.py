@@ -33,6 +33,10 @@ class User(Base):
     active: Mapped[bool] = mapped_column(default=True)
     session_ver: Mapped[int] = mapped_column(default=0)  # bumped on sign-out: old cookies stop working
     telegram_chat: Mapped[str] = mapped_column(String(20), default="")  # alerts go here when set
+    totp_secret: Mapped[str] = mapped_column(String(64), default="")  # two-step sign-in; "" = off
+    totp_step: Mapped[int] = mapped_column(default=0)  # last code's time step, so a code works once
+    totp_backup: Mapped[str] = mapped_column(Text, default="")  # JSON list of sha256 of unused backup codes
+    last_login: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     company: Mapped[Company | None] = relationship()
@@ -127,12 +131,29 @@ class Setting(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
+class AuditLog(Base):
+    """Who did what in the admin console and at sign-in. Never holds passwords, codes or keys."""
+    __tablename__ = "audit_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[dt.datetime] = mapped_column(default=now, index=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    action: Mapped[str] = mapped_column(String(40), index=True)
+    target: Mapped[str] = mapped_column(String(120), default="")
+    detail: Mapped[str] = mapped_column(String(500), default="")
+    ip: Mapped[str] = mapped_column(String(60), default="")
+    actor: Mapped["User | None"] = relationship()
+
+
 # Columns added after the first deploy: (table, column, SQL type and default).
 ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
                  ("companies", "interests", "TEXT NOT NULL DEFAULT ''"),
                  ("users", "telegram_chat", "VARCHAR(20) NOT NULL DEFAULT ''"),
                  ("tenders", "categories", "VARCHAR(200) NOT NULL DEFAULT ''"),
-                 ("payments", "currency", "VARCHAR(3) NOT NULL DEFAULT 'ETB'")]
+                 ("payments", "currency", "VARCHAR(3) NOT NULL DEFAULT 'ETB'"),
+                 ("users", "totp_secret", "VARCHAR(64) NOT NULL DEFAULT ''"),
+                 ("users", "totp_step", "INTEGER NOT NULL DEFAULT 0"),
+                 ("users", "totp_backup", "TEXT NOT NULL DEFAULT ''"),
+                 ("users", "last_login", "TIMESTAMP")]
 
 
 def upgrade(engine):

@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}My entries | Tender Watcher{% endblock %}
+{% extends layout %}{% block title %}My entries | Tender Watcher{% endblock %}
 {% block body %}
 <h1>My entries</h1>
 <p class="panel">In {{ month }}: <b>{{ counts.published }}</b> published, {{ counts.pending }} waiting, {{ counts.rejected }} rejected.</p>

@@ -1,0 +1,42 @@
+{% extends layout %}{% import "admin/_bits.html" as b with context %}{% block title %}{{ c.name }} | Admin{% endblock %}
+{% block body %}
+<p class="small" style="margin:0 0 8px"><a href="/admin/companies">← Companies</a></p>
+<div class="page-head"><div><h1>{{ c.name }}</h1><p class="sub">Signed up {{ c.created_at.strftime("%d %b %Y") }}{% if c.tin %} · TIN <span class="mono">{{ c.tin }}</span>{% endif %}</p></div>
+  <div class="act">{{ b.cstate(state) }}</div></div>
+{% if request.query_params.get("extended") %}<p class="alert ok">Access extended. It's in the activity log.</p>{% endif %}
+<div class="two-col">
+  <section class="card">
+    <h2>Access</h2>
+    <dl class="dl"><dt>Free trial until</dt><dd>{{ c.trial_until | long_date if c.trial_until else "–" }}</dd>
+      <dt>Paid until</dt><dd>{{ c.paid_until | long_date if c.paid_until else "–" }}</dd>
+      <dt>Bids on</dt><dd>{% for k in i.categories or [] %}{{ CATEGORIES.get(k, k) }}{{ ", " if not loop.last }}{% else %}Not set{% endfor %}</dd>
+      <dt>Regions</dt><dd>{{ (i.regions or [])|join(", ") or "All" }}</dd>
+      <dt>Words</dt><dd>{{ (i.keywords or [])|join(", ") or "–" }}</dd></dl>
+    <form method="post" action="/admin/companies/{{ c.id }}/extend" class="toolbar" style="margin-top:14px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="sr" for="days">Days</label><input id="days" name="days" type="number" min="1" max="366" value="30" style="width:80px">
+      <label class="sr" for="reason">Reason</label><input id="reason" name="reason" placeholder="Reason, e.g. pilot firm, refund" required style="flex:1;min-width:180px">
+      <button class="btn ghost" type="submit">Extend access</button>
+    </form>
+    <p class="hint">Adds days after today or after their current end date, whichever is later. Logged with your name and reason.</p>
+  </section>
+  <section>
+    <h2>People</h2>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Telegram</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+    {% for m in people %}<tr class="{{ 'muted-row' if not m.active }}"><td>{{ m.name }}{% if not m.active %} <span class="pill">Off</span>{% endif %}</td><td class="mono">{{ m.phone }}</td>
+      <td>{{ "Connected" if m.telegram_chat else "–" }}</td><td class="small muted">{{ b.when(m.last_login) or "–" }}</td>
+      <td><form method="post" action="/admin/companies/{{ c.id }}/users/{{ m.id }}/toggle"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn {{ 'danger' if m.active else 'ghost' }}" type="submit">{{ "Turn off" if m.active else "Turn on" }}</button></form></td></tr>
+    {% endfor %}</tbody></table></div>
+  </section>
+</div>
+<section style="margin-top:16px">
+  <div class="panel-h"><h2>Payments</h2><a href="/admin/payments">Record a payment</a></div>
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Plan</th><th>Method</th><th>Status</th><th class="num">Amount</th><th class="num">Paid until</th></tr></thead><tbody>
+  {% for p in pays %}<tr><td class="nowrap">{{ p.created_at.strftime("%d %b %Y") }}</td><td>{{ p.plan|capitalize }}</td><td>{{ {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}.get(p.method, p.method) }}{% if p.reference %} <span class="mono muted">{{ p.reference }}</span>{% endif %}</td>
+    <td>{% if p.status == "paid" %}<span class="pill ok">Paid</span>{% elif p.status == "pending" %}<span class="pill warn">Waiting</span>{% else %}<span class="pill">Not paid</span>{% endif %}</td>
+    <td class="num">{{ b.money(p.currency, p.amount) }}</td><td class="num">{{ p.paid_until or "–" }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No payments yet.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% if log %}<section style="margin-top:16px"><h2>Admin changes</h2>
+  <div class="table-wrap"><table><tbody>{% for a in log %}<tr><td class="small muted nowrap">{{ b.when(a.at) }}</td><td>{{ a.actor.name if a.actor else "System" }}</td><td>{{ b.ACTIONS.get(a.action, a.action) }}<div class="small muted">{{ a.detail }}</div></td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+{% endblock %}

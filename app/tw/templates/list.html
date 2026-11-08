@@ -1,8 +1,9 @@
 {% extends "base.html" %}{% from "_due.html" import row, leaf, left_text, check, pager %}
 {% set hero = stats and not me %}
+{% block page_id %}list{% endblock %}
 {% block header_class %}{{ "on-forest" if hero }}{% endblock %}
 {% block page %}
-<script>(function(){var m=/^#t\/(.+)$/.exec(location.hash);if(m)location.replace('/t/'+m[1]);})();</script>
+
 {% if hero %}
 <section class="hero">
   <div class="wrap">

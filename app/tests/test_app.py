@@ -21,6 +21,7 @@ NOTICE = {"newspaper": "Addis Zemen, 5 Nov 2026", "problem": "", "tenders": [
      "grade": "", "closes": {"raw": "", "calendar": "gregorian", "year": 2026, "month": 11, "day": 30},
      "time": "", "type": "gov", "bid_security": "", "document_fee": "", "category": "it", "doubts": "Time unclear"}]}
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 100
+TOTP = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
 
 class FakeClaude:
@@ -45,7 +46,8 @@ def env(tmp_path, monkeypatch):
     with app.state.Session() as db:
         for name, phone, role in [("Robel", "0911000001", "admin"), ("Abebe", "0911000002", "collector"),
                                   ("Sara", "0911000003", "collector"), ("Kebede", "0911000004", "member")]:
-            db.add(User(name=name, phone=phone, role=role, pw_hash=hash_password("password1")))
+            db.add(User(name=name, phone=phone, role=role, pw_hash=hash_password("password1"),
+                        totp_secret=TOTP if role in ("admin", "reviewer") else ""))
         db.commit()
     return app, claude, board
 
@@ -55,6 +57,10 @@ def client(app, phone=None):
     if phone:
         r = c.post("/login", data={"phone": phone, "password": "password1", "next": "/"}, follow_redirects=False)
         assert r.status_code == 303, r.text
+        if r.headers["location"].startswith("/login/code"):  # admins and reviewers: the app's code next
+            from tw.auth import totp_now
+            r = c.post("/login/code", data={"code": totp_now(TOTP), "next": "/"}, follow_redirects=False)
+            assert r.status_code == 303 and "tw" in c.cookies, r.text
     return c
 
 
@@ -535,3 +541,109 @@ def test_admin_sets_prices_and_trial(env):
     m.post("/account/pay", data={"csrf": mt, "plan": "month"})
     assert app.state.chapa.made[-1][1] == 349
     assert "Nothing changed" in a.get(a.post("/admin/prices", data=form, follow_redirects=False).headers["location"]).text
+
+
+def test_two_step_sign_in(env, monkeypatch):
+    app, _, _ = env
+    from tw import auth
+    with app.state.Session() as db:
+        db.add(User(name="Rita", phone="0911000007", role="reviewer", pw_hash=hash_password("password1")))
+        db.commit()
+    c = TestClient(app)
+    c.post("/login", data={"phone": "0911000007", "password": "password1", "next": "/"})
+    # a reviewer without two-step is sent to set it up before any staff page opens
+    r = c.get("/admin", follow_redirects=False)
+    assert r.headers["location"] == "/security?required=1"
+    page_ = c.get("/security?required=1").text
+    assert "<svg" in page_ and "authenticator" in page_
+    tok = re.search(r'name="token" value="([^"]+)"', page_).group(1)
+    key = re.search(r"this key: <code>([A-Z2-7 ]+)</code>", page_).group(1).replace(" ", "")
+    cs = csrf(c, "/security")
+    bad = c.post("/security/two-step/on", data={"csrf": cs, "token": tok, "code": "000000"})
+    assert bad.status_code == 400
+    ok = c.post("/security/two-step/on", data={"csrf": cs, "token": tok, "code": auth.totp_now(key)})
+    codes = re.findall(r"<code>([0-9a-f-]{14})</code>", ok.text)
+    assert ok.status_code == 200 and len(codes) == 8
+    assert c.get("/admin").status_code == 200  # this session carries on
+
+    # next sign-in: password, then the code; a wrong code is refused and counted
+    d = TestClient(app)
+    r = d.post("/login", data={"phone": "0911000007", "password": "password1", "next": "/"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/login/code") and "tw" not in d.cookies
+    assert d.get("/admin", follow_redirects=False).headers["location"].startswith("/login")
+    assert d.post("/login/code", data={"code": "123456"}).status_code == 400
+    r = d.post("/login/code", data={"code": codes[0].upper()}, follow_redirects=False)  # a backup code works once
+    assert r.headers["location"] == "/admin"
+    e = TestClient(app)
+    e.post("/login", data={"phone": "0911000007", "password": "password1"})
+    assert e.post("/login/code", data={"code": codes[0]}).status_code == 400
+    # reviewers can't turn it off; an admin can reset it
+    assert c.post("/security/two-step/off", data={"csrf": cs, "code": auth.totp_now(key)}).status_code == 403
+    a = client(app, "0911000001")
+    with app.state.Session() as db:
+        rid = db.query(User).filter_by(phone="0911000007").one().id
+    a.post(f"/admin/team/{rid}/reset-two-step", data={"csrf": csrf(a, "/admin/team")})
+    with app.state.Session() as db:
+        assert db.query(User).filter_by(phone="0911000007").one().totp_secret == ""
+    log = a.get("/admin/activity").text
+    assert "Turned on two-step" in log and "Used a backup code" in log and "Wrong code" in log and "Reset two-step" in log
+
+
+def test_admin_console_is_separate_and_logged(env):
+    app, _, board = env
+    with app.state.Session() as db:
+        db.add(Tender(id="wb-9", status="published", buyer="Ethio Telecom", title="Fibre cable supply",
+                      closes="2026-12-01", category="goods"))
+        db.commit()
+    a = client(app, "0911000001")
+    home = a.get("/").text
+    assert 'href="/admin"' in home and 'href="/admin/payments"' not in home  # the customer header stays clean
+    for path in ("/admin", "/admin/tenders", "/admin/review", "/admin/companies", "/admin/payments", "/admin/prices",
+                 "/admin/directory", "/admin/team", "/admin/activity", "/admin/collectors"):
+        r = a.get(path)
+        assert r.status_code == 200 and 'class="console"' in r.text, path
+    assert "Fibre cable supply" in a.get("/admin/tenders").text
+    member, collector = client(app, "0911000004"), client(app, "0911000002")
+    assert member.get("/admin").status_code == 403 and collector.get("/admin/tenders").status_code == 403
+    tok = csrf(a, "/admin/tenders")
+    a.post("/admin/tenders/wb-9/listing", data={"csrf": tok, "to": "unlisted"})
+    assert TestClient(app).get("/t/wb-9").status_code == 404
+    assert "wb-9" not in board.read_text()
+    assert "Fibre cable supply" in a.get("/admin/tenders?status=unlisted").text
+    a.post("/admin/tenders/wb-9/listing", data={"csrf": tok, "to": "published"})
+    assert TestClient(app).get("/t/wb-9").status_code == 200 and "wb-9" in board.read_text()
+    # extend a company's access
+    m = TestClient(app)
+    m.post("/signup", data={"company": "ABC Studio", "name": "A", "phone": "0955000011", "password": "longenough1"})
+    with app.state.Session() as db:
+        from tw.db import Company
+        cid = db.query(Company).filter_by(name="ABC Studio").one().id
+    assert "ABC Studio" in a.get("/admin/companies?state=trial").text
+    assert a.post(f"/admin/companies/{cid}/extend", data={"csrf": tok, "days": 30, "reason": ""}).status_code == 400
+    a.post(f"/admin/companies/{cid}/extend", data={"csrf": tok, "days": 30, "reason": "Pilot firm"})
+    with app.state.Session() as db:
+        assert db.query(Company).get(cid).paid_until == "2026-12-21"
+    log = a.get("/admin/activity").text
+    assert "Took down a tender" in log and "Put a tender back" in log and "Pilot firm" in log and "Signed in" in log
+
+
+def test_security_headers_links_and_uploads(env):
+    app, claude, _ = env
+    c = TestClient(app)
+    r = c.get("/")
+    assert r.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    assert "script-src 'self';" in r.headers["content-security-policy"] and r.headers["x-content-type-options"] == "nosniff"
+    assert "<script>" not in r.text  # no inline scripts
+    col = client(app, "0911000002")
+    tok = csrf(col, "/collect")
+    # a file that only claims to be a JPEG is refused
+    bad = col.post("/collect", data={"csrf": tok, "source": "x"}, files={"photo": ("a.jpg", b"<html>hi</html>", "image/jpeg")})
+    assert bad.status_code == 400
+    col.post("/collect", data={"csrf": tok, "source": "Addis Zemen"}, files={"photo": ("n.jpg", JPEG, "image/jpeg")})
+    with app.state.Session() as db:
+        t = db.query(Tender).filter(Tender.collector_id.isnot(None)).first()
+        tid = t.id
+    col.post(f"/entry/{tid}", data={"csrf": tok, "url": "javascript:alert(document.cookie)", "action": "save"})
+    with app.state.Session() as db:
+        assert db.get(Tender, tid).url == ""
+    assert "javascript:" not in client(app, "0911000001").get(f"/entry/{tid}").text

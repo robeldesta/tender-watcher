@@ -6,7 +6,7 @@
 {% elif payment == "unknown" %}<p class="alert bad">We couldn't find that payment. If money left your account, tell us and we'll sort it out.</p>{% endif %}
 {% set subscribed = c.paid_until and c.paid_until >= today %}
 <div class="page-head">
-  <div><h1>{{ c.name }}</h1><p class="sub">Signed in as {{ me.name }}, {{ me.phone }}</p></div>
+  <div><h1>{{ c.name }}</h1><p class="sub">Signed in as {{ me.name }}, {{ me.phone }} · <a href="/security">Password and two-step sign-in</a></p></div>
   <span class="status{{ ' ended' if not access }}" style="margin-left:auto">{% if subscribed %}Subscribed{% elif access %}Free trial{% else %}Trial ended{% endif %}</span>
 </div>
 
@@ -54,7 +54,7 @@
 </div>
 
 <section aria-labelledby="int-h">
-  <h2 id="int-h" style="font-size:26px">What does {{ c.name }} bid on?</h2>
+  <h2 id="int-h">What does {{ c.name }} bid on?</h2>
   <p class="muted" style="margin-bottom:24px">Pick everything that fits. We use this for your matches and your morning alerts.</p>
   <form method="post" action="/account/interests">
     <input type="hidden" name="csrf" value="{{ csrf }}">

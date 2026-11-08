@@ -1,0 +1,27 @@
+{% extends layout %}{% import "admin/_bits.html" as b with context %}{% from "_due.html" import pager %}{% block title %}Companies | Admin{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Companies</h1><p class="sub">Every firm that signed up, its access and its people.</p></div></div>
+<nav class="seg" aria-label="Access" style="margin-bottom:10px">
+  <a href="/admin/companies" {% if not f.state %}aria-current="true"{% endif %}>All<em>{{ counts.values()|sum }}</em></a>
+  <a href="/admin/companies?state=paid" {% if f.state == "paid" %}aria-current="true"{% endif %}>Paying<em>{{ counts.paid }}</em></a>
+  <a href="/admin/companies?state=trial" {% if f.state == "trial" %}aria-current="true"{% endif %}>On trial<em>{{ counts.trial }}</em></a>
+  <a href="/admin/companies?state=ended" {% if f.state == "ended" %}aria-current="true"{% endif %}>Ended<em>{{ counts.ended }}</em></a>
+</nav>
+<form class="toolbar" method="get" action="/admin/companies" role="search">
+  {% if f.state %}<input type="hidden" name="state" value="{{ f.state }}">{% endif %}
+  <label class="sr" for="q">Search</label><input id="q" type="search" name="q" value="{{ f.q }}" placeholder="Name, TIN or phone">
+  <button class="btn ghost" type="submit">Search</button>
+</form>
+<div class="table-wrap"><table>
+<thead><tr><th>Company</th><th>Access</th><th class="num">Until</th><th class="num hide-sm">People</th><th class="hide-sm">Last payment</th><th class="num hide-sm">Signed up</th></tr></thead><tbody>
+{% for c in rows %}<tr>
+  <td><a href="/admin/companies/{{ c.id }}">{{ c.name }}</a>{% if c.tin %}<div class="small muted mono">TIN {{ c.tin }}</div>{% endif %}</td>
+  <td>{{ b.cstate(st[c.id]) }}</td>
+  <td class="num nowrap">{{ (c.paid_until if st[c.id] == "paid" else c.trial_until if st[c.id] == "trial" else [c.paid_until, c.trial_until]|max) or "–" }}</td>
+  <td class="num hide-sm">{{ users.get(c.id, 0) }}</td>
+  <td class="small hide-sm">{% set lp = last_pay.get(c.id) %}{% if lp %}{{ b.money(lp.currency, lp.amount) }} <span class="muted">{{ lp.paid_at.strftime("%d %b %Y") }}</span>{% else %}<span class="muted">None</span>{% endif %}</td>
+  <td class="num small muted hide-sm">{{ c.created_at.strftime("%d %b %Y") }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No companies match.</td></tr>{% endfor %}
+</tbody></table></div>
+{{ pager(pg, "/admin/companies", qs) }}
+{% endblock %}

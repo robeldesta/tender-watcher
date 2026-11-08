@@ -1,0 +1,86 @@
+/* Admin console: its own shell. Dense: 14px text, 32-36px controls, hairline tables. */
+body.console{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh;background:var(--paper);font-size:14px}
+.side-nav{position:sticky;top:0;height:100vh;overflow:auto;background:#0E1525;color:#C7D0DE;border-right:1px solid #1B2436}
+.side-nav summary{display:flex;align-items:center;gap:8px;padding:14px 16px;list-style:none;cursor:default;border-bottom:1px solid #1B2436}
+.side-nav summary::-webkit-details-marker{display:none}
+.side-nav summary b{color:#fff;font-weight:600;font-size:14px}
+.side-nav summary i{font-style:normal;font-size:11px;font-weight:500;color:#0E1525;background:#00B8EC;border-radius:4px;padding:1px 6px;margin-left:2px}
+.side-nav .mark{width:24px;height:24px;font-size:14px;background:#24508F}
+.side-nav .burger{display:none}
+.side-nav nav{display:flex;flex-direction:column;padding:8px}
+.side-nav h6{margin:16px 8px 4px;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#7D8AA0}
+.side-nav nav>a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;color:#C7D0DE;text-decoration:none;font-weight:500}
+.side-nav nav>a:hover{background:#18213A;color:#fff}
+.side-nav nav>a[aria-current=page]{background:#1C2A4A;color:#fff;box-shadow:inset 2px 0 0 #00B8EC}
+.side-nav nav>a em{font-style:normal;font-size:12px;font-variant-numeric:tabular-nums;background:#00B8EC;color:#0E1525;border-radius:99px;padding:0 7px;line-height:18px}
+.side-nav .who{margin-top:20px;padding:12px 8px 4px;border-top:1px solid #1B2436;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.side-nav .who span{color:#fff;font-weight:500;display:flex;flex-direction:column}.side-nav .who small{color:#7D8AA0;font-weight:400;font-size:12px}
+.side-nav .who a,.side-nav .linkish{color:#9FB0C8;text-decoration:none;background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left}
+.side-nav .who a:hover,.side-nav .linkish:hover{color:#fff}
+.side-nav .who a[aria-current=page]{color:#fff}
+.side-nav :focus-visible{outline-color:#00B8EC}
+.console-main{padding:20px 28px 48px;min-width:0;max-width:1320px}
+.console h1{font-size:20px;margin:0}
+.console h2{font-size:15px;margin:0 0 8px}
+.console .page-head{margin-bottom:16px;align-items:center}
+.console .page-head .sub{font-size:13px}
+.console .page-head .act{margin-left:auto;display:flex;gap:8px}
+.console .btn{min-height:32px;padding:0 12px;font-size:13px}
+.console input,.console select{min-height:32px;padding:4px 8px;font-size:14px}
+.console textarea{font-size:14px}
+.console .card{padding:16px}
+.console table{font-size:13px}
+.console th,.console td{padding:7px 10px;font-size:13px}
+.console td a{color:var(--ink);text-decoration:none;font-weight:500}.console td a:hover{color:var(--green);text-decoration:underline}
+.console tr.click:hover td{background:var(--paper)}
+.console .muted-row td{color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:var(--r-l);overflow:hidden;margin-bottom:16px}
+.kpi{background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit}
+a.kpi:hover{background:var(--paper)}
+.kpi span{font-size:12px;color:var(--muted)}
+.kpi b{font:600 22px/1.2 var(--display);font-variant-numeric:tabular-nums;color:var(--ink)}
+.kpi small{font-size:12px;color:var(--muted)}
+.kpi.warn b{color:var(--amber)}.kpi.bad b{color:var(--red)}
+.two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.panel-h{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 8px}
+.panel-h a{font-size:13px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.toolbar input[type=search]{max-width:280px}
+.toolbar select{width:auto}
+.seg{display:inline-flex;border:1px solid var(--rule-strong);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg a{padding:5px 10px;font-size:13px;color:var(--ink-2);text-decoration:none;border-right:1px solid var(--rule)}
+.seg a:last-child{border-right:0}
+.seg a[aria-current=true]{background:var(--forest);color:#fff}
+.seg a em{font-style:normal;color:var(--muted);margin-left:4px;font-variant-numeric:tabular-nums}.seg a[aria-current=true] em{color:#A9BCD8}
+.pill{display:inline-block;font-size:12px;font-weight:500;padding:0 7px;border-radius:4px;line-height:20px;background:var(--panel);color:var(--ink-2);white-space:nowrap}
+.pill.ok{background:var(--stamp-soft);color:var(--stamp)}.pill.warn{background:var(--amber-soft);color:var(--amber)}.pill.bad{background:var(--red-soft);color:var(--red)}.pill.info{background:var(--green-soft);color:var(--green)}
+.mono{font-family:var(--mono);font-size:12px}
+.nowrap{white-space:nowrap}
+.dl{display:grid;grid-template-columns:140px 1fr;gap:6px 12px;margin:0;font-size:13px}.dl dt{color:var(--muted)}.dl dd{margin:0}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap}
+.row-actions form{margin:0}
+@media (max-width:900px){
+  body.console{grid-template-columns:1fr}
+  .side-nav{position:sticky;height:auto;z-index:30}
+  .side-nav:not([open]) nav{display:none}
+  .side-nav summary{cursor:pointer}
+  .side-nav .burger{display:block;margin-left:auto;width:18px;height:12px;border-top:2px solid #C7D0DE;border-bottom:2px solid #C7D0DE;position:relative}
+  .side-nav .burger::after{content:"";position:absolute;left:0;right:0;top:3px;border-top:2px solid #C7D0DE}
+  .console-main{padding:16px}
+  .two-col{grid-template-columns:1fr}
+  .table-wrap{margin:0 -16px;padding:0 16px}
+}
+.row-actions .btn{min-height:24px;padding:0 6px;border:0;background:none;color:var(--green);font-weight:500}
+.row-actions .btn:hover{background:var(--green-soft)}
+.row-actions .btn.danger{color:var(--muted)}.row-actions .btn.danger:hover{color:var(--red);background:var(--red-soft)}
+.row-actions .btn:not(.ghost):not(.danger){color:var(--green)}
+.form-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.form-row .wide{grid-column:span 2}
+@media (max-width:720px){.form-row{grid-template-columns:1fr 1fr}.form-row .wide{grid-column:1/-1}}
+.console-main .table-wrap{overflow-x:auto}
+@media (max-width:720px){
+  .seg{display:flex;overflow-x:auto;max-width:100%;scrollbar-width:none}.seg a{white-space:nowrap}
+  .console .hide-sm{display:none}
+  .console .page-head .act{margin-left:0}
+  .toolbar input[type=search]{max-width:none;flex:1 1 100%}
+}
