@@ -33,6 +33,7 @@ MIN_PASSWORD = 10
 TRIAL_DAYS = 14
 MAX_SIGNUPS_PER_HOUR = 5
 PRICES = {"month": 299, "year": 2400}
+VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s*$", re.I)
 PLAN_DAYS = {"month": 30, "year": 365}
 PAY_METHODS = {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}
 CHECK_HOURS = 48  # stop asking Chapa about a checkout after this
@@ -702,8 +703,10 @@ def create_app(settings=None, claude=None):
             t.grade = ""
         action = form.get("action", "save")
         if action == "approve" and u.role in REVIEWERS:
-            if not t.buyer or not t.title:
-                errors.append("Buyer and title are needed before publishing.")
+            if not t.buyer or not t.title or VAGUE_TITLE.search(t.title):
+                errors.append("A buyer and a real title (what is being bought or done) are needed before publishing.")
+            if not t.closes and not form.get("no_date"):
+                errors.append("Add the closing date, or tick 'The notice gives no closing date'.")
             if not errors:
                 t.status, t.reviewer_id, t.published_at = "published", u.id, now()
         elif action == "reject" and u.role in REVIEWERS:

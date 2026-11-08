@@ -32,7 +32,8 @@
       <div class="field"><label for="place">Town or woreda</label><input id="place" name="place" value="{{ v.place }}"></div>
     </div>
     <div class="grid">
-      <div class="field"><label for="closes">Closing date</label><input id="closes" name="closes" type="date" value="{{ v.closes }}"></div>
+      <div class="field"><label for="closes">Closing date</label><input id="closes" name="closes" type="date" value="{{ v.closes }}">
+        <label style="font-weight:500;margin-top:8px;display:flex;gap:8px;align-items:center"><input type="checkbox" name="no_date" value="1" {{ "checked" if form and form.get("no_date") }}> The notice gives no closing date</label></div>
       <div class="field"><label for="time">Closing time</label><input id="time" name="time" value="{{ v.time }}" placeholder="10:00" inputmode="numeric"></div>
     </div>
     <details class="field"><summary class="small">Notice gives an Ethiopian date? Enter it here instead</summary>

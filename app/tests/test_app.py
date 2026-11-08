@@ -422,3 +422,13 @@ def test_website_finds_go_to_web_review(env):
     tid = re.search(r'href="/entry/(web-[0-9a-f]+)"', rev).group(1)
     page = a.get(f"/entry/{tid}").text
     assert "Open corporate.ethiopianairlines.com" in page and "Bid security not stated" in page
+    # approve needs a real title and a date (or an explicit "no date")
+    vague = dict(entry, title="Subject not stated", closes="")
+    c.post("/internal/submit", json={"source": "AACRA", "url": "https://aacra.gov.et/tender", "entries": [vague]}, headers=h)
+    vid = re.findall(r'href="/entry/(web-[0-9a-f]+)"', a.get("/review").text)[-1]
+    tok = csrf(a, "/collect")
+    r = a.post(f"/entry/{vid}", data={"csrf": tok, "action": "approve", "buyer": "AACRA", "title": "Subject not stated"})
+    assert r.status_code == 400 and "real title" in r.text and "closing date" in r.text
+    r = a.post(f"/entry/{vid}", data={"csrf": tok, "action": "approve", "buyer": "AACRA", "title": "Asphalt overlay, Bole road",
+                                      "no_date": "1"}, follow_redirects=False)
+    assert r.status_code == 303

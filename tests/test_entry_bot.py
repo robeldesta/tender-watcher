@@ -551,3 +551,12 @@ def test_tender_links_skip_language_copies():
     page = ('<a href="/en/bids/123">Invitation to bid: vehicles</a><a href="/fr/bids/123">Appel d\'offres bid</a>'
             '<a href="/ar/bids/123">bid tender</a><a href="/pt/bids">Concurso tender</a>')
     assert eb.tender_links(page, "https://au.int/en/bids") == ["https://au.int/en/bids/123"]
+
+
+def test_submit_web_drops_entries_without_a_subject(tmp_path):
+    calls = []
+    bot = SimpleNamespace(app_url="http://app", today=lambda: "2026-11-08",
+                          app_call=lambda path, body: calls.append(body) or {"created": len(body["entries"])})
+    out = {"tenders": [{"title": "Subject not stated", "buyer": "AACRA"}, {"title": "Asphalt overlay works", "buyer": "AACRA"}]}
+    n = eb.Bot.submit_web(bot, {"name": "AACRA"}, "https://aacra.gov.et/tender", out)
+    assert n == 1 and [e["title"] for e in calls[0]["entries"]] == ["Asphalt overlay works"]

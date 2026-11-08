@@ -900,6 +900,8 @@ class Bot:
                 e = to_entry(t, source["name"], self.today())
                 if e["closes"] and e["closes"] < self.today():
                     continue
+                if not re.search(r"[^\W\d_]{3}", re.sub(r"(?i)not stated|unknown|subject|title", "", e["title"])):
+                    continue  # no real subject: usually a listing page read as a tender
                 e["buyer"] = e["buyer"] or source["name"]
                 if source.get("type") in TYPES:
                     e["type"] = source["type"]
