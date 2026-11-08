@@ -578,7 +578,8 @@ def test_watch_renders_javascript_listings(setup):
 
         def render(self, url):
             self.rendered.append(url)
-            return "<div id=app><button>Read more</button></div>", self.text
+            return ('<div id=app><a href="/tenders">Tender</a><button>Read more</button>'
+                    '<a href="/Security_Vulnerability_Disclosure_Standard_Procedure.pdf">Policy</a></div>'), self.text
 
     src = dict(SRC, id="cbe", url="https://bank.et/tenders", render=True)
     web = RenderWeb("Explore the latest tenders. Invitation to bid: supply of servers, closes 25 Nov 2026")

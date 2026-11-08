@@ -340,7 +340,7 @@ UA = "TenderWatcher/0.1 (+https://tenders.sonador.et)"
 TENDER_LINK = re.compile(
     r"tender|bid|rfq|rfp|\beoi\b|expression of interest|procurement|invitation|auction|"
     r"quotation|proposal|ጨረታ|ግዢ|ግዥ|ሐራጅ|ሀራጅ|caalbaasii", re.I)
-SKIP_LINK = re.compile(r"vacanc|job|career|award|result|cancel|login|facebook|twitter|"
+SKIP_LINK = re.compile(r"vacanc|job|career|award|result|cancel|login|facebook|twitter|vulnerab|disclosure|privacy|"
                        r"linkedin|youtube|t\.me/|mailto:|tel:", re.I)
 MAX_BYTES = 8_000_000
 
@@ -440,7 +440,7 @@ class Web:
         return body, ctype
 
 
-    def render(self, url, timeout=30):
+    def render(self, url, timeout=45):
         """The page as a browser sees it, after its JavaScript has run: (html, visible text).
         For buyer sites whose tender lists are built in the browser. Same robots.txt and pause."""
         if not self.allowed(url):
@@ -454,8 +454,8 @@ class Web:
                 b = pw.chromium.launch()
                 try:
                     pg = b.new_page(user_agent=UA, locale="en-US", ignore_https_errors=False)
-                    pg.goto(url, wait_until="networkidle", timeout=timeout * 1000)
-                    pg.wait_for_timeout(1500)  # lists that fill in after the network goes quiet
+                    pg.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+                    pg.wait_for_timeout(5000)  # busy sites never go quiet: give the list a few seconds to fill in
                     html, text = pg.content(), pg.inner_text("body")
                 finally:
                     b.close()
@@ -488,7 +488,14 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
         text = ""
         try:
             if rendered:  # the list is built by JavaScript: open it in a headless browser
-                html, text = web.render(src["url"])
+                try:
+                    html, text = web.render(src["url"])
+                except PermissionError:
+                    raise
+                except Exception as e:  # browser trouble: the plain page is better than nothing
+                    log(f"{sid}: render failed ({str(e)[:80]}), reading the plain page")
+                    page, _ = web.get(src["url"])
+                    html, text = page.decode("utf-8", "replace"), ""
                 links = tender_links(html, src["url"])
             else:
                 page, _ = web.get(src["url"])
@@ -500,8 +507,8 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
         new = [u for u in links if u not in known]
         new = new[: first_run_max if sid not in seen else per_source_max]
         sent = 0
-        if rendered and not links and TENDER_LINK.search(text):
-            # tenders listed on the page itself, with no page of their own: read the list when it changes
+        if rendered and TENDER_LINK.search(text):
+            # banks list their tenders on the page itself, often behind buttons: read the list whenever it changes
             key = page_key(text)
             if key not in known:
                 known.add(key)
