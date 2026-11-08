@@ -43,6 +43,7 @@
           <li>{{ check() }}Every other open tender that matches your business, each morning in Telegram</li>
         </ul>
         <div class="btns">{% if me %}<a class="btn big" href="/account">Subscribe</a>{% else %}<a class="btn big" href="/signup">Start 14-day free trial</a><a class="btn big ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}</div>
+        <p class="small muted" style="margin:12px 0 0">From ETB {{ PRICES.ETB.month }} a month, or USD {{ PRICES.USD.month }} for firms abroad. <a href="/pricing">See pricing</a></p>
       </div>
     {% endif %}
   </div>

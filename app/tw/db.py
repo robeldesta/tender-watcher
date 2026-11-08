@@ -91,7 +91,8 @@ class Payment(Base):
     tx_ref: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     plan: Mapped[str] = mapped_column(String(10))  # month, year
-    amount: Mapped[int] = mapped_column()  # ETB
+    amount: Mapped[int] = mapped_column()  # whole units of currency
+    currency: Mapped[str] = mapped_column(String(3), default="ETB")  # ETB, USD, EUR
     days: Mapped[int] = mapped_column()
     method: Mapped[str] = mapped_column(String(12), default="chapa")  # chapa, telebirr, bank
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)  # pending, paid, expired
@@ -108,7 +109,8 @@ class Payment(Base):
 ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
                  ("companies", "interests", "TEXT NOT NULL DEFAULT ''"),
                  ("users", "telegram_chat", "VARCHAR(20) NOT NULL DEFAULT ''"),
-                 ("tenders", "categories", "VARCHAR(200) NOT NULL DEFAULT ''")]
+                 ("tenders", "categories", "VARCHAR(200) NOT NULL DEFAULT ''"),
+                 ("payments", "currency", "VARCHAR(3) NOT NULL DEFAULT 'ETB'")]
 
 
 def upgrade(engine):

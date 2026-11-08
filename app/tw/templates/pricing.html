@@ -1,0 +1,60 @@
+{% extends "base.html" %}{% from "_due.html" import check %}
+{% block title %}Pricing | Tender Watcher{% endblock %}
+{% block body %}
+{% set sym = cur %}
+<div class="section-head" style="margin-top:12px">
+  <h1 style="font-size:clamp(32px,4vw,48px);letter-spacing:-.03em">Free for {{ trial_days }} days. Then {{ sym }} {{ prices.month }} a month.</h1>
+  <p>No card needed to start. Every open tender in Ethiopia, checked by a person, matched to what you bid on.</p>
+</div>
+
+<nav class="cur-switch" aria-label="Currency">
+  <a href="/pricing" {% if cur == "ETB" %}aria-current="true"{% endif %}>Ethiopian birr</a>
+  <a href="/pricing?cur=USD" {% if cur == "USD" %}aria-current="true"{% endif %}>US dollars</a>
+</nav>
+<p class="small muted" style="margin:-8px 0 28px">{% if cur == "USD" %}For firms outside Ethiopia. You pay by international card on Chapa's secure page, or by USD or EUR bank transfer to Sonador Systems.{% else %}For firms in Ethiopia. You pay with Telebirr, CBE Birr, a bank account or a card.{% endif %}</p>
+
+<div class="plans three">
+  <div class="plan">
+    <h3>Monthly</h3>
+    <p class="price">{{ sym }} {{ "{:,}".format(prices.month) }}<small> / month</small></p>
+    <ul><li>{{ check() }}Every open tender, with the full notice</li><li>{{ check() }}Bid security, document fee and where to buy</li><li>{{ check() }}Your matches each morning in Telegram</li></ul>
+    <a class="btn ghost big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') if me else '/signup' }}">{{ "Subscribe" if me else "Start free trial" }}</a>
+  </div>
+  <div class="plan dark">
+    <h3>Yearly <span class="tag" style="margin-left:6px">Best value</span></h3>
+    <p class="price">{{ sym }} {{ "{:,}".format(prices.year) }}<small> / year</small></p>
+    <p class="muted" style="margin:0">Saves {{ sym }} {{ "{:,}".format(prices.month * 12 - prices.year) }} compared with paying monthly.</p>
+    <ul><li>{{ check() }}Everything in monthly</li><li>{{ check() }}One payment, one invoice for the year</li><li>{{ check() }}Same price all year</li></ul>
+    <a class="btn mint big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') if me else '/signup' }}">{{ "Subscribe" if me else "Start free trial" }}</a>
+  </div>
+  <div class="plan soon">
+    <h3>Bid assistant <span class="tag">Coming soon</span></h3>
+    <p class="muted" style="margin:0">Win the tenders you find. Subscribers get it first.</p>
+    <ul><li>{{ check() }}Start a bid from any tender</li><li>{{ check() }}A checklist from the bid document, so nothing is missed</li><li>{{ check() }}Technical and financial sections filled from your company profile</li><li>{{ check() }}Print-ready documents with your logo and stamp</li></ul>
+  </div>
+</div>
+
+<section style="margin-top:64px" aria-labelledby="cmp-h">
+  <h2 id="cmp-h">What's free and what's paid</h2>
+  <table class="compare">
+    <thead><tr><th>Feature</th><th>Without an account</th><th>Trial and subscribers</th></tr></thead>
+    <tbody>
+      <tr><td>Every open tender: buyer, subject, region, closing date</td><td>{{ check() }}</td><td>{{ check() }}</td></tr>
+      <tr><td>Full notice, photo of the original, bid security, document fee</td><td>–</td><td>{{ check() }}</td></tr>
+      <tr><td>Tenders matched to your categories, regions and words</td><td>–</td><td>{{ check() }}</td></tr>
+      <tr><td>Morning alerts in Telegram</td><td>–</td><td>{{ check() }}</td></tr>
+      <tr><td>Bid assistant</td><td>–</td><td>Coming soon</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="faq" style="margin-top:64px" aria-labelledby="faq-h">
+  <h2 id="faq-h">Questions</h2>
+  <details><summary>Do I need a card for the free trial?</summary><p>No. Sign up with your phone number and you get {{ trial_days }} days of everything. We only ask for payment when you choose to subscribe.</p></details>
+  <details><summary>How can I pay?</summary><p>In Ethiopia: Telebirr, CBE Birr, a bank account or a card on Chapa's secure page, or a Telebirr or bank transfer to Sonador Systems that we record for you. From abroad: an international card in US dollars on Chapa, or a USD or EUR bank transfer.</p></details>
+  <details><summary>Can my firm pay in US dollars?</summary><p>Yes. Pick US dollars above. Plans are {{ "USD {:,}".format(all_prices.USD.month) }} a month or {{ "USD {:,}".format(all_prices.USD.year) }} a year.</p></details>
+  <details><summary>Do I get an invoice?</summary><p>Yes. Ask us and Sonador Systems sends an invoice for your payment, in your company's name and with your TIN.</p></details>
+  <details><summary>What happens when my trial or subscription ends?</summary><p>You can still browse open tenders. The full notices, your matches and the morning alerts stop until you pay. There is nothing to cancel and nothing renews on its own.</p></details>
+  <details><summary>Where do the tenders come from?</summary><p>Our collectors photograph notices in the newspapers and on buyers' boards, and our software reads government, bank, NGO and donor websites. A person checks every tender before it goes up.</p></details>
+</section>
+{% endblock %}

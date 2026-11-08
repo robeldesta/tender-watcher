@@ -424,6 +424,10 @@ def test_chapa_verify_rules(monkeypatch):
     assert c.paid("TW-1", 2400)
     assert not c.paid("TW-1", 299)  # wrong amount
     assert not c.paid("TW-2", 2400)  # someone else's reference
+    assert not c.paid("TW-1", 2400, "USD")  # 2,400 birr is not 2,400 dollars
+    reply["data"].update(amount="99.00", currency="USD")
+    assert c.paid("TW-1", 99, "USD") and not c.paid("TW-1", 99)
+    reply["data"].update(amount="2400.00", currency="ETB")
     reply["data"]["status"] = "failed/pending"
     assert not c.paid("TW-1", 2400)
 

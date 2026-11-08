@@ -33,7 +33,10 @@ LOCK_MINUTES, MAX_PHONE_FAILS, MAX_IP_FAILS = 15, 5, 20
 MIN_PASSWORD = 10
 TRIAL_DAYS = 14
 MAX_SIGNUPS_PER_HOUR = 5
-PRICES = {"month": 299, "year": 2400}
+# Prices are set per currency, not converted. Foreign firms pay USD by card on Chapa.
+PRICES = {"ETB": {"month": 299, "year": 2400}, "USD": {"month": 12, "year": 99}}
+CURRENCIES = {"ETB": "ETB", "USD": "USD"}  # online checkout
+BANK_CURRENCIES = ("ETB", "USD", "EUR")  # recorded by an admin
 VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s*$", re.I)
 PLAN_DAYS = {"month": 30, "year": 365}
 PAY_METHODS = {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}
@@ -120,7 +123,7 @@ def create_app(settings=None, claude=None):
     app = FastAPI(title="Tender Watcher", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
     tpl = Jinja2Templates(directory=os.path.join(HERE, "templates"))
-    tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
+    tpl.env.globals.update(PRICES=PRICES, CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host)
     tpl.env.globals.update(date_notes=date_notes)
     state = {"claude": claude}
@@ -200,6 +203,17 @@ def create_app(settings=None, claude=None):
                         text=str(exc.detail))
 
     # -- public pages
+    def currency_of(request):
+        cur = request.query_params.get("cur", "").upper()
+        return cur if cur in CURRENCIES else "ETB"
+
+    @app.get("/pricing", response_class=HTMLResponse)
+    def pricing(request: Request, session=Depends(db)):
+        u = user_from(request, session)
+        cur = currency_of(request)
+        return page(request, "pricing.html", u, cur=cur, prices=PRICES[cur], all_prices=PRICES,
+                    trial_days=TRIAL_DAYS, chapa_on=bool(app.state.chapa))
+
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, category: str = "", region: str = "", type: str = "", q: str = "",
              p: int = 1, session=Depends(db)):
@@ -227,7 +241,7 @@ def create_app(settings=None, claude=None):
                          latest=sorted(rows, key=lambda r: (r.published_at or r.created_at).replace(tzinfo=None), reverse=True)[:4])
         f = dict(category=category, region=region, type=type, q=q)
         return page(request, "list.html", u, rows=pg["rows"], total=len(rows), pg=pg, stats=stats, filtered=filtered,
-                    prices=PRICES, f=f, qs=urlencode({k: v for k, v in f.items() if v}))
+                    prices=PRICES["ETB"], f=f, qs=urlencode({k: v for k, v in f.items() if v}))
 
     @app.get("/t/{tid}", response_class=HTMLResponse)
     def tender_page(request: Request, tid: str, session=Depends(db)):
@@ -348,7 +362,8 @@ def create_app(settings=None, claude=None):
         link = "https://t.me/{}?start={}".format(s.telegram_bot, tg_signer.dumps(u.id)) if s.telegram_bot else ""
         pays = session.scalars(select(Payment).where(Payment.company_id == c.id, Payment.status == "paid")
                                .order_by(Payment.paid_at.desc())).all()
-        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=PRICES,
+        cur = currency_of(request)
+        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=PRICES[cur], cur=cur,
                     days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link,
                     pays=pays, methods=PAY_METHODS, chapa_on=bool(app.state.chapa),
                     payment=request.query_params.get("payment", ""))
@@ -383,7 +398,7 @@ def create_app(settings=None, claude=None):
         p.checked_at = now()
         session.commit()
         try:
-            ok = chapa.paid(p.tx_ref, p.amount)
+            ok = chapa.paid(p.tx_ref, p.amount, p.currency)
         except Exception as e:
             print(f"chapa verify {p.tx_ref}: {e}", flush=True)
             return False
@@ -408,20 +423,23 @@ def create_app(settings=None, claude=None):
         return n
 
     @app.post("/account/pay")
-    def pay(request: Request, plan: str = Form(""), csrf: str = Form(""), session=Depends(db)):
+    def pay(request: Request, plan: str = Form(""), currency: str = Form("ETB"), csrf: str = Form(""),
+            session=Depends(db)):
         u = need(request, session, ("member",))
         check_csrf(u, csrf)
-        if plan not in PRICES:
+        if currency not in CURRENCIES:
+            raise HTTPException(400, "Pick ETB or USD.")
+        if plan not in PRICES[currency]:
             raise HTTPException(400, "Pick a plan.")
         if not app.state.chapa:
             raise HTTPException(503, "Online payment is not open yet. Pay by Telebirr or bank transfer for now.")
         p = Payment(tx_ref="TW-" + uuid.uuid4().hex[:16], company_id=u.company_id, plan=plan,
-                    amount=PRICES[plan], days=PLAN_DAYS[plan])
+                    amount=PRICES[currency][plan], currency=currency, days=PLAN_DAYS[plan])
         session.add(p)
         session.commit()
         try:
             url = app.state.chapa.checkout(p.tx_ref, p.amount, u.company.name,
-                                           f"{s.site_url}/account/paid?ref={p.tx_ref}")
+                                           f"{s.site_url}/account/paid?ref={p.tx_ref}", currency)
         except Exception as e:
             print(f"chapa checkout {p.tx_ref}: {e}", flush=True)
             p.status = "expired"
@@ -453,23 +471,32 @@ def create_app(settings=None, claude=None):
         rows = session.scalars(select(Payment).order_by(Payment.created_at.desc()).limit(200)).all()
         companies = session.scalars(select(Company).order_by(Company.name)).all()
         return page(request, "payments.html", u, status=status, rows=rows, companies=companies, prices=PRICES,
-                    methods=PAY_METHODS, chapa_on=bool(app.state.chapa), **ctx)
+                    bank_currencies=BANK_CURRENCIES, methods=PAY_METHODS, chapa_on=bool(app.state.chapa), **ctx)
 
     @app.post("/admin/payments", response_class=HTMLResponse)
     def record_payment(request: Request, company_id: int = Form(0), plan: str = Form(""), method: str = Form(""),
-                       reference: str = Form(""), csrf: str = Form(""), session=Depends(db)):
+                       reference: str = Form(""), currency: str = Form("ETB"), amount: str = Form(""),
+                       csrf: str = Form(""), session=Depends(db)):
         u = need(request, session, ("admin",))
         check_csrf(u, csrf)
         c = session.get(Company, company_id)
-        error = ("Pick the company." if not c else "Pick a plan." if plan not in PRICES else
+        amount = amount.replace(",", "").strip()
+        listed = PRICES.get(currency, {}).get(plan)
+        paid_amount = int(amount) if amount.isdigit() else listed
+        error = ("Pick the company." if not c else "Pick a plan." if plan not in PLAN_DAYS else
+                 "Pick ETB, USD or EUR." if currency not in BANK_CURRENCIES else
+                 "Enter the amount received." if not paid_amount else
                  "Pick Telebirr or bank transfer." if method not in ("telebirr", "bank") else
+                 "Telebirr payments are in ETB." if method == "telebirr" and currency != "ETB" else
                  "Enter the Telebirr or bank transaction number." if not reference.strip() else
                  "That transaction number is already recorded." if session.scalars(
                      select(Payment).where(Payment.reference == reference.strip()[:120])).first() else "")
         if error:
             return payments_page(request, session, u, status=400, error=error,
-                                 form=dict(company_id=company_id, plan=plan, method=method, reference=reference))
-        p = Payment(tx_ref="TW-M-" + uuid.uuid4().hex[:14], company_id=c.id, plan=plan, amount=PRICES[plan],
+                                 form=dict(company_id=company_id, plan=plan, method=method, reference=reference,
+                                           currency=currency, amount=amount))
+        p = Payment(tx_ref="TW-M-" + uuid.uuid4().hex[:14], company_id=c.id, plan=plan, amount=paid_amount,
+                    currency=currency,
                     days=PLAN_DAYS[plan], method=method)
         session.add(p)
         session.commit()

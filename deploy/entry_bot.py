@@ -549,9 +549,9 @@ class Chapa:
             except ValueError:
                 return {"status": "failed", "message": f"HTTP {e.code}"}
 
-    def checkout(self, tx_ref, amount, name, return_url):
+    def checkout(self, tx_ref, amount, name, return_url, currency="ETB"):
         r = self._req("POST", "/transaction/initialize", {
-            "amount": f"{amount:.2f}", "currency": "ETB", "tx_ref": tx_ref,
+            "amount": f"{amount:.2f}", "currency": currency, "tx_ref": tx_ref,
             "first_name": name[:50] or "Subscriber", "last_name": name[:50] or "Subscriber",
             "return_url": return_url,
             "customization": {"title": "Tender Watcher", "description": "Tender alerts subscription"}})
@@ -559,8 +559,8 @@ class Chapa:
             raise RuntimeError(str(r.get("message"))[:200])
         return r["data"]["checkout_url"]
 
-    def paid(self, tx_ref, amount):
-        """True when Chapa reports this payment as successful for the full amount in ETB."""
+    def paid(self, tx_ref, amount, currency="ETB"):
+        """True when Chapa reports this payment as successful for the full amount in that currency."""
         r = self._req("GET", "/transaction/verify/" + urllib.parse.quote(tx_ref))
         d = r.get("data") or {}
         from decimal import Decimal, InvalidOperation
@@ -569,7 +569,7 @@ class Chapa:
         except (InvalidOperation, ValueError):
             ok_amount = False
         return r.get("status") == "success" and str(d.get("status", "")).lower() == "success" and ok_amount \
-            and str(d.get("currency", "")).upper() == "ETB" and d.get("tx_ref") == tx_ref
+            and str(d.get("currency", "")).upper() == currency and d.get("tx_ref") == tx_ref
 
 
 def keyword_hit(keywords, text):

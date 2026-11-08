@@ -309,12 +309,13 @@ class FakeChapa:
     def __init__(self):
         self.made, self.paid_refs, self.asked = [], set(), []
 
-    def checkout(self, tx_ref, amount, name, return_url):
+    def checkout(self, tx_ref, amount, name, return_url, currency="ETB"):
         self.made.append((tx_ref, amount, name, return_url))
+        self.currency = currency
         return "https://checkout.chapa.co/checkout/payment/" + tx_ref
 
-    def paid(self, tx_ref, amount):
-        self.asked.append(tx_ref)
+    def paid(self, tx_ref, amount, currency="ETB"):
+        self.asked.append((tx_ref, amount, currency))
         return tx_ref in self.paid_refs
 
 
@@ -402,6 +403,42 @@ def test_chapa_checkout_and_manual_payments(env, monkeypatch):
     c.post("/internal/check-payments", headers=h)
     with app.state.Session() as db:
         assert db.query(Payment).filter_by(tx_ref=ref3).one().status == "expired"
+
+    # a firm abroad pays in US dollars: own price, checked in USD
+    assert "Pay USD 99 for a year" in c.get("/account?cur=USD").text
+    assert c.post("/account/pay", data={"csrf": tok, "plan": "year", "currency": "GBP"}).status_code == 400
+    c.post("/account/pay", data={"csrf": tok, "plan": "year", "currency": "USD"})
+    ref4, amount4 = chapa.made[-1][:2]
+    assert amount4 == 99 and chapa.currency == "USD"
+    chapa.paid_refs.add(ref4)
+    assert c.get("/account/paid?ref=" + ref4, follow_redirects=False).headers["location"] == "/account?payment=paid"
+    assert chapa.asked[-1] == (ref4, 99, "USD")
+    assert "USD 99" in c.get("/account").text
+
+    # admin records a EUR bank transfer; the amount is needed, Telebirr stays in birr
+    bad = a.post("/admin/payments", data={"csrf": atok, "company_id": delta, "plan": "year", "method": "bank",
+                                          "currency": "EUR", "reference": "SW1"})
+    assert bad.status_code == 400 and "amount received" in bad.text
+    bad = a.post("/admin/payments", data={"csrf": atok, "company_id": delta, "plan": "year", "method": "telebirr",
+                                          "currency": "USD", "reference": "TB9"})
+    assert bad.status_code == 400 and "in ETB" in bad.text
+    a.post("/admin/payments", data={"csrf": atok, "company_id": delta, "plan": "year", "method": "bank",
+                                    "currency": "EUR", "amount": "90", "reference": "SW1"})
+    assert "EUR 90" in a.get("/admin/payments").text
+    with app.state.Session() as db:
+        assert db.query(Company).filter_by(name="Delta").one().paid_until == "2027-12-21"
+
+
+def test_pricing_page_is_public(env):
+    app, _, _ = env
+    c = TestClient(app)
+    r = c.get("/pricing")
+    assert r.status_code == 200 and "ETB 299" in r.text and "ETB 2,400" in r.text and "14 days" in r.text
+    assert "Saves ETB 1,188" in r.text and "Bid assistant" in r.text and "US dollars" in r.text
+    usd = c.get("/pricing?cur=USD").text
+    assert "USD 12" in usd and "USD 99" in usd and "Saves USD 45" in usd and "ETB 299" not in usd
+    assert c.get("/pricing?cur=XYZ").text.count("ETB 299") >= 1
+    assert 'href="/pricing"' in c.get("/").text
 
 
 def test_website_finds_go_to_web_review(env):
