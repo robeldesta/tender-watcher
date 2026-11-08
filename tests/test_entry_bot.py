@@ -564,3 +564,29 @@ def test_submit_web_drops_entries_without_a_subject(tmp_path):
     out = {"tenders": [{"title": "Subject not stated", "buyer": "AACRA"}, {"title": "Asphalt overlay works", "buyer": "AACRA"}]}
     n = eb.Bot.submit_web(bot, {"name": "AACRA"}, "https://aacra.gov.et/tender", out)
     assert n == 1 and [e["title"] for e in calls[0]["entries"]] == ["Asphalt overlay works"]
+
+
+def test_watch_renders_javascript_listings(setup):
+    """Bank pages build their tender lists in the browser: read the rendered list itself, once per change."""
+    bot, tg, claude, board = setup
+    bot.claude = FakeClaude(out=json.loads(json.dumps(NOTICE)))
+
+    class RenderWeb(FakeWeb):
+        def __init__(self, text):
+            super().__init__({})
+            self.text, self.rendered = text, []
+
+        def render(self, url):
+            self.rendered.append(url)
+            return "<div id=app><button>Read more</button></div>", self.text
+
+    src = dict(SRC, id="cbe", url="https://bank.et/tenders", render=True)
+    web = RenderWeb("Explore the latest tenders. Invitation to bid: supply of servers, closes 25 Nov 2026")
+    assert eb.watch_sources(bot, [src], web=web, log=lambda m: None) == 1
+    assert web.rendered == ["https://bank.et/tenders"] and web.got == []
+    assert "supply of servers" in bot.claude.calls[0]["messages"][0]["content"][0]["text"]
+    assert eb.watch_sources(bot, [src], web=web, log=lambda m: None) == 0  # same list: not read again
+    assert len(bot.claude.calls) == 1
+    web.text += ". Invitation to bid: network switches"
+    eb.watch_sources(bot, [src], web=web, log=lambda m: None)
+    assert len(bot.claude.calls) == 2  # the list changed

@@ -436,6 +436,36 @@ class Web:
         return body, ctype
 
 
+    def render(self, url, timeout=30):
+        """The page as a browser sees it, after its JavaScript has run: (html, visible text).
+        For buyer sites whose tender lists are built in the browser. Same robots.txt and pause."""
+        if not self.allowed(url):
+            raise PermissionError("robots.txt disallows " + url)
+        wait = self.last + self.delay - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        from playwright.sync_api import sync_playwright
+        try:
+            with sync_playwright() as pw:
+                b = pw.chromium.launch()
+                try:
+                    pg = b.new_page(user_agent=UA, locale="en-US", ignore_https_errors=False)
+                    pg.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+                    pg.wait_for_timeout(1500)  # lists that fill in after the network goes quiet
+                    html, text = pg.content(), pg.inner_text("body")
+                finally:
+                    b.close()
+        finally:
+            self.last = time.time()
+        return html[:MAX_BYTES], text[:60000]
+
+
+def page_key(text):
+    """A short fingerprint of a listing page's visible text, to tell when it changed."""
+    import hashlib
+    return "page:" + hashlib.sha1(" ".join(text.split()).encode()).hexdigest()[:16]
+
+
 def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, log=print):
     """Check each buyer's tender page; send new tender notices to the reviewers."""
     web = web or Web()
@@ -450,9 +480,15 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
         if not src.get("enabled", True):
             continue
         sid = src["id"]
+        rendered = bool(src.get("render"))
+        text = ""
         try:
-            page, _ = web.get(src["url"])
-            links = tender_links(page.decode("utf-8", "replace"), src["url"])
+            if rendered:  # the list is built by JavaScript: open it in a headless browser
+                html, text = web.render(src["url"])
+                links = tender_links(html, src["url"])
+            else:
+                page, _ = web.get(src["url"])
+                links = tender_links(page.decode("utf-8", "replace"), src["url"])
         except Exception as e:
             log(f"{sid}: listing failed: {e}")
             continue
@@ -460,17 +496,31 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
         new = [u for u in links if u not in known]
         new = new[: first_run_max if sid not in seen else per_source_max]
         sent = 0
+        if rendered and not links and TENDER_LINK.search(text):
+            # tenders listed on the page itself, with no page of their own: read the list when it changes
+            key = page_key(text)
+            if key not in known:
+                known.add(key)
+                try:
+                    out = extract_web(bot.claude, text.encode(), "text/plain", src["url"], src["name"])
+                    sent += bot.submit_web(src, src["url"], out)
+                except Exception as e:
+                    log(f"{sid}: page: {e}")
         for url in new:
             known.add(url)
             try:
-                body, ctype = web.get(url)
+                if rendered and not url.lower().endswith(".pdf"):
+                    _, t = web.render(url)
+                    body, ctype = t.encode(), "text/plain"
+                else:
+                    body, ctype = web.get(url)
                 if ctype not in ("text/html", "application/pdf", "text/plain"):
                     continue
                 out = extract_web(bot.claude, body, ctype, url, src["name"])
                 sent += bot.submit_web(src, url, out)
             except Exception as e:
                 log(f"{sid}: {url}: {e}")
-        seen[sid] = sorted(known | set(links))[-500:]
+        seen[sid] = sorted(known | set(links))[-500:]  # page: keys sort first and drop off as the list changes
         write_json_atomic(seen_path, seen)
         log(f"{sid}: {len(links)} tender links, {len(new)} new pages read, {sent} tenders sent for review")
         total += sent
