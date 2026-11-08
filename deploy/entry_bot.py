@@ -208,7 +208,8 @@ def extract_web(client, body, content_type, url, source_name, listing=False):
     if listing:
         note += (" This is a list of several tenders, one per row: return each active one as its own tender, "
                  "with its bid number at the end of the title, as in 'Scanner machine (bid no. 103/2026/27)'. Where a row gives an opening date and no closing date, "
-                 "bids close at the opening: use it as the closing date.")
+                 "bids close at the opening: use it as the closing date, and don't mention this in doubts. "
+                 "Dates written like 11/4/2026 on these lists are month/day/year.")
     return _ask(client, [block], note, "page", "The document is too long.")
 
 
@@ -440,9 +441,11 @@ class Web:
         return body, ctype
 
 
-    def render(self, url, timeout=45):
-        """The page as a browser sees it, after its JavaScript has run: (html, visible text).
-        For buyer sites whose tender lists are built in the browser. Same robots.txt and pause."""
+    def render(self, url, timeout=45, documents=False, max_docs=20):
+        """The page as a browser sees it, after its JavaScript has run: (html, visible text, document urls).
+        For buyer sites whose tender lists are built in the browser. With documents, it also presses each
+        Download button and notes the file it would fetch (the download itself is cancelled). Same robots.txt
+        and pause."""
         if not self.allowed(url):
             raise PermissionError("robots.txt disallows " + url)
         wait = self.last + self.delay - time.time()
@@ -457,11 +460,37 @@ class Web:
                     pg.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
                     pg.wait_for_timeout(5000)  # busy sites never go quiet: give the list a few seconds to fill in
                     html, text = pg.content(), pg.inner_text("body")
+                    docs = self._documents(pg, max_docs) if documents else []
                 finally:
                     b.close()
         finally:
             self.last = time.time()
-        return html[:MAX_BYTES], text[:60000]
+        return html[:MAX_BYTES], text[:60000], docs
+
+    @staticmethod
+    def _documents(pg, max_docs):
+        """Press each Download button on the page and collect the document addresses it leads to."""
+        found = []
+
+        def note(u):
+            if u.startswith(("http://", "https://")) and u not in found:
+                found.append(u)
+
+        pg.on("request", lambda r: note(r.url) if r.url.lower().split("?")[0].endswith(".pdf") else None)
+        buttons = pg.get_by_role("button", name=re.compile(r"download|አውርድ", re.I)).all() + \
+            pg.get_by_role("link", name=re.compile(r"download|አውርድ", re.I)).all()
+        for el in buttons[:max_docs]:
+            try:
+                with pg.expect_download(timeout=8000) as d:
+                    el.click(timeout=5000)
+                note(d.value.url)
+                d.value.cancel()
+            except Exception:
+                pass  # a button that opened nothing, or a document shown in the page: the request listener has it
+            for extra in pg.context.pages[1:]:  # documents opened in a new tab
+                note(extra.url)
+                extra.close()
+        return [u for u in found if not SKIP_LINK.search(urllib.parse.unquote(u))]
 
 
 def page_key(text):
@@ -487,9 +516,10 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
         rendered = bool(src.get("render"))
         text = ""
         try:
+            docs = []
             if rendered:  # the list is built by JavaScript: open it in a headless browser
                 try:
-                    html, text = web.render(src["url"])
+                    html, text, docs = web.render(src["url"], documents=True)
                 except PermissionError:
                     raise
                 except Exception as e:  # browser trouble: the plain page is better than nothing
@@ -507,8 +537,17 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
         new = [u for u in links if u not in known]
         new = new[: first_run_max if sid not in seen else per_source_max]
         sent = 0
-        if rendered and TENDER_LINK.search(text):
-            # banks list their tenders on the page itself, often behind buttons: read the list whenever it changes
+        new_docs = [u for u in docs if u not in known][:per_source_max]
+        for url in new_docs:  # each tender's own notice, behind a Download button: the exact dates and times
+            known.add(url)
+            try:
+                body, ctype = web.get(url)
+                if ctype == "application/pdf":
+                    sent += bot.submit_web(src, url, extract_web(bot.claude, body, ctype, url, src["name"]))
+            except Exception as e:
+                log(f"{sid}: {url}: {e}")
+        if rendered and not docs and TENDER_LINK.search(text):
+            # no documents to open: read the tender list on the page itself, whenever it changes
             key = page_key(text)
             if key not in known:
                 known.add(key)
@@ -521,7 +560,7 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
             known.add(url)
             try:
                 if rendered and not url.lower().endswith(".pdf"):
-                    _, t = web.render(url)
+                    _, t, _ = web.render(url)
                     body, ctype = t.encode(), "text/plain"
                 else:
                     body, ctype = web.get(url)
@@ -531,9 +570,10 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
                 sent += bot.submit_web(src, url, out)
             except Exception as e:
                 log(f"{sid}: {url}: {e}")
-        seen[sid] = sorted(known | set(links))[-500:]  # page: keys sort first and drop off as the list changes
+        seen[sid] = sorted(known | set(links) | set(docs))[-500:]  # page: keys sort first and drop off as the list changes
         write_json_atomic(seen_path, seen)
-        log(f"{sid}: {len(links)} tender links, {len(new)} new pages read, {sent} tenders sent for review")
+        log(f"{sid}: {len(links)} tender links, {len(docs)} documents ({len(new_docs)} new), {len(new)} new pages read, "
+            f"{sent} tenders sent for review")
         total += sent
     if total and getattr(bot, "app_url", ""):
         bot.nudge_reviewers(total)

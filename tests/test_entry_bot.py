@@ -576,10 +576,10 @@ def test_watch_renders_javascript_listings(setup):
             super().__init__({})
             self.text, self.rendered = text, []
 
-        def render(self, url):
+        def render(self, url, documents=False):
             self.rendered.append(url)
             return ('<div id=app><a href="/tenders">Tender</a><button>Read more</button>'
-                    '<a href="/Security_Vulnerability_Disclosure_Standard_Procedure.pdf">Policy</a></div>'), self.text
+                    '<a href="/Security_Vulnerability_Disclosure_Standard_Procedure.pdf">Policy</a></div>'), self.text, []
 
     src = dict(SRC, id="cbe", url="https://bank.et/tenders", render=True)
     web = RenderWeb("Explore the latest tenders. Invitation to bid: supply of servers, closes 25 Nov 2026")
@@ -591,3 +591,20 @@ def test_watch_renders_javascript_listings(setup):
     web.text += ". Invitation to bid: network switches"
     eb.watch_sources(bot, [src], web=web, log=lambda m: None)
     assert len(bot.claude.calls) == 2  # the list changed
+
+
+def test_watch_reads_documents_behind_download_buttons(setup):
+    bot, tg, claude, board = setup
+    bot.claude = FakeClaude(out=json.loads(json.dumps(NOTICE)))
+
+    class DocWeb(FakeWeb):
+        def render(self, url, documents=False):
+            assert documents
+            return "<button>Download</button>", "Active tenders: Scanner machine. Download", ["https://bank.et/files/inv103.pdf"]
+
+    web = DocWeb({"https://bank.et/files/inv103.pdf": (b"%PDF-1.4 x", "application/pdf")})
+    src = dict(SRC, id="cbe", url="https://bank.et/tenders", render=True)
+    assert eb.watch_sources(bot, [src], web=web, log=lambda m: None) == 1
+    assert web.got == ["https://bank.et/files/inv103.pdf"] and len(bot.claude.calls) == 1  # the PDF, not the list
+    assert bot.claude.calls[0]["messages"][0]["content"][0]["type"] == "document"
+    assert eb.watch_sources(bot, [src], web=web, log=lambda m: None) == 0 and len(bot.claude.calls) == 1
