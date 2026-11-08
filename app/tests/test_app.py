@@ -780,3 +780,31 @@ def test_win_plan_opens_bid_room(env, monkeypatch):
     with app.state.Session() as db:
         co = db.get(Company, cid)
         assert co.win_until == "2027-01-04" and co.paid_until == "2027-01-04"
+
+
+def test_admin_console_on_its_own_host(tmp_path, monkeypatch):
+    monkeypatch.setattr("tw.main.today", lambda: "2026-11-07")
+    s = Settings({"DATABASE_URL": f"sqlite:///{tmp_path}/t.db", "SECRET_KEY": "test", "DATA_DIR": str(tmp_path / "d"),
+                  "SECURE_COOKIES": "0", "SITE_URL": "http://site.test", "ADMIN_URL": "http://admin.site.test"})
+    app = create_app(s, FakeClaude())
+    with app.state.Session() as db:
+        db.add(User(name="Robel", phone="0911000001", role="admin", pw_hash=hash_password("password1"), totp_secret=TOTP))
+        db.commit()
+    site, adm = TestClient(app, base_url="http://site.test"), TestClient(app, base_url="http://admin.site.test")
+    # the customer site doesn't serve the console, and admins can't sign in there
+    assert site.get("/admin/prices", follow_redirects=False).headers["location"] == "http://admin.site.test/admin/prices"
+    r = site.post("/login", data={"phone": "0911000001", "password": "password1"})
+    assert r.status_code == 400 and "admin.site.test" in r.text and "tw" not in site.cookies
+    # the console's host has only the console
+    assert adm.get("/", follow_redirects=False).headers["location"] == "/admin"
+    assert adm.get("/pricing", follow_redirects=False).headers["location"] == "http://site.test/pricing"
+    r = adm.post("/login", data={"phone": "0911000001", "password": "password1", "next": "/"}, follow_redirects=False)
+    from tw.auth import totp_now
+    r = adm.post("/login/code", data={"code": totp_now(TOTP), "next": "/"}, follow_redirects=False)
+    assert r.headers["location"] == "/admin"
+    assert 'class="console"' in adm.get("/admin").text and 'href="http://site.test/"' in adm.get("/admin").text
+    # members sign in on the site only
+    site.post("/signup", data={"company": "X PLC", "name": "X", "phone": "0955000003", "password": "longenough1"})
+    assert "tw" in site.cookies
+    r = TestClient(app, base_url="http://admin.site.test").post("/login", data={"phone": "0955000003", "password": "longenough1"})
+    assert r.status_code == 400 and "site.test" in r.text

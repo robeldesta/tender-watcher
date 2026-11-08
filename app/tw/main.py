@@ -5,7 +5,7 @@ import hmac
 import os
 import re
 import uuid
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -157,6 +157,31 @@ def create_app(settings=None, claude=None):
     app = FastAPI(title="Tender Watcher", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
+    admin_host = urlparse(s.admin_url).hostname if s.admin_url else ""
+    ADMIN_PATHS = ("/admin", "/review")
+    ON_ADMIN_HOST = ADMIN_PATHS + ("/login", "/logout", "/security", "/static/", "/notices/", "/t/")
+
+    def host_of(request):
+        return (request.headers.get("host") or "").split(":")[0].lower()
+
+    def on_admin(request):
+        return bool(admin_host) and host_of(request) == admin_host
+
+    @app.middleware("http")
+    async def separate_admin(request, call_next):
+        """With ADMIN_URL set, the console lives only on its own host and the customer site only on its own."""
+        if admin_host:
+            path = request.url.path
+            q = ("?" + request.url.query) if request.url.query else ""
+            if on_admin(request):
+                if path == "/":
+                    return RedirectResponse("/admin", 303)
+                if not path.startswith(ON_ADMIN_HOST):
+                    return RedirectResponse(s.site_url + path + q, 303)
+            elif path.startswith(ADMIN_PATHS):
+                return RedirectResponse(s.admin_url + path + q, 303)
+        return await call_next(request)
+
     @app.middleware("http")
     async def security_headers(request, call_next):
         r = await call_next(request)
@@ -175,7 +200,7 @@ def create_app(settings=None, claude=None):
     tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host,
                            safe_url=safe_url)
-    tpl.env.globals.update(date_notes=date_notes, PLAN_LABEL=PLAN_LABEL)
+    tpl.env.globals.update(date_notes=date_notes, PLAN_LABEL=PLAN_LABEL, SITE_URL=s.site_url)
     state = {"claude": claude}
 
     def get_claude():
@@ -198,7 +223,11 @@ def create_app(settings=None, claude=None):
         except (BadSignature, ValueError, TypeError):
             return None
         u = session.get(User, uid)
-        return u if u and u.active and u.session_ver == ver else None
+        if not u or not u.active or u.session_ver != ver:
+            return None
+        if admin_host and (u.role in TWO_STEP_ROLES) != on_admin(request):
+            return None  # admins are signed in only on the console's host, customers only on the site
+        return u
 
     def csrf_token(u):
         return hmac.new(s.secret.encode(), f"csrf:{u.id}".encode(), hashlib.sha256).hexdigest()[:32]
@@ -422,6 +451,10 @@ def create_app(settings=None, claude=None):
             session.commit()
             return page(request, "login.html", None, status=400, next=next,
                         error="That phone number and password don't match. Check both and try again.")
+        if admin_host and (u.role in TWO_STEP_ROLES) != on_admin(request):
+            where = (s.admin_url if u.role in TWO_STEP_ROLES else s.site_url).split("//")[-1]
+            return page(request, "login.html", None, status=400, next=next,
+                        error=f"This account signs in at {where}.")
         session.query(LoginFailure).filter(LoginFailure.key == "phone:" + p).delete()
         session.query(LoginFailure).filter(LoginFailure.at < now() - dt.timedelta(days=1)).delete()
         session.commit()

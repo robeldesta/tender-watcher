@@ -8,6 +8,9 @@ class Settings:
         self.data_dir = env.get("DATA_DIR", "./data")
         self.board_json = env.get("BOARD_JSON", "")  # keep the static board in step until the app serves it
         self.site_url = env.get("SITE_URL", "https://tenders.sonador.et").rstrip("/")
+        # The admin console's own address, e.g. https://admin.tenders.sonador.et. When set, admins and
+        # reviewers sign in only there, and the customer site never shows or serves the console.
+        self.admin_url = env.get("ADMIN_URL", "").rstrip("/")
         self.anthropic_key = env.get("ANTHROPIC_API_KEY", "")
         self.telegram_token = env.get("TELEGRAM_BOT_TOKEN", "")
         self.telegram_bot = env.get("TELEGRAM_BOT_USERNAME", "tender_watcher_entry_bot")
