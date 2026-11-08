@@ -5,6 +5,7 @@ import hmac
 import os
 import re
 import uuid
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -37,6 +38,23 @@ VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s
 PLAN_DAYS = {"month": 30, "year": 365}
 PAY_METHODS = {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}
 CHECK_HOURS = 48  # stop asking Chapa about a checkout after this
+
+
+PER_PAGE = 20
+
+
+def paginate(rows, p):
+    pages = max(1, -(-len(rows) // PER_PAGE))
+    p = min(max(1, p), pages)
+    near = sorted({1, pages, p - 1, p, p + 1} & set(range(1, pages + 1)))
+    shown, last = [], 0
+    for n in near:  # 1 … 4 5 6 … 12
+        if n - last > 1:
+            shown.append(None)
+        shown.append(n)
+        last = n
+    return {"rows": rows[(p - 1) * PER_PAGE: p * PER_PAGE], "page": p, "pages": pages, "shown": shown,
+            "first": (p - 1) * PER_PAGE + 1, "last": min(p * PER_PAGE, len(rows))}
 
 
 def today():
@@ -180,7 +198,7 @@ def create_app(settings=None, claude=None):
     # -- public pages
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, category: str = "", region: str = "", type: str = "", q: str = "",
-             session=Depends(db)):
+             p: int = 1, session=Depends(db)):
         u = user_from(request, session)
         sync(session)
         query = select(Tender).where(Tender.status == "published",
@@ -197,13 +215,15 @@ def create_app(settings=None, claude=None):
         rows = session.scalars(query.order_by(Tender.closes == "", Tender.closes, Tender.time)).all()
         filtered = bool(category or region or type or q.strip())
         stats = None
-        if not filtered:
+        pg = paginate(rows, p)
+        if not filtered and pg["page"] == 1:
             week = (dt.date.fromisoformat(today()) + dt.timedelta(days=7)).isoformat()
             stats = dict(open=len(rows), buyers=len({r.buyer for r in rows}),
                          week=sum(1 for r in rows if r.closes and r.closes <= week),
                          latest=sorted(rows, key=lambda r: (r.published_at or r.created_at).replace(tzinfo=None), reverse=True)[:4])
-        return page(request, "list.html", u, rows=rows, stats=stats, filtered=filtered, prices=PRICES,
-                    f=dict(category=category, region=region, type=type, q=q))
+        f = dict(category=category, region=region, type=type, q=q)
+        return page(request, "list.html", u, rows=pg["rows"], total=len(rows), pg=pg, stats=stats, filtered=filtered,
+                    prices=PRICES, f=f, qs=urlencode({k: v for k, v in f.items() if v}))
 
     @app.get("/t/{tid}", response_class=HTMLResponse)
     def tender_page(request: Request, tid: str, session=Depends(db)):
@@ -589,7 +609,7 @@ def create_app(settings=None, claude=None):
         return t.category in i["categories"] or notices.eb.keyword_hit(i["keywords"], hay)
 
     @app.get("/my", response_class=HTMLResponse)
-    def my_tenders(request: Request, session=Depends(db)):
+    def my_tenders(request: Request, p: int = 1, session=Depends(db)):
         u = need(request, session, ("member",))
         sync(session)
         i = interests(u.company)
@@ -597,7 +617,8 @@ def create_app(settings=None, claude=None):
         if i["categories"] or i["keywords"]:
             q = select(Tender).where(Tender.status == "published", or_(Tender.closes == "", Tender.closes >= today()))
             rows = [t for t in session.scalars(q.order_by(Tender.published_at.desc())) if match(t, i)]
-        return page(request, "my.html", u, rows=rows, i=i, access=has_access(u))
+        pg = paginate(rows, p)
+        return page(request, "my.html", u, rows=pg["rows"], total=len(rows), pg=pg, qs="", i=i, access=has_access(u))
 
     # -- collectors
     @app.get("/collect", response_class=HTMLResponse)

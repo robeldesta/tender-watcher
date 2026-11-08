@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "_due.html" import row, leaf, left_text, check %}
+{% extends "base.html" %}{% from "_due.html" import row, leaf, left_text, check, pager %}
 {% set hero = stats and not me %}
 {% block header_class %}{{ "on-forest" if hero }}{% endblock %}
 {% block page %}
@@ -35,7 +35,7 @@
 <main{% if hero %} class="flush"{% endif %} id="tenders"><div class="wrap"{% if hero %} style="padding-top:56px"{% endif %}>
   <div class="list-head">
     {% if hero %}<h2>Open tenders</h2>{% else %}<h1 style="margin:0">Open tenders in Ethiopia</h1>{% endif %}
-    <span class="count">{{ rows|length }} open tender{{ "s" if rows|length != 1 }}{% if filtered %} match{% endif %}</span>
+    <span class="count">{% if pg.pages > 1 %}{{ pg.first }} to {{ pg.last }} of {% endif %}{{ total }} open tender{{ "s" if total != 1 }}{% if filtered %} match{% endif %}</span>
   </div>
   <form method="get" action="/#tenders" role="search">
     <div class="filters">
@@ -59,6 +59,7 @@
     <div class="empty"><h3>No open tenders match these filters</h3><p>Try another category or region, or clear the search.</p><a class="btn ghost" href="/#tenders">Show all open tenders</a></div>
   {% endfor %}
   </div>
+  {{ pager(pg, "/", qs) }}
 </div></main>
 
 {% if hero %}

@@ -432,3 +432,17 @@ def test_website_finds_go_to_web_review(env):
     r = a.post(f"/entry/{vid}", data={"csrf": tok, "action": "approve", "buyer": "AACRA", "title": "Asphalt overlay, Bole road",
                                       "no_date": "1"}, follow_redirects=False)
     assert r.status_code == 303
+
+
+def test_open_tenders_are_paged(env):
+    app, _, board = env
+    board.write_text(json.dumps({"tenders": [{"id": f"wb-{i}", "buyer": "B", "title": f"Item {i:02d}",
+                                              "closes": f"2026-12-{i:02d}", "category": "it"} for i in range(1, 26)]}))
+    c = TestClient(app)
+    one = c.get("/").text
+    assert "Item 01" in one and "Item 20" in one and "Item 21" not in one and "1 to 20 of 25" in one
+    two = c.get("/?p=2").text
+    assert "Item 21" in two and "Item 01" not in two and "21 to 25 of 25" in two and 'rel="prev"' in two
+    f = c.get("/?category=it&p=2").text
+    assert "Item 25" in f and "category=it&amp;p=1" in f  # filters kept across pages
+    assert "Item 21" in c.get("/?p=99").text  # past the end shows the last page

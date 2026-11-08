@@ -42,3 +42,14 @@
 {%- endmacro %}
 
 {% macro check() -%}<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 9.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>{%- endmacro %}
+
+{% macro pager(pg, base, qs) -%}
+{%- if pg.pages > 1 -%}
+{%- set sep = "&" if qs else "" -%}
+<nav class="pager" aria-label="Pages">
+  {% if pg.page > 1 %}<a class="pg" href="{{ base }}?{{ qs }}{{ sep }}p={{ pg.page - 1 }}#tenders" rel="prev">Previous</a>{% else %}<span class="pg off">Previous</span>{% endif %}
+  <span class="nums">{% for n in pg.shown %}{% if n is none %}<span class="gap">…</span>{% elif n == pg.page %}<span class="pg on" aria-current="page">{{ n }}</span>{% else %}<a class="pg" href="{{ base }}?{{ qs }}{{ sep }}p={{ n }}#tenders">{{ n }}</a>{% endif %}{% endfor %}</span>
+  {% if pg.page < pg.pages %}<a class="pg" href="{{ base }}?{{ qs }}{{ sep }}p={{ pg.page + 1 }}#tenders" rel="next">Next</a>{% else %}<span class="pg off">Next</span>{% endif %}
+</nav>
+{%- endif -%}
+{%- endmacro %}

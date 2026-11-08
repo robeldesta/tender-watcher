@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "_due.html" import row %}{% block title %}My tenders | Tender Watcher{% endblock %}
+{% extends "base.html" %}{% from "_due.html" import row, pager %}{% block title %}My tenders | Tender Watcher{% endblock %}
 {% block body %}
 {% if request.query_params.get("saved") %}<p class="alert ok">Saved. These are the open tenders that fit.</p>{% endif %}
 {% if not (i.categories or i.keywords) %}
@@ -6,7 +6,7 @@
   <div class="list"><div class="empty"><h3>Tell us what you bid on</h3><p>Pick your categories and regions, and your matching tenders appear here.</p><a class="btn" href="/account#int-h">Set your interests</a></div></div>
 {% else %}
   <div class="page-head">
-    <div><h1>{{ rows|length }} open tender{{ "s" if rows|length != 1 }} for {{ me.company.name }}</h1>
+    <div><h1>{{ total }} open tender{{ "s" if total != 1 }} for {{ me.company.name }}</h1>
       <p class="sub">Matched to your interests. <a href="/account#int-h">Change interests</a></p></div>
   </div>
   <div class="interests-bar">{% for k in i.categories %}<span class="tag ok">{{ CATEGORIES.get(k, k) }}</span>{% endfor %}{% for r in i.regions %}<span class="tag">{{ r }}</span>{% endfor %}{% for w in i.keywords %}<span class="tag stamp">“{{ w }}”</span>{% endfor %}</div>
@@ -14,5 +14,6 @@
   {% for t in rows %}{{ row(t, today) }}
   {% else %}<div class="empty"><h3>Nothing open matches yet</h3><p>New tenders are added every day. Check back tomorrow, or widen your interests.</p><a class="btn ghost" href="/account#int-h">Widen interests</a></div>{% endfor %}
   </div>
+  {{ pager(pg, "/my", qs) }}
 {% endif %}
 {% endblock %}
