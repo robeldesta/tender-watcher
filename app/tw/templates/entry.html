@@ -9,6 +9,7 @@
 {% if t.doubts %}<p class="alert warn">{{ t.doubts }}</p>{% endif %}
 <div class="split">
   <div>
+    {% if not t.photo and t.url %}<div class="panel"><b>Found on {{ t.source or "a buyer's website" }}</b><p class="small muted" style="margin:6px 0 10px">Open the page, check the details against it, then approve or reject.</p><a class="btn ghost" href="{{ t.url }}" target="_blank" rel="noopener nofollow">Open {{ t.url | host }}</a></div>{% endif %}
     {% if t.photo %}<div class="photo"><a href="/notices/{{ t.photo }}" target="_blank"><img src="/notices/{{ t.photo }}" alt="The notice photo"></a></div>{% endif %}
     {% if siblings %}<h3 style="margin-top:14px">Other tenders in this photo</h3><ul>{% for o in siblings %}<li><a href="/entry/{{ o.id }}">{{ o.title or o.id }}</a> <span class="small muted">{{ o.status }}</span></li>{% endfor %}</ul>{% endif %}
     <p class="small muted">Added by {{ t.collector.name if t.collector else "the website watcher" }}{% if t.closes_raw %} · Date as printed: {{ t.closes_raw }}{% endif %}</p>

@@ -360,6 +360,9 @@ class _Links(__import__("html.parser").parser.HTMLParser):
             self._href = None
 
 
+OTHER_LANGUAGE = re.compile(r"^/(ar|fr|es|pt|sw|zh|ru|de|it)(/|$)", re.I)
+
+
 def tender_links(page, base):
     """Links on a listing page that look like tender notices, in page order."""
     p = _Links()
@@ -375,6 +378,8 @@ def tender_links(page, base):
             continue
         if (urllib.parse.urlsplit(url).hostname or "") != host and not url.lower().endswith(".pdf"):
             continue  # stay on the buyer's own site, except for linked PDFs
+        if OTHER_LANGUAGE.match(urllib.parse.urlsplit(url).path):
+            continue  # the same page in Arabic, French and so on
         seen.add(url)
         out.append(url)
     return out
@@ -467,8 +472,10 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
                 log(f"{sid}: {url}: {e}")
         seen[sid] = sorted(known | set(links))[-500:]
         write_json_atomic(seen_path, seen)
-        log(f"{sid}: {len(links)} tender links, {len(new)} new, {sent} sent for review")
+        log(f"{sid}: {len(links)} tender links, {len(new)} new pages read, {sent} tenders sent for review")
         total += sent
+    if total and getattr(bot, "app_url", ""):
+        bot.nudge_reviewers(total)
     return total
 
 
@@ -885,7 +892,22 @@ class Bot:
                 traceback.print_exc()
 
     def submit_web(self, source, url, out):
-        """Queue tenders read from a buyer's website for review. Returns how many were sent."""
+        """Queue tenders read from a buyer's website for review. Returns how many were sent.
+        With the web app connected, they go to its Review list; otherwise to Telegram reviewers."""
+        if self.app_url:
+            entries = []
+            for t in out.get("tenders", []):
+                e = to_entry(t, source["name"], self.today())
+                if e["closes"] and e["closes"] < self.today():
+                    continue
+                e["buyer"] = e["buyer"] or source["name"]
+                if source.get("type") in TYPES:
+                    e["type"] = source["type"]
+                entries.append(e)
+            if not entries:
+                return 0
+            r = self.app_call("/internal/submit", {"source": source["name"], "url": url, "entries": entries})
+            return int(r.get("created", 0))
         sent = 0
         for t in out.get("tenders", []):
             e = to_entry(t, source["name"], self.today())
@@ -902,6 +924,42 @@ class Bot:
             self.send_review(p, None)
             sent += 1
         return sent
+
+    def nudge_reviewers(self, n):
+        text = (f"{n} new tender{'s' if n != 1 else ''} from buyer websites waiting for review:\n"
+                f"{self.site_url}/review")
+        for r in self.reviewers:
+            try:
+                self.tg.call("sendMessage", chat_id=r, text=text, disable_web_page_preview=True)
+            except Exception:
+                traceback.print_exc()
+
+    def move_web_pending_to_app(self):
+        """Website finds that were sent to Telegram before the web Review list existed move there, once."""
+        d = os.path.join(self.state, "pending")
+        moved = 0
+        for name in sorted(os.listdir(d)):
+            p = self.load(name[:-5]) if name.endswith(".json") else None
+            if not p or p["status"] != "pending" or not str(p.get("collector", "")).startswith("web: "):
+                continue
+            try:
+                r = self.app_call("/internal/submit", {"source": p["collector"][5:], "url": p.get("url") or "",
+                                                       "entries": [p["entry"]]})
+            except Exception:
+                traceback.print_exc()
+                continue
+            p["status"] = "moved to web review"
+            self.save(p)
+            for chat, mid in p.get("reviews", {}).items():
+                try:
+                    self.tg.call("editMessageReplyMarkup", chat_id=int(chat), message_id=mid,
+                                 reply_markup={"inline_keyboard": []})
+                except Exception:
+                    pass
+            moved += int(r.get("created", 0))
+        if moved:
+            self.nudge_reviewers(moved)
+        return moved
 
     def stats(self):
         path = os.path.join(self.state, "ledger.csv")
@@ -1249,6 +1307,11 @@ class Bot:
         except (OSError, ValueError):
             offset = 0
         print("entry bot running", flush=True)
+        if self.app_url:
+            try:
+                print("moved to web review: %d" % self.move_web_pending_to_app(), flush=True)
+            except Exception:
+                traceback.print_exc()
         import threading
         threading.Thread(target=self._daily, daemon=True).start()
         while True:

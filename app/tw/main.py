@@ -480,6 +480,39 @@ def create_app(settings=None, claude=None):
         session.commit()
         return {"ok": True, "name": u.name, "company": u.company.name if u.company else ""}
 
+    @app.post("/internal/submit")
+    async def submit_from_bot(request: Request, session=Depends(db)):
+        """Tenders the website watcher found: they wait in the web Review list like collectors' entries."""
+        internal(request)
+        body = await request.json()
+        name, url = str(body.get("source", ""))[:150], str(body.get("url", ""))[:500]
+        created = 0
+        for e in body.get("entries", [])[:20]:
+            if not isinstance(e, dict) or not str(e.get("title", "")).strip():
+                continue
+            row = Tender(id="web-" + uuid.uuid4().hex[:12], status="pending", source=f"{name} website",
+                         url=url, extract=e, closes_raw=str(e.get("closes_raw", ""))[:120],
+                         doubts=str(e.get("doubts", ""))[:4000],
+                         **{k: str(e.get(k) or "")[:500] for k in ("buyer", "title", "category", "region", "place",
+                                                                    "grade", "closes", "time", "type",
+                                                                    "bid_security", "document_fee")})
+            if row.category not in notices.CATEGORIES:
+                row.category = "other"
+            if row.type not in notices.TYPES:
+                row.type = "gov"
+            if not re.fullmatch(r"\d{4}-\d\d-\d\d", row.closes):
+                row.closes = ""
+            dup = duplicate_of(session, row)
+            if dup:
+                if dup.status == "pending" and dup.url == row.url:
+                    continue  # the same page found again
+                row.doubts = (f"Possibly already listed: {dup.title} ({dup.id}). " + row.doubts).strip()
+            session.add(row)
+            session.flush()
+            created += 1
+        session.commit()
+        return {"created": created}
+
     @app.post("/internal/send-alerts")
     def send_alerts_now(request: Request, session=Depends(db)):
         internal(request)

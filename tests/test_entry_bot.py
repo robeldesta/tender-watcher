@@ -545,3 +545,9 @@ def test_start_token_links_web_account(setup, monkeypatch):
     assert tg.texts(5)[-1] == "expired"
     bot.handle({"message": {"from": {"id": 5}, "chat": {"id": 5}, "text": "/start"}})
     assert "Your Telegram ID is 5" in tg.texts(5)[-1]
+
+
+def test_tender_links_skip_language_copies():
+    page = ('<a href="/en/bids/123">Invitation to bid: vehicles</a><a href="/fr/bids/123">Appel d\'offres bid</a>'
+            '<a href="/ar/bids/123">bid tender</a><a href="/pt/bids">Concurso tender</a>')
+    assert eb.tender_links(page, "https://au.int/en/bids") == ["https://au.int/en/bids/123"]

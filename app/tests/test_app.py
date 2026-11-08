@@ -402,3 +402,23 @@ def test_chapa_checkout_and_manual_payments(env, monkeypatch):
     c.post("/internal/check-payments", headers=h)
     with app.state.Session() as db:
         assert db.query(Payment).filter_by(tx_ref=ref3).one().status == "expired"
+
+
+def test_website_finds_go_to_web_review(env):
+    app, _, _ = env
+    c = TestClient(app)
+    entry = {"buyer": "Ethiopian Airlines", "title": "Supply of ground power units", "category": "vehicles",
+             "region": "Addis Ababa", "place": "Bole", "closes": "2026-11-30", "time": "10:00", "type": "company",
+             "doubts": "Bid security not stated", "closes_raw": "30 Nov 2026"}
+    body = {"source": "Ethiopian Airlines", "url": "https://corporate.ethiopianairlines.com/tenders/123", "entries": [entry]}
+    assert c.post("/internal/submit", json=body).status_code == 403
+    h = {"x-internal-secret": "sekret"}
+    assert c.post("/internal/submit", json=body, headers=h).json() == {"created": 1}
+    assert c.post("/internal/submit", json=body, headers=h).json() == {"created": 0}  # same page again
+    assert "ground power" not in c.get("/").text  # not public before review
+    a = client(app, "0911000001")
+    rev = a.get("/review").text
+    assert "Supply of ground power units" in rev and "Website watcher: Ethiopian Airlines" in rev
+    tid = re.search(r'href="/entry/(web-[0-9a-f]+)"', rev).group(1)
+    page = a.get(f"/entry/{tid}").text
+    assert "Open corporate.ethiopianairlines.com" in page and "Bid security not stated" in page
