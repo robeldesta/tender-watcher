@@ -6,7 +6,7 @@
   <div>
     <div class="buyer"><span class="avatar" aria-hidden="true">{{ t.buyer[:1] }}</span>{{ t.buyer }}</div>
     <h1>{{ t.title }}</h1>
-    <div class="tags">{{ due(t, today) }}<span class="tag">{{ CATEGORIES.get(t.category, t.category) }}</span><span class="tag">{{ TYPES.get(t.type, t.type) }}</span>
+    <div class="tags">{{ due(t, today) }}{% for c in (t.categories or "," ~ t.category ~ ",").strip(",").split(",") if c %}<span class="tag">{{ CATEGORIES.get(c, c) }}</span>{% endfor %}<span class="tag">{{ TYPES.get(t.type, t.type) }}</span>
       {% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
   </div>
 </div>

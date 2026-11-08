@@ -44,7 +44,8 @@ class Tender(Base):
     status: Mapped[str] = mapped_column(String(12), default="pending", index=True)  # pending, published, rejected
     buyer: Mapped[str] = mapped_column(String(300), default="")
     title: Mapped[str] = mapped_column(String(500), default="")
-    category: Mapped[str] = mapped_column(String(20), default="other", index=True)
+    category: Mapped[str] = mapped_column(String(20), default="other", index=True)  # the main one
+    categories: Mapped[str] = mapped_column(String(200), default="")  # all of them, ",goods,it,"
     region: Mapped[str] = mapped_column(String(60), default="")
     place: Mapped[str] = mapped_column(String(120), default="")
     grade: Mapped[str] = mapped_column(String(20), default="")
@@ -106,7 +107,8 @@ class Payment(Base):
 # Columns added after the first deploy: (table, column, SQL type and default).
 ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
                  ("companies", "interests", "TEXT NOT NULL DEFAULT ''"),
-                 ("users", "telegram_chat", "VARCHAR(20) NOT NULL DEFAULT ''")]
+                 ("users", "telegram_chat", "VARCHAR(20) NOT NULL DEFAULT ''"),
+                 ("tenders", "categories", "VARCHAR(200) NOT NULL DEFAULT ''")]
 
 
 def upgrade(engine):

@@ -6,6 +6,7 @@ import os
 import re
 
 from .db import Tender
+from .notices import tag
 
 OWN = ("wb-", "web-", "fc-", "tw-")
 
@@ -22,10 +23,12 @@ def import_rows(session, rows):
         if old:  # machine sources may correct a row later; keep reviewer-made tw- rows as they are
             if not tid.startswith("tw-") and old.status == "published":
                 old.place, old.time, old.closes = place, r.get("time", ""), r.get("closes", "")
+            if not old.categories:
+                tag(old)
             continue
         first = r.get("firstSeen") or dt.date.today().isoformat()
         url = r.get("url", "")
-        session.add(Tender(
+        session.add(tag(Tender(
             id=tid, status="published", buyer=r.get("buyer", ""), title=r.get("title", ""),
             category=r.get("category", "other"), region=r.get("region", ""), place=place,
             grade=r.get("grade", ""), closes=r.get("closes", ""), time=r.get("time", ""),
@@ -34,7 +37,7 @@ def import_rows(session, rows):
             reference=r.get("reference", ""), notice=r.get("notice", ""),
             photo=url.rsplit("/", 1)[-1] if url.startswith("/notices/") else "",
             url="" if url.startswith("/notices/") else url,
-            published_at=dt.datetime.fromisoformat(first + "T06:00:00+03:00")))
+            published_at=dt.datetime.fromisoformat(first + "T06:00:00+03:00")), keep=r.get("categories") or ()))
         added += 1
     session.commit()
     return added

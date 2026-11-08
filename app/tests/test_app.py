@@ -446,3 +446,26 @@ def test_open_tenders_are_paged(env):
     f = c.get("/?category=it&p=2").text
     assert "Item 25" in f and "category=it&amp;p=1" in f  # filters kept across pages
     assert "Item 21" in c.get("/?p=99").text  # past the end shows the last page
+
+
+def test_tenders_sit_in_several_categories(env):
+    app, _, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-OP00473353", "buyer": "MoA", "category": "goods", "closes": "2026-11-30",
+         "title": "Procurement of Woreda information centre ICT equipment, tablets and laptops for NPCU, RPCU and woreda"},
+        {"id": "wb-2", "buyer": "X", "category": "goods", "closes": "2026-11-30", "title": "Supply of office chairs"}]}))
+    c = TestClient(app)
+    it = c.get("/?category=it").text
+    assert "Woreda information centre" in it and "office chairs" not in it
+    goods = c.get("/?category=goods").text
+    assert "Woreda information centre" in goods and "office chairs" in goods
+    assert "IT and telecom" in c.get("/t/wb-OP00473353").text
+    # an IT company's matches include it
+    c.post("/signup", data={"company": "Sonador", "name": "R", "phone": "0955000009", "password": "longenough1"})
+    c.post("/account/interests", data={"csrf": csrf(c, "/account"), "categories": ["it"]})
+    assert "Woreda information centre" in c.get("/my").text
+    # a reviewer can untick a category the words added
+    from tw.notices import tag
+    from tw.db import Tender as T
+    with app.state.Session() as db:
+        assert db.get(T, "wb-OP00473353").categories == ",goods,it,"

@@ -158,6 +158,10 @@ def create_app(settings=None, claude=None):
         ctx.update(request=request, me=u, csrf=csrf_token(u) if u else "", today=today())
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
 
+    with Session() as _s:  # tenders saved before multi-category get theirs once
+        for _t in _s.scalars(select(Tender).where(Tender.categories == "")):
+            notices.tag(_t)
+        _s.commit()
     sync = BoardSync(s.board_json)
     board_notices = os.path.join(os.path.dirname(os.path.abspath(s.board_json)), "notices") if s.board_json else ""
 
@@ -204,7 +208,7 @@ def create_app(settings=None, claude=None):
         query = select(Tender).where(Tender.status == "published",
                                      or_(Tender.closes == "", Tender.closes >= today()))
         if category in notices.CATEGORIES:
-            query = query.where(Tender.category == category)
+            query = query.where(or_(Tender.category == category, Tender.categories.like(f"%,{category},%")))
         if region:
             query = query.where(Tender.region == region)
         if type in notices.TYPES:
@@ -521,6 +525,7 @@ def create_app(settings=None, claude=None):
                 row.category = "other"
             if row.type not in notices.TYPES:
                 row.type = "gov"
+            notices.tag(row)
             if not re.fullmatch(r"\d{4}-\d\d-\d\d", row.closes):
                 row.closes = ""
             dup = duplicate_of(session, row)
@@ -606,7 +611,7 @@ def create_app(settings=None, claude=None):
         if i["regions"] and t.region and t.region not in i["regions"] and t.region != "Several regions":
             return False
         hay = f"{t.title} {t.buyer}".lower()
-        return t.category in i["categories"] or notices.eb.keyword_hit(i["keywords"], hay)
+        return bool(set(notices.cats(t)) & set(i["categories"])) or notices.eb.keyword_hit(i["keywords"], hay)
 
     @app.get("/my", response_class=HTMLResponse)
     def my_tenders(request: Request, p: int = 1, session=Depends(db)):
@@ -662,6 +667,7 @@ def create_app(settings=None, claude=None):
                          **{k: (e.get(k) or "")[:500] for k in ("buyer", "title", "category", "region", "place",
                                                                  "grade", "closes", "time", "type",
                                                                  "bid_security", "document_fee")})
+            notices.tag(row)
             dup = duplicate_of(session, row)
             if dup:
                 row.doubts = (f"Possibly already listed: {dup.title} ({dup.id}). " + row.doubts).strip()
@@ -720,8 +726,14 @@ def create_app(settings=None, claude=None):
             t.category = "other"
         if t.type not in notices.TYPES:
             t.type = "gov"
-        if t.category != "construction":
+        if t.category != "construction" and "construction" not in form.getlist("also"):
             t.grade = ""
+        if form.get("cats_shown"):  # the reviewer's ticks decide; the main category is always included
+            order = list(notices.CATEGORIES)
+            keep = {t.category} | {c for c in form.getlist("also") if c in notices.CATEGORIES}
+            t.categories = "," + ",".join(sorted(keep, key=order.index)) + ","
+        elif "category" in form:
+            notices.tag(t, keep=[c for c in notices.cats(t) if c != "other"])
         action = form.get("action", "save")
         if action == "approve" and u.role in REVIEWERS:
             if not t.buyer or not t.title or VAGUE_TITLE.search(t.title):

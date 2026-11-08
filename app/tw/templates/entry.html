@@ -22,6 +22,9 @@
     <div class="grid">
       <div class="field"><label for="category">Category</label><select id="category" name="category">
         {% for k, lab in CATEGORIES.items() %}<option value="{{ k }}" {{ "selected" if v.category == k }}>{{ lab }}</option>{% endfor %}</select></div>
+      <fieldset class="field" style="border:0;padding:0;grid-column:1/-1"><legend style="font-size:14px;font-weight:600;color:var(--ink-2);margin-bottom:6px">Also list under</legend>
+        <input type="hidden" name="cats_shown" value="1">
+        <div class="chips">{% set have = (t.categories or "").strip(",").split(",") %}{% for k, lab in CATEGORIES.items() if k != "other" %}<label class="chip"><input type="checkbox" name="also" value="{{ k }}" {{ "checked" if k in have }}>{{ lab }}</label>{% endfor %}</div></fieldset>
       <div class="field"><label for="type">Buyer type</label><select id="type" name="type">
         {% for k, lab in TYPES.items() %}<option value="{{ k }}" {{ "selected" if v.type == k }}>{{ lab }}</option>{% endfor %}</select></div>
       <div class="field"><label for="grade">Grade (construction only)</label><input id="grade" name="grade" value="{{ v.grade }}" placeholder="GC-5"></div>
