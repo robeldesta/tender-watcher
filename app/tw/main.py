@@ -36,12 +36,16 @@ TRIAL_DAYS = 14  # starting value; admins change it on /admin/prices
 MAX_SIGNUPS_PER_HOUR = 5
 # Prices are set per currency, not converted; admins change them on /admin/prices.
 # These are only the starting values for a new database. Foreign firms pay USD by card on Chapa.
-DEFAULT_PRICES = {"ETB": {"month": 299, "year": 2400}, "USD": {"month": 12, "year": 99}}
+DEFAULT_PRICES = {"ETB": {"month": 299, "year": 2400, "win_month": 990, "win_year": 7900},
+                  "USD": {"month": 12, "year": 99, "win_month": 39, "win_year": 319}}
 PRICE_CACHE_SECONDS = 10
 CURRENCIES = {"ETB": "ETB", "USD": "USD"}  # online checkout
 BANK_CURRENCIES = ("ETB", "USD", "EUR")  # recorded by an admin
 VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s*$", re.I)
-PLAN_DAYS = {"month": 30, "year": 365}
+# Watch (month, year): every tender, matches and alerts. Win (win_month, win_year): Watch plus Bid Room.
+PLAN_DAYS = {"month": 30, "year": 365, "win_month": 30, "win_year": 365}
+PLAN_LABEL = {"month": "Watch, monthly", "year": "Watch, yearly", "win_month": "Win, monthly", "win_year": "Win, yearly"}
+WIN_PLANS = ("win_month", "win_year")
 PAY_METHODS = {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}
 CHECK_HOURS = 48  # stop asking Chapa about a checkout after this
 
@@ -171,7 +175,7 @@ def create_app(settings=None, claude=None):
     tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host,
                            safe_url=safe_url)
-    tpl.env.globals.update(date_notes=date_notes)
+    tpl.env.globals.update(date_notes=date_notes, PLAN_LABEL=PLAN_LABEL)
     state = {"claude": claude}
 
     def get_claude():
@@ -261,6 +265,15 @@ def create_app(settings=None, claude=None):
         c = u.company
         return bool(c) and today() <= max(c.trial_until or "", c.paid_until or "")
 
+    def has_bidroom(u):
+        """Bid Room: staff, firms on the free trial, and firms paid on a Win plan."""
+        if not u:
+            return False
+        if u.role in STAFF:
+            return True
+        c = u.company
+        return bool(c) and today() <= max(c.trial_until or "", c.win_until or "")
+
     def interests(c):
         try:
             d = json.loads(c.interests or "{}")
@@ -304,6 +317,9 @@ def create_app(settings=None, claude=None):
     async def _http(request, exc):
         with Session() as session:
             u = user_from(request, session)
+            if exc.status_code == 402:
+                return page(request, "message.html", u, status=402, title="Bid Room is in the Win plan",
+                            text=str(exc.detail), link=("/account#plans", "See the Win plan"))
             return page(request, "message.html", u, status=exc.status_code, title="Something's not right",
                         text=str(exc.detail))
 
@@ -359,7 +375,7 @@ def create_app(settings=None, claude=None):
         bid = None
         if u and u.role == "member" and u.company_id:
             bid = session.scalars(select(Bid).where(Bid.company_id == u.company_id, Bid.tender_id == tid)).first()
-        return page(request, "tender.html", u, t=t, full=has_access(u), bid=bid)
+        return page(request, "tender.html", u, t=t, full=has_access(u), win=has_bidroom(u), bid=bid)
 
     @app.get("/notices/{name}")
     def photo(request: Request, name: str, session=Depends(db)):
@@ -532,7 +548,8 @@ def create_app(settings=None, claude=None):
         pays = session.scalars(select(Payment).where(Payment.company_id == c.id, Payment.status == "paid")
                                .order_by(Payment.paid_at.desc())).all()
         cur = currency_of(request)
-        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), prices=prices()[cur], cur=cur,
+        return page(request, "account.html", u, c=c, i=interests(c), access=has_access(u), win=has_bidroom(u),
+                    prices=prices()[cur], cur=cur,
                     days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link,
                     pays=pays, methods=PAY_METHODS, chapa_on=bool(app.state.chapa),
                     payment=request.query_params.get("payment", ""))
@@ -547,9 +564,15 @@ def create_app(settings=None, claude=None):
         if p.status == "paid":
             return False
         c = session.scalars(select(Company).where(Company.id == p.company_id).with_for_update().execution_options(populate_existing=True)).one()
-        start = max(today(), c.paid_until or "", c.trial_until or "")
-        c.paid_until = (dt.date.fromisoformat(start) + dt.timedelta(days=p.days)).isoformat()
-        p.status, p.paid_at, p.paid_until = "paid", now(), c.paid_until
+        if p.plan in WIN_PLANS:  # Win extends Bid Room, and tender access at least as far
+            start = max(today(), c.win_until or "", c.trial_until or "")
+            c.win_until = (dt.date.fromisoformat(start) + dt.timedelta(days=p.days)).isoformat()
+            c.paid_until = max(c.paid_until or "", c.win_until)
+            until = c.win_until
+        else:
+            start = max(today(), c.paid_until or "", c.trial_until or "")
+            c.paid_until = until = (dt.date.fromisoformat(start) + dt.timedelta(days=p.days)).isoformat()
+        p.status, p.paid_at, p.paid_until = "paid", now(), until
         if method:
             p.method = method
         if reference:
@@ -697,7 +720,7 @@ def create_app(settings=None, claude=None):
             for plan in PLAN_DAYS:
                 raw = str(form.get(f"{cur}_{plan}", "")).replace(",", "").strip()
                 if not raw.isdigit() or not 0 < int(raw) <= 1_000_000:
-                    errors.append(f"{cur} {plan}ly price must be a whole number above 0.")
+                    errors.append(f"{cur} price for {PLAN_LABEL[plan]} must be a whole number above 0.")
                 else:
                     new[(cur, plan)] = int(raw)
         raw = str(form.get("trial_days", "")).strip()
@@ -1192,7 +1215,7 @@ def create_app(settings=None, claude=None):
                                                 board_json=s.board_json, site_url=s.site_url, photos=photos))
     from . import bidroom
     bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
-                                          TZ=TZ, has_access=has_access, get_claude=get_claude, Session=Session,
+                                          TZ=TZ, has_access=has_bidroom, get_claude=get_claude, Session=Session,
                                           sync_drafts=False))
     app.state.Session = Session
     return app

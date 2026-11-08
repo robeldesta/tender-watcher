@@ -1,18 +1,18 @@
 {% extends layout %}{% block title %}Prices | Tender Watcher{% endblock %}
 {% block body %}
 <div class="page-head"><div><h1>Prices</h1>
-  <p class="sub">What subscribers pay, on the pricing page, the account page and at checkout. A change applies to checkouts started after you save; payments already made keep their amount.</p></div></div>
+  <p class="sub">Watch is every tender with matches and alerts. Win is Watch plus Bid Room. What subscribers pay, on the pricing page, the account page and at checkout. A change applies to checkouts started after you save; payments already made keep their amount.</p></div></div>
 {% set saved = request.query_params.get("saved") %}
 {% if saved is not none %}<p class="alert ok">{% if saved == "0" %}Nothing changed.{% else %}Saved. The site shows the new prices now.{% endif %}</p>{% endif %}
 {% if error %}<p class="alert bad">{{ error }}</p>{% endif %}
 <form class="panel" method="post" action="/admin/prices">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <table><thead><tr><th>Currency</th>{% for plan in plans %}<th>{{ "Monthly" if plan == "month" else "Yearly" }}</th>{% endfor %}<th>Last changed</th></tr></thead><tbody>
+  <table><thead><tr><th>Currency</th>{% for plan in plans %}<th>{{ PLAN_LABEL[plan] }}</th>{% endfor %}<th>Last changed</th></tr></thead><tbody>
   {% for cur in currencies %}<tr><td><b>{{ cur }}</b><br><span class="small muted">{{ "Firms in Ethiopia" if cur == "ETB" else "Firms abroad, by card on Chapa or bank transfer" }}</span></td>
     {% for plan in plans %}{% set r = rows.get((cur, plan)) %}{% set name = cur ~ "_" ~ plan %}
-    <td><label class="sr" for="{{ name }}">{{ cur }} {{ plan }}ly</label><input id="{{ name }}" name="{{ name }}" inputmode="numeric" style="max-width:140px"
+    <td><label class="sr" for="{{ name }}">{{ cur }} {{ PLAN_LABEL[plan] }}</label><input id="{{ name }}" name="{{ name }}" inputmode="numeric" style="max-width:120px"
       value="{{ form.get(name) if form else (r.amount if r else '') }}" required></td>{% endfor %}
-    {% set last = rows.get((cur, "month")) %}{% set last2 = rows.get((cur, "year")) %}{% set l = [last, last2]|select|sort(attribute="updated_at")|last %}
+    {% set ns = namespace(l=none) %}{% for plan in plans %}{% set r = rows.get((cur, plan)) %}{% if r and (not ns.l or r.updated_at > ns.l.updated_at) %}{% set ns.l = r %}{% endif %}{% endfor %}{% set l = ns.l %}
     <td class="small muted">{% if l and l.updated_by %}{{ l.updated_at.strftime("%d %b %Y") }} by {{ people.get(l.updated_by, "an admin") }}{% else %}Starting price{% endif %}</td></tr>{% endfor %}
   </tbody></table>
   <div class="field" style="max-width:260px;margin-top:20px"><label for="trial_days">Free trial for new companies (days)</label>

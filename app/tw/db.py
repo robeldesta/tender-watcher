@@ -18,7 +18,8 @@ class Company(Base):
     name: Mapped[str] = mapped_column(String(200))
     tin: Mapped[str] = mapped_column(String(20), default="")
     trial_until: Mapped[str] = mapped_column(String(10), default="")
-    paid_until: Mapped[str] = mapped_column(String(10), default="")
+    paid_until: Mapped[str] = mapped_column(String(10), default="")  # tenders (Watch or Win)
+    win_until: Mapped[str] = mapped_column(String(10), default="")  # Bid Room, paid on a Win plan
     interests: Mapped[str] = mapped_column(Text, default="")  # JSON: {"categories": [], "regions": [], "keywords": []}
     profile: Mapped[str] = mapped_column(Text, default="")  # JSON bid profile: licences, projects, staff (bids.py)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
@@ -95,7 +96,7 @@ class Payment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tx_ref: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
-    plan: Mapped[str] = mapped_column(String(10))  # month, year
+    plan: Mapped[str] = mapped_column(String(10))  # month, year, win_month, win_year
     amount: Mapped[int] = mapped_column()  # whole units of currency
     currency: Mapped[str] = mapped_column(String(3), default="ETB")  # ETB, USD, EUR
     days: Mapped[int] = mapped_column()
@@ -117,7 +118,7 @@ class Price(Base):
     __table_args__ = (UniqueConstraint("currency", "plan"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     currency: Mapped[str] = mapped_column(String(3))  # ETB, USD
-    plan: Mapped[str] = mapped_column(String(10))  # month, year
+    plan: Mapped[str] = mapped_column(String(10))  # month, year, win_month, win_year
     amount: Mapped[int] = mapped_column()
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
@@ -172,7 +173,8 @@ ADDED_COLUMNS = [("users", "session_ver", "INTEGER NOT NULL DEFAULT 0"),
                  ("users", "totp_step", "INTEGER NOT NULL DEFAULT 0"),
                  ("users", "totp_backup", "TEXT NOT NULL DEFAULT ''"),
                  ("users", "last_login", "TIMESTAMP"),
-                 ("companies", "profile", "TEXT NOT NULL DEFAULT ''")]
+                 ("companies", "profile", "TEXT NOT NULL DEFAULT ''"),
+                 ("companies", "win_until", "VARCHAR(10) NOT NULL DEFAULT ''")]
 
 
 def upgrade(engine):

@@ -29,7 +29,8 @@ def register(app, h):
     def member(request, session):
         u = need(request, session, MEMBERS)
         if not h.has_access(u):
-            raise HTTPException(402, "Your trial has ended. Subscribe on your account page to keep using Bid Room.")
+            raise HTTPException(402, "Your bids and company profile are kept. Choose Win on your account page "
+                                     "to keep building bids: the checklist, the drafted bid and the print-ready copy.")
         return u
 
     def own_bid(session, u, bid_id):

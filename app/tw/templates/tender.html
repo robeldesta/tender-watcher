@@ -61,15 +61,18 @@
     {% if not me or me.role == "member" %}
     <div class="card bidroom-card">
       <h2>Bid Room</h2>
-      {% if bid %}
+      {% if bid and win %}
         <p class="small muted">Your bid for this tender is in progress{% if bid.state == "submitted" %} and marked submitted{% endif %}.</p>
         <a class="btn block" href="/bids/{{ bid.id }}">Open your bid</a>
-      {% elif full %}
-        <p class="small muted">Everything this tender requires, as a checklist checked against your profile. The cover letter, company section and price schedule drafted for you, ready to print and stamp.</p>
+      {% elif win %}
+        <p class="small muted">Everything this tender requires, as a checklist checked against your profile. The cover letter, company section and technical offer drafted for you, ready to print and stamp.</p>
         <form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn block" type="submit">Start this bid</button></form>
+      {% elif me %}
+        <p class="small muted">{% if bid %}Your bid for this tender is kept. {% endif %}Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp. Bid Room is in the Win plan.</p>
+        <a class="btn block" href="/account#plans">Choose Win to {{ "open your bid" if bid else "start this bid" }}</a>
       {% else %}
         <p class="small muted">Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp.</p>
-        <a class="btn block" href="{{ '/account' if me else '/signup' }}">{{ "Subscribe to open Bid Room" if me else "Start your trial to open Bid Room" }}</a>
+        <a class="btn block" href="/signup">Start your trial to open Bid Room</a>
       {% endif %}
     </div>
     {% endif %}

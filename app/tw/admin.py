@@ -170,7 +170,7 @@ def register(app, h):
                      i=i, state=company_state(c, today()))
 
     @app.post("/admin/companies/{cid}/extend")
-    def extend(request: Request, cid: int, days: int = Form(0), reason: str = Form(""), csrf: str = Form(""),
+    def extend(request: Request, cid: int, days: int = Form(0), reason: str = Form(""), win: str = Form(""), csrf: str = Form(""),
                session=Depends(db)):
         u = need(request, session, ADMIN)
         h.check_csrf(u, csrf)
@@ -180,7 +180,13 @@ def register(app, h):
         start = max(today(), c.paid_until or "", c.trial_until or "")
         old = c.paid_until or "none"
         c.paid_until = (dt.date.fromisoformat(start) + dt.timedelta(days=days)).isoformat()
-        audit(session, u, "access_extended", f"company:{c.id}", f"+{days} days ({old} -> {c.paid_until}): {reason.strip()[:300]}", request)
+        extra = ""
+        if win:  # Bid Room too, over the same days
+            wstart = max(today(), c.win_until or "", c.trial_until or "")
+            c.win_until = (dt.date.fromisoformat(wstart) + dt.timedelta(days=days)).isoformat()
+            c.paid_until = max(c.paid_until, c.win_until)
+            extra = f", Bid Room to {c.win_until}"
+        audit(session, u, "access_extended", f"company:{c.id}", f"+{days} days ({old} -> {c.paid_until}{extra}): {reason.strip()[:300]}", request)
         session.commit()
         return RedirectResponse(f"/admin/companies/{c.id}?extended=1", 303)
 

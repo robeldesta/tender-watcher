@@ -8,7 +8,8 @@
   <section class="card">
     <h2>Access</h2>
     <dl class="dl"><dt>Free trial until</dt><dd>{{ c.trial_until | long_date if c.trial_until else "–" }}</dd>
-      <dt>Paid until</dt><dd>{{ c.paid_until | long_date if c.paid_until else "–" }}</dd>
+      <dt>Tenders paid until</dt><dd>{{ c.paid_until | long_date if c.paid_until else "–" }}</dd>
+      <dt>Bid Room (Win) until</dt><dd>{{ c.win_until | long_date if c.win_until else "–" }}</dd>
       <dt>Bids on</dt><dd>{% for k in i.categories or [] %}{{ CATEGORIES.get(k, k) }}{{ ", " if not loop.last }}{% else %}Not set{% endfor %}</dd>
       <dt>Regions</dt><dd>{{ (i.regions or [])|join(", ") or "All" }}</dd>
       <dt>Words</dt><dd>{{ (i.keywords or [])|join(", ") or "–" }}</dd></dl>
@@ -16,6 +17,7 @@
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <label class="sr" for="days">Days</label><input id="days" name="days" type="number" min="1" max="366" value="30" style="width:80px">
       <label class="sr" for="reason">Reason</label><input id="reason" name="reason" placeholder="Reason, e.g. pilot firm, refund" required style="flex:1;min-width:180px">
+      <label class="check" style="margin:0"><input type="checkbox" name="win" value="1"> With Bid Room</label>
       <button class="btn ghost" type="submit">Extend access</button>
     </form>
     <p class="hint">Adds days after today or after their current end date, whichever is later. Logged with your name and reason.</p>

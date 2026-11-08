@@ -330,11 +330,12 @@ def test_chapa_checkout_and_manual_payments(env, monkeypatch):
     c = TestClient(app)
     c.post("/signup", data={"company": "Myagta", "name": "M", "phone": "0955000001", "password": "longenough1"})
     tok = csrf(c, "/account")
-    assert "Pay ETB" not in c.get("/account").text  # no key: no online button
+    assert 'value="win_year"' not in c.get("/account").text  # no key: no online button
     assert c.post("/account/pay", data={"csrf": tok, "plan": "year"}).status_code == 503
 
     chapa = app.state.chapa = FakeChapa()
-    assert "Pay ETB 2,400 for a year" in c.get("/account").text
+    acc = c.get("/account").text
+    assert "ETB 2,400" in acc and "Watch for a year" in acc and "ETB 7,900" in acc and "Win for a year" in acc
     assert c.post("/account/pay", data={"csrf": "bad", "plan": "year"}).status_code == 400
     assert c.post("/account/pay", data={"csrf": tok, "plan": "week"}).status_code == 400
     r = c.post("/account/pay", data={"csrf": tok, "plan": "year"}, follow_redirects=False)
@@ -352,7 +353,7 @@ def test_chapa_checkout_and_manual_payments(env, monkeypatch):
     assert c.get("/account/paid?ref=" + ref, follow_redirects=False).headers["location"] == "/account?payment=paid"
     acc = c.get("/account?payment=paid").text
     # trial ends 21 Nov; a year is added after it
-    assert "Subscribed" in acc and "2027-11-21" not in acc and "21 Nov 2027" in acc and "payment went through" in acc
+    assert "Watch until" in acc and "2027-11-21" not in acc and "21 Nov 2027" in acc and "payment went through" in acc
     # credited once, even when asked again
     c.get("/account/paid?ref=" + ref)
     h = {"x-internal-secret": "sekret"}
@@ -411,7 +412,7 @@ def test_chapa_checkout_and_manual_payments(env, monkeypatch):
         assert db.query(Payment).filter_by(tx_ref=ref3).one().status == "expired"
 
     # a firm abroad pays in US dollars: own price, checked in USD
-    assert "Pay USD 99 for a year" in c.get("/account?cur=USD").text
+    assert "USD 99" in c.get("/account?cur=USD").text
     assert c.post("/account/pay", data={"csrf": tok, "plan": "year", "currency": "GBP"}).status_code == 400
     c.post("/account/pay", data={"csrf": tok, "plan": "year", "currency": "USD"})
     ref4, amount4 = chapa.made[-1][:2]
@@ -440,9 +441,9 @@ def test_pricing_page_is_public(env):
     c = TestClient(app)
     r = c.get("/pricing")
     assert r.status_code == 200 and "ETB 299" in r.text and "ETB 2,400" in r.text and "14 days" in r.text
-    assert "Saves ETB 1,188" in r.text and "Bid Room" in r.text and "Coming soon" not in r.text and "US dollars" in r.text
+    assert "saving ETB 1,188" in r.text and "ETB 990" in r.text and "saving ETB 3,980" in r.text and "Bid Room" in r.text and "Coming soon" not in r.text and "US dollars" in r.text
     usd = c.get("/pricing?cur=USD").text
-    assert "USD 12" in usd and "USD 99" in usd and "Saves USD 45" in usd and "ETB 299" not in usd
+    assert "USD 12" in usd and "USD 99" in usd and "saving USD 45" in usd and "USD 39" in usd and "ETB 299" not in usd
     assert c.get("/pricing?cur=XYZ").text.count("ETB 299") >= 1
     assert 'href="/pricing"' in c.get("/").text
 
@@ -523,7 +524,8 @@ def test_admin_sets_prices_and_trial(env):
     page_ = a.get("/admin/prices").text
     assert 'value="299"' in page_ and 'value="99"' in page_ and 'value="14"' in page_
     tok = csrf(a, "/admin/prices")
-    form = {"csrf": tok, "ETB_month": "349", "ETB_year": "2,900", "USD_month": "12", "USD_year": "65", "trial_days": "7"}
+    form = {"csrf": tok, "ETB_month": "349", "ETB_year": "2,900", "USD_month": "12", "USD_year": "65", "trial_days": "7",
+            "ETB_win_month": "990", "ETB_win_year": "7,900", "USD_win_month": "39", "USD_win_year": "319"}
     bad = a.post("/admin/prices", data={**form, "USD_year": "free"})
     assert bad.status_code == 400 and "whole number" in bad.text
     assert a.post("/admin/prices", data=form, follow_redirects=False).headers["location"] == "/admin/prices?saved=4"
@@ -597,7 +599,7 @@ def test_admin_console_is_separate_and_logged(env):
         db.commit()
     a = client(app, "0911000001")
     home = a.get("/").text
-    assert 'href="/admin"' in home and 'href="/admin/payments"' not in home  # the customer header stays clean
+    assert 'href="/admin' not in home and 'href="/admin/payments"' not in home  # the customer header stays clean
     for path in ("/admin", "/admin/tenders", "/admin/review", "/admin/companies", "/admin/payments", "/admin/prices",
                  "/admin/directory", "/admin/team", "/admin/activity", "/admin/collectors"):
         r = a.get(path)
@@ -738,3 +740,43 @@ def test_bid_room(env):
     assert other.post(f"/bids/{bid_id}/save", headers={"x-csrf": csrf(other, "/profile")}, json={}).status_code == 404
     assert client(app, "0911000002").get("/bids").status_code == 403
     assert TestClient(app).get("/bids", follow_redirects=False).status_code in (303, 307)
+
+
+def test_win_plan_opens_bid_room(env, monkeypatch):
+    app, _, board = env
+    board.write_text(json.dumps({"tenders": [{"id": "wb-1", "buyer": "ESS", "title": "Supply of servers",
+                                              "closes": "2026-12-20", "category": "it"}]}))
+    app.state.chapa = chapa = FakeChapa()
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Delta", "name": "D", "phone": "0955000002", "password": "longenough1"})
+    tok = csrf(c, "/account")
+    assert "Start this bid" in c.get("/t/wb-1").text  # the trial has Bid Room
+    bid = c.post("/t/wb-1/bid", data={"csrf": tok}, follow_redirects=False).headers["location"]
+    # after the trial, a Watch payment opens tenders but not Bid Room
+    monkeypatch.setattr("tw.main.today", lambda: "2026-11-25")
+    c.post("/account/pay", data={"csrf": tok, "plan": "month"})
+    chapa.paid_refs.add(chapa.made[-1][0])
+    c.get("/account/paid?ref=" + chapa.made[-1][0])
+    page = c.get("/t/wb-1").text
+    assert "Choose Win to open your bid" in page and "Start this bid" not in page
+    r = c.get(bid)
+    assert r.status_code == 402 and "Win plan" in r.text and "kept" in r.text
+    assert c.get("/account").text.count("Watch until") == 1
+    # Win: Bid Room again, and tenders at least as long
+    c.post("/account/pay", data={"csrf": tok, "plan": "win_month"})
+    assert chapa.made[-1][1] == 990
+    chapa.paid_refs.add(chapa.made[-1][0])
+    c.get("/account/paid?ref=" + chapa.made[-1][0])
+    assert c.get(bid).status_code == 200 and "Open your bid" in c.get("/t/wb-1").text
+    with app.state.Session() as db:
+        from tw.db import Company
+        co = db.query(Company).filter_by(name="Delta").one()
+        assert co.win_until == "2026-12-25" and co.paid_until == "2026-12-25"
+        cid = co.id
+    # admins can give Bid Room days too
+    a = client(app, "0911000001")
+    at = csrf(a, f"/admin/companies/{cid}")
+    a.post(f"/admin/companies/{cid}/extend", data={"csrf": at, "days": "10", "reason": "pilot", "win": "1"})
+    with app.state.Session() as db:
+        co = db.get(Company, cid)
+        assert co.win_until == "2027-01-04" and co.paid_until == "2027-01-04"

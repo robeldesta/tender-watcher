@@ -18,7 +18,6 @@
     <a href="/" class="{{ 'opt' if not me }}" {% if path == "/" %}aria-current="page"{% endif %}>Open tenders</a>
     {% if me and me.role == "member" %}<a href="/my" {% if path == "/my" %}aria-current="page"{% endif %}>My tenders</a><a href="/bids" {% if path.startswith("/bids") or path == "/profile" %}aria-current="page"{% endif %}>Bid Room</a><a href="/account" {% if path == "/account" %}aria-current="page"{% endif %}>Account</a>{% endif %}
     {% if me and me.role == "collector" %}<a href="/collect" {% if path == "/collect" %}aria-current="page"{% endif %}>Add tender</a><a href="/mine" {% if path == "/mine" %}aria-current="page"{% endif %}>My entries</a>{% endif %}
-    {% if me and me.role in ("admin","reviewer") %}<a href="/admin">Admin console</a>{% endif %}
     {% if not me or me.role == "member" %}<a href="/pricing" class="{{ 'opt' if not me }}" {% if path == "/pricing" %}aria-current="page"{% endif %}>Pricing</a>{% endif %}
     {% if me %}<form method="post" action="/logout"><button class="btn link" type="submit">Sign out</button></form>
     {% else %}<a href="/login" class="opt" {% if path == "/login" %}aria-current="page"{% endif %}>Sign in</a><a class="btn" href="/signup">Start free trial</a>{% endif %}
