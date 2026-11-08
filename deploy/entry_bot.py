@@ -207,7 +207,7 @@ def extract_web(client, body, content_type, url, source_name, listing=False):
             "closed or cancelled tender), return an empty tenders list. Put the website name in newspaper.")
     if listing:
         note += (" This is a list of several tenders, one per row: return each active one as its own tender, "
-                 "with its bid number at the end of the title, as in "Scanner machine (bid no. 103/2026/27)". Where a row gives an opening date and no closing date, "
+                 "with its bid number at the end of the title, as in 'Scanner machine (bid no. 103/2026/27)'. Where a row gives an opening date and no closing date, "
                  "bids close at the opening: use it as the closing date.")
     return _ask(client, [block], note, "page", "The document is too long.")
 
