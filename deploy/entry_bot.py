@@ -195,7 +195,7 @@ def extract(client, image_bytes, media_type="image/jpeg", caption=""):
                 "photo", "The page has too much text. Send one notice per photo.")
 
 
-def extract_web(client, body, content_type, url, source_name):
+def extract_web(client, body, content_type, url, source_name, listing=False):
     """Ask Claude to read one tender page or PDF found on a buyer's website."""
     if content_type == "application/pdf":
         block = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
@@ -205,6 +205,10 @@ def extract_web(client, body, content_type, url, source_name):
     note = (f"This is a page or document from the website of {source_name[:100]} ({url[:200]}), not a photo. "
             "Read it the same way. If it is not a tender notice (news, a vacancy, an award result, a "
             "closed or cancelled tender), return an empty tenders list. Put the website name in newspaper.")
+    if listing:
+        note += (" This is a list of several tenders, one per row: return each active one as its own tender, "
+                 "with its bid number at the end of the title, as in "Scanner machine (bid no. 103/2026/27)". Where a row gives an opening date and no closing date, "
+                 "bids close at the opening: use it as the closing date.")
     return _ask(client, [block], note, "page", "The document is too long.")
 
 
@@ -502,7 +506,7 @@ def watch_sources(bot, sources, web=None, first_run_max=3, per_source_max=10, lo
             if key not in known:
                 known.add(key)
                 try:
-                    out = extract_web(bot.claude, text.encode(), "text/plain", src["url"], src["name"])
+                    out = extract_web(bot.claude, text.encode(), "text/plain", src["url"], src["name"], listing=True)
                     sent += bot.submit_web(src, src["url"], out)
                 except Exception as e:
                     log(f"{sid}: page: {e}")
