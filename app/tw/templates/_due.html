@@ -11,7 +11,7 @@
 
 {% macro leaf(t, today, big=False) -%}
 <span class="leaf {{ urgency(t, today) }}{{ ' big' if big }}" aria-hidden="true">
-{%- if t.closes %}<span class="m">{{ (t.closes | short_date).split(' ')[1] }}</span><span class="d">{{ (t.closes | short_date).split(' ')[0] }}</span><span class="t">{{ t.time or "&nbsp;"|safe }}</span>
+{%- if t.closes %}<span class="m">{{ (t.closes | short_date).split(' ')[1] }}</span><span class="d">{{ (t.closes | short_date).split(' ')[0] }}</span><span class="t">{% if date_notes(t, today) %}check{% else %}{{ t.time or "&nbsp;"|safe }}{% endif %}</span>
 {%- else %}<span class="m">Date</span><span class="d">?</span><span class="t">check</span>{% endif -%}
 </span>
 {%- endmacro %}

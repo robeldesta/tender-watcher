@@ -23,7 +23,7 @@
     <div class="feed" aria-label="Newest tenders">
       <div class="feed-head"><span class="live" aria-hidden="true"></span><span>Just added</span><span>{{ today | long_date }}</span></div>
       {% for t in stats.latest %}
-      <a class="item" href="/t/{{ t.id }}">{{ leaf(t, today) }}<span><small>{{ t.buyer }}</small><b>{{ t.title }}</b><small style="margin-top:4px">{{ left_text(t, today) }}</small></span></a>
+      <a class="item{{ ' x4' if loop.index == 4 }}" href="/t/{{ t.id }}">{{ leaf(t, today) }}<span><small>{{ t.buyer }}</small><b>{{ t.title }}</b><small style="margin-top:4px">{{ left_text(t, today) }}</small></span></a>
       {% endfor %}
       <div class="feed-foot">Bid security, fees and the full notice open with your free trial.</div>
     </div>
