@@ -335,7 +335,8 @@ def test_chapa_checkout_and_manual_payments(env, monkeypatch):
 
     chapa = app.state.chapa = FakeChapa()
     acc = c.get("/account").text
-    assert "ETB 2,400" in acc and "Watch for a year" in acc and "ETB 7,900" in acc and "Win for a year" in acc
+    assert all(x in acc for x in ("ETB 2,400", "ETB 799", "ETB 1,399", "ETB 7,900", "ETB 2,690", "ETB 4,790", 'value="win_m6"'))
+    assert "ETB 266 a month" in acc and "ETB 658 a month" in acc
     assert c.post("/account/pay", data={"csrf": "bad", "plan": "year"}).status_code == 400
     assert c.post("/account/pay", data={"csrf": tok, "plan": "week"}).status_code == 400
     r = c.post("/account/pay", data={"csrf": tok, "plan": "year"}, follow_redirects=False)
@@ -441,9 +442,10 @@ def test_pricing_page_is_public(env):
     c = TestClient(app)
     r = c.get("/pricing")
     assert r.status_code == 200 and "ETB 299" in r.text and "ETB 2,400" in r.text and "14 days" in r.text
-    assert "saving ETB 1,188" in r.text and "ETB 990" in r.text and "saving ETB 3,980" in r.text and "Bid Room" in r.text and "Coming soon" not in r.text and "US dollars" in r.text
+    assert "ETB 799" in r.text and "ETB 1,399" in r.text and "ETB 233 a month" in r.text and "33% off" in r.text
+    assert "ETB 990" in r.text and "ETB 2,690" in r.text and "ETB 4,790" in r.text and "19% off" in r.text and "Bid Room" in r.text and "Coming soon" not in r.text and "US dollars" in r.text
     usd = c.get("/pricing?cur=USD").text
-    assert "USD 12" in usd and "USD 99" in usd and "saving USD 45" in usd and "USD 39" in usd and "ETB 299" not in usd
+    assert "USD 12" in usd and "USD 99" in usd and "USD 32" in usd and "USD 55" in usd and "USD 39" in usd and "ETB 299" not in usd
     assert c.get("/pricing?cur=XYZ").text.count("ETB 299") >= 1
     assert 'href="/pricing"' in c.get("/").text
 
@@ -533,7 +535,9 @@ def test_admin_sets_prices_and_trial(env):
     assert 'value="299"' in page_ and 'value="99"' in page_ and 'value="14"' in page_
     tok = csrf(a, "/admin/prices")
     form = {"csrf": tok, "ETB_month": "349", "ETB_year": "2,900", "USD_month": "12", "USD_year": "65", "trial_days": "7",
-            "ETB_win_month": "990", "ETB_win_year": "7,900", "USD_win_month": "39", "USD_win_year": "319"}
+            "ETB_win_month": "990", "ETB_win_year": "7,900", "USD_win_month": "39", "USD_win_year": "319",
+            "ETB_m3": "799", "ETB_m6": "1399", "USD_m3": "32", "USD_m6": "55",
+            "ETB_win_m3": "2690", "ETB_win_m6": "4790", "USD_win_m3": "105", "USD_win_m6": "189"}
     bad = a.post("/admin/prices", data={**form, "USD_year": "free"})
     assert bad.status_code == 400 and "whole number" in bad.text
     assert a.post("/admin/prices", data=form, follow_redirects=False).headers["location"] == "/admin/prices?saved=4"
@@ -816,3 +820,24 @@ def test_admin_console_on_its_own_host(tmp_path, monkeypatch):
     assert "tw" in site.cookies
     r = TestClient(app, base_url="http://admin.site.test").post("/login", data={"phone": "0955000003", "password": "longenough1"})
     assert r.status_code == 400 and "site.test" in r.text
+
+
+def test_three_and_six_month_plans(env):
+    app, _, _ = env
+    app.state.chapa = chapa = FakeChapa()
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Jobale", "name": "J", "phone": "0955000010", "password": "longenough1"})
+    tok = csrf(c, "/account")
+    c.post("/account/pay", data={"csrf": tok, "plan": "m3"})
+    assert chapa.made[-1][1] == 799
+    chapa.paid_refs.add(chapa.made[-1][0])
+    c.get("/account/paid?ref=" + chapa.made[-1][0])
+    c.post("/account/pay", data={"csrf": tok, "plan": "win_m6", "currency": "USD"})
+    assert chapa.made[-1][1] == 189
+    chapa.paid_refs.add(chapa.made[-1][0])
+    c.get("/account/paid?ref=" + chapa.made[-1][0])
+    with app.state.Session() as db:
+        from tw.db import Company
+        co = db.query(Company).filter_by(name="Jobale").one()
+        # trial to 21 Nov, then 91 days of Watch; Win runs 182 days from the trial's end
+        assert co.paid_until == "2027-05-22" and co.win_until == "2027-05-22"

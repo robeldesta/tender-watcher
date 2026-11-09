@@ -18,7 +18,7 @@
     <h3>Watch</h3>
     <p class="muted" style="margin:0">Find every tender that fits your business.</p>
     <p class="price">{{ sym }} {{ "{:,}".format(prices.month) }}<small> / month</small></p>
-    <p class="small muted" style="margin:0">or {{ sym }} {{ "{:,}".format(prices.year) }} a year, saving {{ sym }} {{ "{:,}".format(prices.month * 12 - prices.year) }}</p>
+    <table class="terms"><tbody>{% for k in ["m3", "m6", "year"] %}{% set a = prices["" ~ k] %}{% set mo = prices["month"] %}<tr><td>{{ TERMS[k][2] }}</td><td class="num">{{ sym }} {{ "{:,}".format(a) }}</td><td class="num">{{ sym }} {{ "{:,}".format((a / TERMS[k][0]) | round | int) }} a month</td><td class="num off">{{ ((1 - a / (mo * TERMS[k][0])) * 100) | round | int }}% off</td></tr>{% endfor %}</tbody></table>
     <ul><li>{{ check() }}Every open tender, with the full notice</li><li>{{ check() }}Bid security, document fee and where to buy</li><li>{{ check() }}Tenders matched to what you bid on</li><li>{{ check() }}Your matches each morning in Telegram</li></ul>
     <a class="btn ghost big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') + '#plans' if me else '/signup' }}">{{ "Choose Watch" if me else "Start free trial" }}</a>
   </div>
@@ -26,7 +26,7 @@
     <h3>Win <span class="tag" style="margin-left:6px">Bid Room</span></h3>
     <p class="muted" style="margin:0">Everything in Watch, and Bid Room to build every bid.</p>
     <p class="price">{{ sym }} {{ "{:,}".format(prices.win_month) }}<small> / month</small></p>
-    <p class="small muted" style="margin:0">or {{ sym }} {{ "{:,}".format(prices.win_year) }} a year, saving {{ sym }} {{ "{:,}".format(prices.win_month * 12 - prices.win_year) }}</p>
+    <table class="terms"><tbody>{% for k in ["m3", "m6", "year"] %}{% set a = prices["win_" ~ k] %}{% set mo = prices["win_month"] %}<tr><td>{{ TERMS[k][2] }}</td><td class="num">{{ sym }} {{ "{:,}".format(a) }}</td><td class="num">{{ sym }} {{ "{:,}".format((a / TERMS[k][0]) | round | int) }} a month</td><td class="num off">{{ ((1 - a / (mo * TERMS[k][0])) * 100) | round | int }}% off</td></tr>{% endfor %}</tbody></table>
     <ul><li>{{ check() }}Everything in Watch</li><li>{{ check() }}Start a bid from any tender</li><li>{{ check() }}Every requirement as a checklist, checked against your profile</li>
       <li>{{ check() }}Cover letter, company section and technical offer drafted for you</li><li>{{ check() }}Print-ready bid with your letterhead, signatory and stamp space</li></ul>
     <a class="btn mint big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') + '#plans' if me else '/signup' }}">{{ "Choose Win" if me else "Start free trial" }}</a>
@@ -51,7 +51,7 @@
   <h2 id="faq-h">Questions</h2>
   <details><summary>Do I need a card for the free trial?</summary><p>No. Sign up with your phone number and you get {{ trial_days }} days of everything. We only ask for payment when you choose to subscribe.</p></details>
   <details><summary>How can I pay?</summary><p>In Ethiopia: Telebirr, CBE Birr, a bank account or a card on Chapa's secure page, or a Telebirr or bank transfer to Sonador Systems that we record for you. From abroad: an international card in US dollars on Chapa, or a USD or EUR bank transfer.</p></details>
-  <details><summary>Can my firm pay in US dollars?</summary><p>Yes. Pick US dollars above. Watch is {{ "USD {:,}".format(all_prices.USD.month) }} a month or {{ "USD {:,}".format(all_prices.USD.year) }} a year; Win is {{ "USD {:,}".format(all_prices.USD.win_month) }} a month or {{ "USD {:,}".format(all_prices.USD.win_year) }} a year.</p></details>
+  <details><summary>Can my firm pay in US dollars?</summary><p>Yes. Pick US dollars above. Watch is {{ "USD {:,}".format(all_prices.USD.month) }} a month, {{ all_prices.USD.m3 }} for 3 months, {{ all_prices.USD.m6 }} for 6 months or {{ all_prices.USD.year }} a year; Win is {{ "USD {:,}".format(all_prices.USD.win_month) }} a month, {{ all_prices.USD.win_m3 }} for 3 months, {{ all_prices.USD.win_m6 }} for 6 months or {{ all_prices.USD.win_year }} a year.</p></details>
   <details><summary>What does Bid Room do?</summary><p>Press "Start this bid" on any tender. Bid Room reads the notice, and the bidding document if you paste it in, and lists every requirement as a checklist marked met, gap or check against your company profile. It drafts the cover letter, company section and technical offer from your profile, you add your prices, and it prints a bid with your letterhead, ready to sign and stamp. Anything it can't know is marked [TO CONFIRM] for you to fill in. It is in the Win plan and in the free trial.</p></details>
   <details><summary>Do I get an invoice?</summary><p>Yes. Ask us and Sonador Systems sends an invoice for your payment, in your company's name and with your TIN.</p></details>
   <details><summary>What happens when my trial or subscription ends?</summary><p>You can still browse open tenders. The full notices, your matches and the morning alerts stop until you pay. There is nothing to cancel and nothing renews on its own.</p></details>

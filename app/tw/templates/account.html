@@ -25,21 +25,18 @@
     <form method="post" action="/account/pay" id="plans">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="currency" value="{{ cur }}">
-      <p class="plan-k"><b>Win</b> Every tender, plus Bid Room to build and print your bids</p>
+      {% for fam, pre, blurb in [("Win", "win_", "Every tender, plus Bid Room to build and print your bids"), ("Watch", "", "Every tender, your matches and morning alerts")] %}
+      <p class="plan-k"><b>{{ fam }}</b> {{ blurb }}</p>
       <div class="choose">
-        <button type="submit" name="plan" value="win_year" class="best"><em>Best value</em><b>{{ cur }} {{ "{:,}".format(prices.win_year) }}</b><span>Win for a year</span></button>
-        <button type="submit" name="plan" value="win_month"><b>{{ cur }} {{ "{:,}".format(prices.win_month) }}</b><span>Win for a month</span></button>
+        {% for k in ["year", "m6", "m3", "month"] %}{% set amount = prices[pre ~ k] %}{% set months = TERMS[k][0] %}
+        <button type="submit" name="plan" value="{{ pre ~ k }}"{% if k == "year" and pre %} class="best"{% endif %}>{% if k == "year" and pre %}<em>Best value</em>{% endif %}<b>{{ cur }} {{ "{:,}".format(amount) }}</b><span>{{ TERMS[k][2] }}{% if months > 1 %} · {{ cur }} {{ "{:,}".format((amount / months) | round | int) }} a month{% endif %}</span></button>{% endfor %}
       </div>
-      <p class="plan-k"><b>Watch</b> Every tender, your matches and morning alerts</p>
-      <div class="choose">
-        <button type="submit" name="plan" value="year"><b>{{ cur }} {{ "{:,}".format(prices.year) }}</b><span>Watch for a year</span></button>
-        <button type="submit" name="plan" value="month"><b>{{ cur }} {{ prices.month }}</b><span>Watch for a month</span></button>
-      </div>
+      {% endfor %}
     </form>
     {% if cur == "USD" %}<p class="muted small" style="margin:0">You pay by international card on Chapa's secure page. You can also send a USD or EUR bank transfer to Sonador Systems, and we switch you on.</p>
     {% else %}<p class="muted small" style="margin:0">You pay on Chapa's secure page with Telebirr, CBE Birr, a bank account or a card. You can also pay Sonador Systems by Telebirr or bank transfer, and we switch you on.</p>{% endif %}
     {% else %}
-    <p class="muted small" style="margin:16px 0 0" id="plans">Win, with Bid Room: {{ cur }} {{ "{:,}".format(prices.win_month) }} a month or {{ "{:,}".format(prices.win_year) }} a year. Watch: {{ cur }} {{ prices.month }} a month or {{ "{:,}".format(prices.year) }} a year. Pay Sonador Systems by {{ "USD or EUR bank transfer" if cur == "USD" else "Telebirr or bank transfer" }}, and we switch you on.</p>
+    <p class="muted small" style="margin:16px 0 0" id="plans">Win, with Bid Room: {{ cur }} {{ "{:,}".format(prices.win_month) }} a month, {{ "{:,}".format(prices.win_m3) }} for 3 months, {{ "{:,}".format(prices.win_m6) }} for 6 months or {{ "{:,}".format(prices.win_year) }} a year. Watch: {{ cur }} {{ prices.month }} a month, {{ "{:,}".format(prices.m3) }} for 3 months, {{ "{:,}".format(prices.m6) }} for 6 months or {{ "{:,}".format(prices.year) }} a year. Pay Sonador Systems by {{ "USD or EUR bank transfer" if cur == "USD" else "Telebirr or bank transfer" }}, and we switch you on.</p>
     {% endif %}
     <p class="small" style="margin:8px 0 0"><a href="/pricing{{ '?cur=USD' if cur == 'USD' }}" style="color:inherit">Pricing and questions</a></p>
     {% if pays %}<details style="margin-top:16px"><summary class="small">Your payments</summary><ul class="small muted" style="padding-left:18px">

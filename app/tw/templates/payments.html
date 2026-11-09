@@ -33,7 +33,7 @@
       <div class="field"><label for="amount">Amount received</label><input id="amount" name="amount" inputmode="numeric" value="{{ form.amount if form }}" placeholder="Plan price"></div>
       <div class="field wide"><label for="reference">Transaction number</label><input id="reference" name="reference" class="mono" value="{{ form.reference if form }}" required></div>
     </div>
-    <p class="hint" style="margin-top:0">Leave the amount empty to use the plan's price: Watch ETB {{ "{:,}".format(prices.ETB.month) }} / {{ "{:,}".format(prices.ETB.year) }}, Win ETB {{ "{:,}".format(prices.ETB.win_month) }} / {{ "{:,}".format(prices.ETB.win_year) }}; USD {{ prices.USD.month }} / {{ prices.USD.year }} and {{ prices.USD.win_month }} / {{ prices.USD.win_year }}. EUR needs the amount.</p>
+    <p class="hint" style="margin-top:0">Leave the amount empty to use the plan's price in ETB or USD (see Prices). EUR needs the amount.</p>
     <button class="btn" type="submit">Record payment</button>
   </form>
 </section>

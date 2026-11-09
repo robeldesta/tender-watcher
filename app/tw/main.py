@@ -36,17 +36,20 @@ TRIAL_DAYS = 14  # starting value; admins change it on /admin/prices
 MAX_SIGNUPS_PER_HOUR = 5
 # Prices are set per currency, not converted; admins change them on /admin/prices.
 # These are only the starting values for a new database. Foreign firms pay USD by card on Chapa.
-DEFAULT_PRICES = {"ETB": {"month": 299, "year": 2400, "win_month": 990, "win_year": 7900},
-                  "USD": {"month": 12, "year": 99, "win_month": 39, "win_year": 319}}
+DEFAULT_PRICES = {"ETB": {"month": 299, "m3": 799, "m6": 1399, "year": 2400,
+                          "win_month": 990, "win_m3": 2690, "win_m6": 4790, "win_year": 7900},
+                  "USD": {"month": 12, "m3": 32, "m6": 55, "year": 99,
+                          "win_month": 39, "win_m3": 105, "win_m6": 189, "win_year": 319}}
 PRICE_CACHE_SECONDS = 10
 CURRENCIES = {"ETB": "ETB", "USD": "USD"}  # online checkout
 BANK_CURRENCIES = ("ETB", "USD", "EUR")  # recorded by an admin
 BID_NO = re.compile(r"\b\d{1,4}/\d{4}/\d{2}\b")  # bank bid numbers such as 103/2026/27
 VAGUE_TITLE = re.compile(r"^\s*(subject|title)?\s*(not stated|unknown|n/?a|-+)\s*$", re.I)
-# Watch (month, year): every tender, matches and alerts. Win (win_month, win_year): Watch plus Bid Room.
-PLAN_DAYS = {"month": 30, "year": 365, "win_month": 30, "win_year": 365}
-PLAN_LABEL = {"month": "Watch, monthly", "year": "Watch, yearly", "win_month": "Win, monthly", "win_year": "Win, yearly"}
-WIN_PLANS = ("win_month", "win_year")
+# Watch: every tender, matches and alerts. Win (win_ plans): Watch plus Bid Room. Paid for 1, 3, 6 or 12 months.
+TERMS = {"month": (1, 30, "1 month"), "m3": (3, 91, "3 months"), "m6": (6, 182, "6 months"), "year": (12, 365, "1 year")}
+PLAN_DAYS = {**{k: v[1] for k, v in TERMS.items()}, **{"win_" + k: v[1] for k, v in TERMS.items()}}
+PLAN_LABEL = {**{k: "Watch, " + v[2] for k, v in TERMS.items()}, **{"win_" + k: "Win, " + v[2] for k, v in TERMS.items()}}
+WIN_PLANS = tuple("win_" + k for k in TERMS)
 PAY_METHODS = {"chapa": "Chapa", "telebirr": "Telebirr", "bank": "Bank transfer"}
 CHECK_HOURS = 48  # stop asking Chapa about a checkout after this
 
@@ -201,7 +204,7 @@ def create_app(settings=None, claude=None):
     tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host,
                            safe_url=safe_url)
-    tpl.env.globals.update(date_notes=date_notes, PLAN_LABEL=PLAN_LABEL, SITE_URL=s.site_url)
+    tpl.env.globals.update(date_notes=date_notes, PLAN_LABEL=PLAN_LABEL, TERMS=TERMS, SITE_URL=s.site_url)
     state = {"claude": claude}
 
     def get_claude():

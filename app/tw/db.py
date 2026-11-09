@@ -96,7 +96,7 @@ class Payment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tx_ref: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
-    plan: Mapped[str] = mapped_column(String(10))  # month, year, win_month, win_year
+    plan: Mapped[str] = mapped_column(String(10))  # month, m3, m6, year and the same with win_
     amount: Mapped[int] = mapped_column()  # whole units of currency
     currency: Mapped[str] = mapped_column(String(3), default="ETB")  # ETB, USD, EUR
     days: Mapped[int] = mapped_column()
@@ -118,7 +118,7 @@ class Price(Base):
     __table_args__ = (UniqueConstraint("currency", "plan"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     currency: Mapped[str] = mapped_column(String(3))  # ETB, USD
-    plan: Mapped[str] = mapped_column(String(10))  # month, year, win_month, win_year
+    plan: Mapped[str] = mapped_column(String(10))  # month, m3, m6, year and the same with win_
     amount: Mapped[int] = mapped_column()
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
