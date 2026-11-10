@@ -49,7 +49,7 @@
 {% macro letterhead() %}
 <div class="letterhead">
   <div><div class="name">{{ p.legal_name }}</div>{% if p.work_types %}<div class="muted" style="font-size:12px">{{ p.work_types }}</div>{% endif %}</div>
-  <div class="meta">{% if p.address %}{{ p.address }}<br>{% endif %}{% if p.phone %}Tel. {{ p.phone }}{% endif %}{% if p.phone and p.email %} · {% endif %}{{ p.email }}<br>{% if p.tin %}TIN {{ p.tin }}{% endif %}{% if p.vat_registered %} · VAT registered{% endif %}</div>
+  <div class="meta">{% if p.address %}{{ p.address }}<br>{% endif %}{% if p.phone %}Tel. {{ p.phone }}{% endif %}{% if p.phone and p.email %} · {% endif %}{{ p.email }}<br>{% if p.tin %}TIN {{ p.tin }}{% endif %}{% if p.vat_number %} · VAT reg. no. {{ p.vat_number }}{% elif p.vat_registered %} · VAT registered{% endif %}</div>
 </div>
 {% endmacro %}
 {% macro paras(text) %}{% for para in (text or "").split("\n\n") if para.strip() %}<p{% if "[TO CONFIRM" in para %} class="tc"{% endif %}>{{ para.strip() | replace("\n", " ") }}</p>{% endfor %}{% endmacro %}
@@ -75,7 +75,8 @@
   {{ paras(d.profile_section) }}
   <table><tbody>
     <tr><th style="width:34%">Legal name</th><td>{{ p.legal_name }}</td></tr>
-    {% if p.tin %}<tr><th>TIN</th><td>{{ p.tin }}{% if p.vat_registered %}, VAT registered{% endif %}</td></tr>{% endif %}
+    {% if p.tin %}<tr><th>TIN</th><td>{{ p.tin }}</td></tr>{% endif %}
+    {% if p.vat_number or p.vat_registered %}<tr><th>VAT registration</th><td>{{ p.vat_number or "Registered" }}</td></tr>{% endif %}
     {% if p.address %}<tr><th>Address</th><td>{{ p.address }}</td></tr>{% endif %}
     {% if p.year_established %}<tr><th>Established</th><td>{{ p.year_established }}</td></tr>{% endif %}
     {% if p.staff_count %}<tr><th>Permanent staff</th><td>{{ p.staff_count }}</td></tr>{% endif %}

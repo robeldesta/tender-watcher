@@ -50,6 +50,7 @@ class BidProfile:
     email: str = ""
     tin: str | None = None
     vat_registered: bool = False
+    vat_number: str = ""
     year_established: int | None = None
     signatory_name: str = ""
     signatory_title: str = ""
@@ -149,7 +150,8 @@ def facts(p: BidProfile) -> str:
         f"Contractor grade: {p.grade}",
         f"Established: {p.year_established or 'not stated'}",
         f"Address: {p.address or 'not stated'}",
-        f"TIN: {p.tin or 'not stated'}; VAT registered: {'yes' if p.vat_registered else 'no'}",
+        f"TIN: {p.tin or 'not stated'}; VAT registered: {'yes' if p.vat_registered else 'no'}"
+        + (f"; VAT registration number: {p.vat_number}" if p.vat_number else ""),
         f"Authorised signatory: {p.signatory_name or 'not stated'}, {p.signatory_title or ''}".rstrip(", "),
         f"Regions worked in: {', '.join(p.regions) or 'not stated'}",
         f"Types of work: {', '.join(p.work_types) or 'not stated'}",

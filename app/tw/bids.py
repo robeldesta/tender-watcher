@@ -26,7 +26,7 @@ ROWS = {  # profile tables: field name -> columns
     "projects": ["name", "client", "value_etb", "year_completed", "region", "role", "scope"],
     "key_personnel": ["role", "name", "qualification", "years_experience"],
 }
-TEXT_FIELDS = ["legal_name", "grade", "address", "phone", "email", "tin", "signatory_name", "signatory_title",
+TEXT_FIELDS = ["legal_name", "grade", "address", "phone", "email", "tin", "vat_number", "signatory_name", "signatory_title",
                "year_established", "staff_count", "regions", "work_types", "equipment", "turnover", "notes"]
 
 
@@ -45,7 +45,8 @@ def load_profile(c):
 def profile_from_form(form, c):
     """The profile form as a dict; empty rows are dropped, text is capped."""
     d = {k: str(form.get(k, "")).strip()[:2000] for k in TEXT_FIELDS}
-    d["vat_registered"] = bool(form.get("vat_registered"))
+    d["vat_number"] = re.sub(r"[^0-9A-Za-z/-]", "", d["vat_number"])[:30]
+    d["vat_registered"] = bool(form.get("vat_registered")) or bool(d["vat_number"])
     d["legal_name"] = d["legal_name"] or c.name
     for k, cols in ROWS.items():
         cols_vals = {col: form.getlist(f"{k}.{col}") for col in cols}
@@ -61,7 +62,8 @@ def profile_from_form(form, c):
 
 def completeness(d):
     """How much of the profile a bid can use, 0 to 100, and what's missing."""
-    checks = [("Legal name", d.get("legal_name")), ("TIN", d.get("tin")), ("Address", d.get("address")),
+    checks = [("Legal name", d.get("legal_name")), ("TIN", d.get("tin")),
+              ("VAT number", d.get("vat_number") or not d.get("vat_registered")), ("Address", d.get("address")),
               ("Signatory", d.get("signatory_name")), ("Licences", d.get("licences")),
               ("Past projects", d.get("projects")), ("Key staff", d.get("key_personnel")),
               ("What you do", d.get("work_types"))]
@@ -98,7 +100,7 @@ def engine_profile(d):
     return bid_profile.BidProfile(
         legal_name=d.get("legal_name") or "", grade=d.get("grade") or "", address=d.get("address") or "",
         phone=d.get("phone") or "", email=d.get("email") or "", tin=d.get("tin") or None,
-        vat_registered=bool(d.get("vat_registered")), year_established=_num(d.get("year_established"), int),
+        vat_registered=bool(d.get("vat_registered")), vat_number=d.get("vat_number") or "", year_established=_num(d.get("year_established"), int),
         signatory_name=d.get("signatory_name") or "", signatory_title=d.get("signatory_title") or "",
         regions=_list(d.get("regions")), work_types=_list(d.get("work_types")),
         staff_count=_num(d.get("staff_count"), int), annual_turnover_etb=turnover,

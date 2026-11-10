@@ -10,7 +10,8 @@
     <div class="form-grid">
       <div class="field span2"><label for="legal_name">Legal name</label><input id="legal_name" name="legal_name" value="{{ d.legal_name }}" required></div>
       <div class="field"><label for="tin">TIN</label><input id="tin" name="tin" value="{{ d.tin }}" inputmode="numeric" class="mono"></div>
-      <div class="field"><label for="vat">VAT registered</label><label class="check"><input id="vat" type="checkbox" name="vat_registered" {{ "checked" if d.vat_registered }}> Yes</label></div>
+      <div class="field"><label for="vat_number">VAT registration number</label><input id="vat_number" name="vat_number" value="{{ d.vat_number }}" inputmode="numeric" class="mono" placeholder="Leave empty if not VAT registered">
+        <label class="check"><input id="vat" type="checkbox" name="vat_registered" {{ "checked" if d.vat_registered }}> VAT registered</label></div>
       <div class="field span2"><label for="address">Address</label><input id="address" name="address" value="{{ d.address }}" placeholder="Bole Subcity, Woreda 03, House no."></div>
       <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" value="{{ d.phone }}" inputmode="tel"></div>
       <div class="field"><label for="email">Email</label><input id="email" name="email" value="{{ d.email }}" type="email"></div>
