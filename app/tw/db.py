@@ -141,6 +141,22 @@ class Bid(Base):
     company: Mapped[Company] = relationship()
 
 
+class Paper(Base):
+    """One document in a company's file: a licence, certificate or letter, with its expiry date and a scan."""
+    __tablename__ = "papers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(24))  # a key of desk.KINDS
+    name: Mapped[str] = mapped_column(String(160), default="")  # the firm's own name for it, if any
+    number: Mapped[str] = mapped_column(String(80), default="")
+    issuer: Mapped[str] = mapped_column(String(160), default="")
+    expires: Mapped[str] = mapped_column(String(10), default="")  # ISO date; "" = does not expire
+    file: Mapped[str] = mapped_column(String(60), default="")  # stored name under DATA_DIR/papers/<company>/
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
 class Setting(Base):
     """A value an admin can change on the site, such as the trial length."""
     __tablename__ = "settings"

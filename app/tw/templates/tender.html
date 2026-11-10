@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "_due.html" import due, leaf, bar, left_text, check %}
+{% extends "base.html" %}{% from "_due.html" import due, leaf, bar, left_text, check %}{% from "_env.html" import sheets, words %}
 {% block title %}{{ t.title }} | Tender Watcher{% endblock %}
 {% block body %}
 <a class="crumb" href="/#tenders"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>All open tenders</a>
@@ -10,6 +10,18 @@
       {% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
   </div>
 </div>
+{% if env %}
+<section class="envelope">
+  <div class="env-top">
+    <div><h2>{% if not env.blockers %}Yes, you can bid. {% endif %}{{ words(env.done) }} of the {{ words(env.total)|lower }} papers {{ "is" if env.done == 1 else "are" }} already in{{ " the envelope" if bid else " your file" }}.</h2>
+      <p>{% if env.blockers %}Missing from your company file: {{ env.blockers|map(attribute="label")|join(", ")|lower }}. {% endif %}{% if not bid %}The technical offer and price schedule are written in Bid Room.{% endif %} This list is read from the notice, so check it against the bid document.</p></div>
+    {% if bid %}<a class="btn ink big" href="/bids/{{ bid.id }}">Open your bid</a>
+    {% else %}<form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ink big" type="submit">Start this bid</button></form>{% endif %}
+  </div>
+  {{ sheets(env) }}
+  {% if env.blockers %}<div class="env-acts"><a class="btn line" href="/file?add={{ env.blockers[0].key }}#add">Add your {{ env.blockers[0].label|lower }}</a></div>{% endif %}
+</section>
+{% endif %}
 <div class="t-grid">
   <div>
     {% set where = t.place ~ ((", " if t.place else "") ~ t.region if t.region and t.region not in t.place else "") %}
@@ -58,7 +70,7 @@
       <p>{% if t.closes %}Bids close {{ t.closes | long_date }}{% if t.time %} at {{ t.time }}{% endif %}.{% else %}The notice gives no closing date. Check it before you prepare a bid.{% endif %}</p>
       {% for n in date_notes(t, today) %}<p class="note">{{ n }}</p>{% endfor %}
     </div>
-    {% if not me or me.role == "member" %}
+    {% if (not me or me.role == "member") and not env %}
     <div class="card bidroom-card">
       <h2>Bid Room</h2>
       {% if bid and win %}

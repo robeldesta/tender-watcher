@@ -841,3 +841,59 @@ def test_three_and_six_month_plans(env):
         co = db.query(Company).filter_by(name="Jobale").one()
         # trial to 21 Nov, then 91 days of Watch; Win runs 182 days from the trial's end
         assert co.paid_until == "2027-05-22" and co.win_until == "2027-05-22"
+
+
+def test_bid_desk_company_file_and_envelope(env, tmp_path):
+    from tw.main import long_date
+    app, claude, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-1", "buyer": "Awash Bank", "title": "Monitoring platform", "closes": "2026-11-10", "category": "it",
+         "notice": "Bidders must present VAT registration and a renewed trade licence.", "bid_security": "ETB 50,000 CPO"},
+        {"id": "wb-2", "buyer": "ERA", "title": "Road maintenance", "closes": "2026-12-01", "category": "construction"}]}))
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Sonador Systems", "name": "Robel D", "phone": "0933444555",
+                            "password": "longenough1", "tin": "0088565182"})
+    tok = csrf(c, "/profile")
+
+    # empty file: the three papers every bid needs are missing, and the tender page says so
+    page = c.get("/file").text
+    assert "Three papers would get any bid of yours thrown out today" in page
+    t = c.get("/t/wb-1").text
+    assert "Missing from your company file" in t and "Bid security" in t and "VAT registration certificate" in t
+    assert "Competence" not in t and "Competence or professional licence" in c.get("/t/wb-2").text
+
+    # add papers: a bad file type is refused, a PDF is kept and only its owner can open it
+    r = c.post("/file", data={"csrf": tok, "kind": "tin", "number": "0088565182"},
+               files={"scan": ("x.exe", b"MZ\x90\x00", "application/pdf")}, follow_redirects=False)
+    assert "error=" in r.headers["location"]
+    assert c.post("/file", data={"kind": "tin"}, follow_redirects=False).status_code == 400  # no csrf
+    for kind, exp in (("tin", ""), ("trade_licence", "2027-01-09"), ("vat", ""), ("tax_clearance", "2026-11-01")):
+        r = c.post("/file", data={"csrf": tok, "kind": kind, "number": "N-1", "expires": exp},
+                   files={"scan": ("scan.pdf", b"%PDF-1.4 test", "application/pdf")}, follow_redirects=False)
+        assert r.headers["location"] == "/file?saved=1"
+    page = c.get("/file").text
+    assert "One paper would get any bid" in page and "Expired on" in page and ("Valid until " + long_date("2027-01-09")) in page
+    with app.state.Session() as s:
+        from tw.db import Paper
+        pid = s.query(Paper).filter_by(kind="tin").one().id
+    scan = c.get(f"/file/{pid}/scan")
+    assert scan.status_code == 200 and scan.headers["content-type"] == "application/pdf" and scan.content.startswith(b"%PDF")
+    other = TestClient(app)
+    other.post("/signup", data={"company": "Other PLC", "name": "Someone", "phone": "0911000111", "password": "longenough1"})
+    assert other.get(f"/file/{pid}/scan").status_code == 404
+    assert other.post(f"/file/{pid}/delete", data={"csrf": csrf(other, "/profile")}, follow_redirects=False).status_code == 404
+    assert TestClient(app).get("/file", follow_redirects=False).status_code in (302, 303, 307)
+
+    # a valid tax clearance clears the blocker; the bid desk shows the envelope with what is still short
+    c.post("/file", data={"csrf": tok, "kind": "tax_clearance", "expires": "2026-12-31"}, follow_redirects=False)
+    c.post("/t/wb-1/bid", data={"csrf": tok}, follow_redirects=False)
+    desk = c.get("/my").text
+    assert "Awash Bank closes in 3 days. Your envelope is three papers short." in desk  # technical, price, security
+    assert "Write in Bid Room" in desk and "I have the bid security" in desk and "ጥቅምት 28, 2019" in desk
+    with app.state.Session() as s:
+        from tw.db import Bid
+        bid_id = s.query(Bid).one().id
+    c.post(f"/bids/{bid_id}/have", data={"csrf": tok, "key": "security", "on": "1"}, follow_redirects=False)
+    assert "two papers short" in c.get("/my").text
+    assert c.post(f"/bids/{bid_id}/have", data={"csrf": tok, "key": "technical", "on": "1"}).status_code == 400
+    assert other.post(f"/bids/{bid_id}/have", data={"csrf": csrf(other, "/profile"), "key": "security", "on": "1"}).status_code == 404

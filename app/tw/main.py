@@ -149,6 +149,21 @@ TWO_STEP_ROLES = ("admin", "reviewer")
 ADMIN_LAYOUT = "admin/_layout.html"
 
 
+ETH_MONTHS = ["መስከረም", "ጥቅምት", "ኅዳር", "ታኅሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዝያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜን"]
+
+
+def eth_date(iso):
+    """A Gregorian ISO date in the Ethiopian calendar, such as 2026-11-10 -> ኅዳር 1, 2019."""
+    try:
+        jdn = dt.date.fromisoformat(iso).toordinal() + 1721425
+    except (TypeError, ValueError):
+        return ""
+    r = (jdn - 1723856) % 1461
+    n = r % 365 + 365 * (r // 1460)
+    year = 4 * ((jdn - 1723856) // 1461) + r // 365 - r // 1460
+    return f"{ETH_MONTHS[n // 30]} {n % 30 + 1}, {year}"
+
+
 def create_app(settings=None, claude=None):
     s = settings or Settings()
     Session = make_session(s.database_url)
@@ -205,6 +220,7 @@ def create_app(settings=None, claude=None):
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host,
                            safe_url=safe_url)
     tpl.env.globals.update(date_notes=date_notes, PLAN_LABEL=PLAN_LABEL, TERMS=TERMS, SITE_URL=s.site_url)
+    tpl.env.globals.update(eth_date=eth_date)
     state = {"claude": claude}
 
     def get_claude():
@@ -408,7 +424,10 @@ def create_app(settings=None, claude=None):
         bid = None
         if u and u.role == "member" and u.company_id:
             bid = session.scalars(select(Bid).where(Bid.company_id == u.company_id, Bid.tender_id == tid)).first()
-        return page(request, "tender.html", u, t=t, full=has_access(u), win=has_bidroom(u), bid=bid)
+        env = None
+        if u and u.role == "member" and u.company_id and has_bidroom(u):
+            env = desk_h.envelope(t, desk_h.papers_of(session, u.company_id), today(), bids_mod.load(bid) if bid else None)
+        return page(request, "tender.html", u, t=t, full=has_access(u), win=has_bidroom(u), bid=bid, env=env)
 
     @app.get("/notices/{name}")
     def photo(request: Request, name: str, session=Depends(db)):
@@ -1021,7 +1040,9 @@ def create_app(settings=None, claude=None):
             q = select(Tender).where(Tender.status == "published", or_(Tender.closes == "", Tender.closes >= today()))
             rows = [t for t in session.scalars(q.order_by(Tender.published_at.desc())) if match(t, i)]
         pg = paginate(rows, p)
-        return page(request, "my.html", u, rows=pg["rows"], total=len(rows), pg=pg, qs="", i=i, access=has_access(u))
+        desk = desk_h.desk(session, u, rows) if u.company_id and has_bidroom(u) else None
+        return page(request, "my.html", u, rows=pg["rows"], total=len(rows), pg=pg, qs="", i=i, access=has_access(u),
+                    desk=desk, greg=dt.date.fromisoformat(today()))
 
     # -- collectors
     @app.get("/collect", response_class=HTMLResponse)
@@ -1258,5 +1279,9 @@ def create_app(settings=None, claude=None):
     bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
                                           TZ=TZ, has_access=has_bidroom, get_claude=get_claude, Session=Session,
                                           sync_drafts=False))
+    from . import bids as bids_mod, desk as desk_mod
+    desk_h = SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
+                             has_access=has_bidroom, data_dir=s.data_dir)
+    desk_mod.register(app, desk_h)
     app.state.Session = Session
     return app

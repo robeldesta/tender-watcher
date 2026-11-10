@@ -132,7 +132,8 @@ def engine_tender(t):
 
 def blank():
     return {"checklist": [], "cover_letter": "", "profile_section": "", "technical": "", "financial": [],
-            "open_questions": [], "warnings": [], "projects": [], "doc_text": "", "notes": "", "drafted_at": ""}
+            "open_questions": [], "warnings": [], "projects": [], "doc_text": "", "notes": "", "drafted_at": "",
+            "have": []}  # have: envelope items the firm ticked itself, such as the bid security
 
 
 def load(bid):
