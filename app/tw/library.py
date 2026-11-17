@@ -53,7 +53,10 @@ Fields:
   the bid lists, with number, issuer and expiry.
 - projects: past contracts the bid lists as experience: name, client, value in ETB (digits),
   year completed, region, the firm's role, and one sentence of scope.
-- key_personnel: proposed or key staff: role, name, qualification, years of experience.
+- key_personnel: proposed or key staff: role, name, qualification, years of experience
+  (and years on similar work, where the field exists).
+- equipment_items: plant and equipment the bid lists: item, quantity, owned or hired,
+  year made.
 - turnover: annual turnover figures by year.
 - methodology: the firm's own technical proposal text: approach, method statement, work plan,
   schedule, quality assurance, health and safety, warranty, after-sales support, training.
@@ -85,9 +88,7 @@ SCHEMA = {
     "properties": {
         "about": _obj(["title", "buyer", "reference", "year"]),
         "company": _obj(COMPANY),
-        "licences": _rows(bids.ROWS["licences"]),
-        "projects": _rows(bids.ROWS["projects"]),
-        "key_personnel": _rows(bids.ROWS["key_personnel"]),
+        **{k: _rows(cols) for k, cols in bids.ROWS.items()},
         "turnover": _rows(["year", "amount_etb"]),
         "methodology": {"type": "array", "items": {
             "type": "object", "properties": {"heading": S, "paragraphs": SA},
@@ -97,7 +98,7 @@ SCHEMA = {
         "price_lines": _rows(["item", "unit", "qty", "price"]),
         "price_notes": S,
     },
-    "required": ["about", "company", "licences", "projects", "key_personnel", "turnover", "methodology",
+    "required": ["about", "company", *bids.ROWS, "turnover", "methodology",
                  "cover_letter", "company_section", "price_lines", "price_notes"],
     "additionalProperties": False,
 }
@@ -105,7 +106,7 @@ SCHEMA = {
 
 def blank():
     return {"about": {"title": "", "buyer": "", "reference": "", "year": ""}, "company": {k: "" for k in COMPANY},
-            "licences": [], "projects": [], "key_personnel": [], "turnover": [], "methodology": [],
+            **{k: [] for k in bids.ROWS}, "turnover": [], "methodology": [],
             "cover_letter": [], "company_section": [], "price_lines": [], "price_notes": "", "merged": []}
 
 
@@ -174,7 +175,9 @@ def _key(kind, r):
         return (norm(r.get("name")), norm(r.get("client")))
     if kind == "licences":
         return (norm(r.get("name")), norm(r.get("number")))
-    return (norm(r.get("name")) or norm(r.get("role")),)
+    if kind == "key_personnel":
+        return (norm(r.get("name")) or norm(r.get("role")),)
+    return tuple(norm(v) for v in r.values())  # other tables: the whole row
 
 
 def _turnover_years(text):
@@ -457,9 +460,9 @@ def register(app, h):
 
     @app.post("/bids/{bid_id}/reuse")
     def reuse(request: Request, bid_id: int, past: int = Form(0), part: str = Form(""), prices: str = Form(""),
-              csrf: str = Form(""), session=Depends(db)):
+              pane: str = Form(""), csrf: str = Form(""), session=Depends(db)):
         """Copy wording or price lines from one of the firm's past bids into this bid."""
-        return copy_into(request, session, bid_id, past, part, prices, csrf)
+        return copy_into(request, session, bid_id, past, part, prices, csrf, pane)
 
     @app.post("/past-bids/{pid}/use")
     def use(request: Request, pid: int, bid: int = Form(0), part: str = Form(""), prices: str = Form(""),
@@ -467,7 +470,7 @@ def register(app, h):
         """The same, started from the past bid's page."""
         return copy_into(request, session, bid, pid, part, prices, csrf)
 
-    def copy_into(request, session, bid_id, past, part, prices, csrf):
+    def copy_into(request, session, bid_id, past, part, prices, csrf, pane=""):
         u = member(request, session)
         h.check_csrf(u, csrf)
         b = session.get(Bid, bid_id)
@@ -479,9 +482,8 @@ def register(app, h):
         if b.state == "drafting" and age(b.updated_at) < 600:
             raise HTTPException(409, "Bid Room is drafting this bid. Reuse it when the draft finishes.")
         d, src = bids.load(b), load(pb)
-        tab = {"technical": "technical", "cover_letter": "letter", "profile_section": "company", "financial": "price"}[part]
         if part == "financial":
-            lines = [{"item": r["item"][:300], "unit": r["unit"][:40], "qty": r["qty"][:20],
+            lines = [{"no": "", "item": r["item"][:300], "unit": r["unit"][:40], "qty": r["qty"][:20],
                       "price": (r["price"][:20] if prices else "")} for r in src["price_lines"]]
             d["financial"] = (d.get("financial") or []) + lines[:max(0, bids.MAX_ROWS - len(d.get("financial") or []))]
         else:
@@ -492,6 +494,7 @@ def register(app, h):
                 d[part] = d[part][:bids.MAX_TEXT]
         b.data, b.updated_at = json.dumps(d, ensure_ascii=False), now()
         session.commit()
-        return RedirectResponse(f"/bids/{b.id}?reused={tab}#{tab}", 303)
+        pane = pane if re.fullmatch(r"[a-z0-9_]{1,40}", pane or "") else ""
+        return RedirectResponse(f"/bids/{b.id}?reused=1" + (f"#f-{pane}" if pane else ""), 303)
 
     h.own_wording = own_wording

@@ -728,7 +728,7 @@ def test_bid_room(env):
     j = c.post(f"/bids/{bid_id}/save", headers=h, json={"cover_letter": "Our own letter.", "done": [1],
                "financial": [{"item": "Server", "unit": "pcs", "qty": "2", "price": "1,000,000"}, {"item": ""}],
                "state": "submitted", "evil": "x"}).json()
-    assert j["ok"] and j["total"] == 2000000 and j["progress"] == {"done": 1, "total": 2, "gaps": 0} and j["confirm"] == []
+    assert j["ok"] and j["total"] == 2000000 and j["progress"] == {"done": 1, "total": 2, "gaps": 0} and "validity period" not in j["confirm"]
     assert c.post(f"/bids/{bid_id}/save", headers={"x-csrf": "bad"}, json={}).status_code == 400
     assert c.post(f"/bids/{bid_id}/save", headers=h, content=b"[1]").status_code == 400
     lst = c.get("/bids").text
@@ -960,6 +960,8 @@ PAST = {"about": {"title": "Supply of servers to Awash Bank", "buyer": "Awash Ba
                      {"name": "Branch network refresh", "client": "Awash Bank", "value_etb": "2100000",
                       "year_completed": "2024", "region": "Addis Ababa", "role": "Main contractor", "scope": "120 switches"}],
         "key_personnel": [{"role": "Project manager", "name": "Hana T", "qualification": "MSc CS", "years_experience": "9"}],
+        "equipment_items": [{"item": "Fibre splicer", "qty": "2", "ownership": "Owned", "year_made": "2022"},
+                            {"item": "OTDR tester", "qty": "1", "ownership": "Owned", "year_made": "2023"}],
         "turnover": [{"year": "2024", "amount_etb": "12500000"}, {"year": "n/a", "amount_etb": "1"}],
         "methodology": [{"heading": "Delivery and installation", "paragraphs": ["We stage every server in our Bole lab before delivery."]},
                         {"heading": "Warranty", "paragraphs": ["Three years on site, next business day."]}],
@@ -1020,9 +1022,10 @@ def test_past_bids_import_profile_and_reuse(env, tmp_path):
 
     # add facts to the profile: ticked ones only, rows not doubled
     r = c.post(url + "/profile", data={"csrf": tok, "f": ["legal_name", "signatory_name"],
-                                       "r": ["projects:0", "projects:1", "key_personnel:0", "turnover:0", "turnover:1"]},
+                                       "r": ["projects:0", "projects:1", "key_personnel:0", "equipment_items:0",
+                                                                "equipment_items:1", "turnover:0", "turnover:1"]},
                follow_redirects=False)
-    assert r.headers["location"] == f"/past-bids/{pid}?merged=6"
+    assert r.headers["location"] == f"/past-bids/{pid}?merged=8"
     prof = c.get("/profile").text
     assert "Sonador Systems PLC" in prof and "Robel Desta" in prof and "Branch network refresh" in prof and "Hana T" in prof
     assert "2024: 12500000" in prof and 'value="85124"' not in prof and 'value="General Manager"' not in prof
@@ -1030,7 +1033,7 @@ def test_past_bids_import_profile_and_reuse(env, tmp_path):
     with app.state.Session() as s:
         from tw.db import Company
         p = json.loads(s.query(Company).filter_by(name="Sonador Systems").one().profile)
-        assert len(p["projects"]) == 2
+        assert len(p["projects"]) == 2 and [e["item"] for e in p["equipment_items"]] == ["Fibre splicer", "OTDR tester"]
 
     # Bid Room: drafting reuses the firm's own wording; parts can be copied in
     assert "Start this bid" in c.get("/t/wb-1").text
@@ -1045,8 +1048,9 @@ def test_past_bids_import_profile_and_reuse(env, tmp_path):
     assert "<own_bids>" in content and "We stage every server in our Bole lab" in content.split("<tender>")[0]
     c.post(f"/bids/{bid_id}/draft", data={"csrf": tok})
     assert "<own_bids>" not in calls[-1]["messages"][0]["content"]
-    r = c.post(f"/bids/{bid_id}/reuse", data={"csrf": tok, "past": pid, "part": "technical"}, follow_redirects=False)
-    assert r.headers["location"].endswith("#technical")
+    r = c.post(f"/bids/{bid_id}/reuse", data={"csrf": tok, "past": pid, "part": "technical", "pane": "method"},
+               follow_redirects=False)
+    assert r.headers["location"] == f"/bids/{bid_id}?reused=1#f-method"
     c.post(f"/past-bids/{pid}/use", data={"csrf": tok, "bid": bid_id, "part": "financial"})
     room = c.get(f"/bids/{bid_id}").text
     assert "Delivery and installation" in room and "We will deliver and install the servers" in room
@@ -1101,3 +1105,129 @@ def test_username_member_from_manage(env, tmp_path, monkeypatch):
     acct = c.get("/account").text
     assert 'value="construction" checked' in acct or "construction" in acct
     assert c.get("/bids").status_code == 200  # the trial includes Bid Room
+
+
+def _pdf(pages):
+    import io
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    cv = canvas.Canvas(buf)
+    for i in range(pages):
+        cv.drawString(100, 700, f"Bid page {i + 1}")
+        cv.showPage()
+    cv.save()
+    return buf.getvalue()
+
+
+def _png():
+    import io
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (200, 200), "white")
+    ImageDraw.Draw(im).ellipse((20, 20, 180, 180), outline=(40, 40, 160), width=8)
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_works_bid_on_real_forms(env):
+    """A construction firm's works bid: the PPA forms, prefilled from the company file, priced on a BoQ,
+    downloadable as Word or PDF with prices left blank, and stamped on every page."""
+    import io
+    from pypdf import PdfReader
+    app, claude, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "tw-w1", "buyer": "Oromia Water Works Construction Enterprise", "title": "Construction of G+2 office building",
+         "closes": "2026-11-27", "time": "10:00", "category": "construction", "region": "Oromia", "reference": "OWWCE/NCB/W/07/2026",
+         "notice": "Bidders shall submit technical and financial proposals in two separate envelopes. Bid validity 120 days.",
+         "bid_security": "CPO of ETB 200,000"}]}))
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Jobale Engineering", "name": "Jobale", "phone": "0933111222",
+                            "password": "longenough1", "tin": "0012345678"})
+    tok = csrf(c, "/profile")
+    c.post("/profile", data={"csrf": tok, "legal_name": "Jobale Engineering PLC", "tin": "0012345678", "vat_number": "1234567",
+                             "address": "Addis Ababa, Kirkos", "signatory_name": "Abebe Kebede", "signatory_title": "General Manager",
+                             "grade": "GC Grade 4", "turnover": "2015: 40,000,000\n2016: 55,000,000\n2017: 70,000,000",
+                             "projects.name": ["G+1 school block"], "projects.client": ["Adama City"], "projects.value_etb": ["18000000"],
+                             "projects.year_completed": ["2024"], "projects.role": ["Main contractor"], "projects.scope": ["Building"],
+                             "key_personnel.role": ["Site engineer"], "key_personnel.name": ["Hana Tesfaye"],
+                             "key_personnel.qualification": ["BSc Civil Engineering"], "key_personnel.years_experience": ["8"],
+                             "key_personnel.similar_years": ["6"],
+                             "equipment_items.item": ["Concrete mixer 500 l"], "equipment_items.qty": ["2"],
+                             "equipment_items.ownership": ["Owned"], "equipment_items.year_made": ["2019"]})
+    assert "Construction of G+2" in c.get("/t/tw-w1").text
+    url = c.post("/t/tw-w1/bid", data={"csrf": tok}, follow_redirects=False).headers["location"]
+    bid_id = url.rsplit("/", 1)[1]
+    room = c.get(url).text
+    # the works form set, two envelopes and 120 days read from the notice, the CPO amount from the notice
+    for title in ("Bid Submission Sheet", "Bill of quantities", "Method statement", "Work programme", "Key personnel",
+                  "Similar experience", "Technical bid submission letter", "Power of attorney", "Eligibility documents"):
+        assert title in room, title
+    assert "Technical envelope" in room and "Financial envelope" in room
+    assert 'value="120"' in room and "ETB 200,000" in room and "Hana Tesfaye" in room and "Concrete mixer 500 l" in room
+    assert "Coming soon" not in room
+
+    h = {"x-csrf": tok}
+    j = c.post(f"/bids/{bid_id}/save", headers=h, json={
+        "details": {"completion": "240 calendar days", "security_bank": "CBE Kirkos", "security_number": "CPO-778"},
+        "financial": [{"no": "1.1", "item": "Excavation", "unit": "m3", "qty": "100", "price": "500"},
+                      {"no": "1.2", "item": "C-25 concrete", "unit": "m3", "qty": "10", "price": "10000"}],
+        "forms": {"subcontractors": {"on": True}, "bogus": {"on": True},
+                  "work_programme": {"rows": [{"activity": "Mobilisation", "start": "1", "weeks": "2"}]}}}).json()
+    assert j["total"] == 150000 and abs(j["vat"] - 22500) < 0.01
+    assert j["values"]["total_figures"] == "ETB 172,500.00"
+    assert j["values"]["total_words"] == "One hundred seventy-two thousand five hundred Birr"
+    assert j["forms"]["boq"] and j["forms"]["work_programme"] and j["forms"]["bid_security"]
+    assert not any("completion" in x for x in j["confirm"])
+
+    pr = c.get(f"/bids/{bid_id}/print").text
+    assert "TECHNICAL BID" in pr and "FINANCIAL BID" in pr and "OWWCE/NCB/W/07/2026" in pr
+    assert "172,500.00" in pr and "240 calendar days" in pr and "CPO-778" in pr and "Hana Tesfaye" in pr
+    assert "Average annual turnover" in pr and "55,000,000" in pr and "Excavation" in pr
+    assert "Page " in pr  # numbered pages
+    assert "TECHNICAL BID" not in c.get(f"/bids/{bid_id}/print?part=F").text
+
+    # Word and PDF at any time; prices can stay off the file
+    r = c.get(f"/bids/{bid_id}/download?format=docx&prices=blank")
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    import docx
+    text = "\n".join(p.text for p in docx.Document(io.BytesIO(r.content)).paragraphs)
+    assert "Jobale Engineering PLC" in text and "172,500" not in text and "______" in text and "240 calendar days" in text
+    r = c.get(f"/bids/{bid_id}/download?format=pdf")
+    assert r.status_code == 200 and r.content[:4] == b"%PDF"
+    pdf = PdfReader(io.BytesIO(r.content))
+    full = "\n".join(pg.extract_text() for pg in pdf.pages)
+    assert len(pdf.pages) > 10 and "172,500.00" in full and f"Page 1 of {len(pdf.pages)}" in full
+
+    # the stamp: uploaded once, then on every page of a 300-page bid
+    assert c.post("/profile/stamp", data={"csrf": tok}, files={"stamp": ("s.txt", b"not an image")}).status_code == 400
+    assert c.post("/profile/stamp", data={"csrf": tok}, files={"stamp": ("s.png", _png(), "image/png")},
+                  follow_redirects=False).status_code == 303
+    assert c.get("/profile/stamp").content.startswith(b"\x89PNG")
+    c.post("/profile", data={"csrf": tok, "legal_name": "Jobale Engineering PLC", "tin": "0012345678"})
+    assert c.get("/profile/stamp").status_code == 200  # saving the profile keeps the stamp
+    assert "/profile/stamp?v=" in c.get(f"/bids/{bid_id}/print").text
+    r = c.post(f"/bids/{bid_id}/stamp", data={"csrf": tok, "stamp": "1", "numbers": "1"},
+               files=[("pdf", ("bid.pdf", _pdf(300), "application/pdf"))])
+    assert r.status_code == 200 and r.headers["x-pages"] == "300"
+    out = PdfReader(io.BytesIO(r.content))
+    assert len(out.pages) == 300 and "Page 300 of 300" in out.pages[-1].extract_text()
+    assert "/XObject" in str(out.pages[150]["/Resources"])  # the stamp image is on the page
+    assert c.post(f"/bids/{bid_id}/stamp", data={"csrf": tok}, files=[("pdf", ("x.pdf", b"hello", "application/pdf"))]).status_code == 400
+    r = c.get(f"/bids/{bid_id}/download?format=docx")
+    assert r.status_code == 200
+
+    # every kind of procurement has its own form set, and each renders, prints and downloads
+    for kind, title in (("goods", "Technical specification compliance sheet"), ("services", "Methodology and work plan"),
+                        ("consultancy", "Technical proposal submission form"), ("works", "Bill of quantities")):
+        c.post(f"/bids/{bid_id}/save", headers=h, json={"kind": kind, "details": {"security_type": "declaration"}})
+        assert title in c.get(url).text and title in c.get(f"/bids/{bid_id}/print").text
+        for fmt in ("docx", "pdf"):
+            assert c.get(f"/bids/{bid_id}/download?format={fmt}").status_code == 200
+    assert "Bid-Securing Declaration" in c.get(f"/bids/{bid_id}/print").text
+
+    # another firm can't reach any of it
+    other = TestClient(app)
+    other.post("/signup", data={"company": "Other PLC", "name": "Other", "phone": "0933444666", "password": "longenough1"})
+    for path in (f"/bids/{bid_id}/download", f"/bids/{bid_id}/print"):
+        assert other.get(path).status_code == 404
+    assert other.get("/profile/stamp").status_code == 404

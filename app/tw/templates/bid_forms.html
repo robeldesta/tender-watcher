@@ -1,0 +1,143 @@
+{% from "ui/_ui.html" import icon, mark, env_state %}
+{% from "_reuse.html" import reuse_form with context %}
+{# The bid's forms, the way the bidding document lays them out. Included in bid.html. #}
+{% set det = d.details %}{% set two = det.envelopes == "two" %}
+{% macro paras(text) %}{% for para in (text or "").split("\n\n") if para.strip() %}<p>{% for bit in para.strip().split("[TO CONFIRM") %}{% if loop.first %}{{ bit }}{% else %}{% set parts = bit.split("]", 1) %}<mark class="tc">[TO CONFIRM{{ parts[0] }}]</mark>{{ parts[1] if parts|length > 1 }}{% endif %}{% endfor %}</p>{% endfor %}{% endmacro %}
+<div class="room-panel" id="tab-forms" role="tabpanel">
+<div class="forms-grid">
+  <nav class="form-rail" aria-label="Forms in this bid">
+    {% set groups = [("", "Before you start"), ("T", "Technical envelope" if two else "In the envelope"), ("F", "Financial envelope" if two else "")] %}
+    {% for part, head in groups %}{% set fs = x.forms | selectattr("part", "equalto", part) | list %}{% if fs %}
+      {% if head %}<p class="rail-h">{{ head }}</p>{% endif %}
+      {% for f in fs %}<a href="#f-{{ f.key }}" data-form="{{ f.key }}" class="rail-item{{ ' done' if f.done }}{{ ' off' if not f.on }}">
+        <span class="rail-dot" aria-hidden="true"></span><span class="grow">{{ f.title }}</span>{% if not f.on %}<span class="small muted">off</span>{% endif %}</a>{% endfor %}
+    {% endif %}{% endfor %}
+    <p class="hint" style="margin:10px 8px 0">Forms in the order they go in the envelope. Switch off any the buyer doesn't ask for.</p>
+  </nav>
+
+  <div class="form-panes">
+  {% for f in x.forms %}
+  <section class="card form-pane" id="pane-{{ f.key }}" data-pane="{{ f.key }}" data-type="{{ f.type }}" aria-labelledby="fh-{{ f.key }}" hidden>
+    <div class="card-h">
+      <div class="grow"><h2 id="fh-{{ f.key }}">{{ f.title }}</h2>{% if f.ref %}<p class="small muted" style="margin:2px 0 0">{{ f.ref }}</p>{% endif %}</div>
+      {% if f.type != "details" %}<label class="check"><input type="checkbox" data-on="{{ f.key }}" {{ "checked" if f.on }}> In this bid</label>{% endif %}
+    </div>
+    {% if f.hint %}<p class="small muted pane-hint">{{ f.hint }}</p>{% endif %}
+    <div class="pane-body">
+
+    {% if f.type == "details" %}
+      <div class="form-grid">
+        <div class="field"><label for="kind">Type of procurement</label>
+          <select id="kind" data-kind-select>{% for k, v in F.KINDS.items() %}<option value="{{ k }}" {{ "selected" if d.kind == k }}>{{ v }}</option>{% endfor %}</select>
+          <p class="hint">Sets which forms the bid has.</p></div>
+        <div class="field"><label for="envelopes">Envelopes</label>
+          <select id="envelopes" data-detail="envelopes" data-reload><option value="one" {{ "selected" if not two }}>One envelope</option><option value="two" {{ "selected" if two }}>Two: technical and financial apart</option></select>
+          <p class="hint">Read the bid data sheet. Many government tenders ask for two.</p></div>
+        <div class="field"><label for="validity_days">Bid validity, days</label><input id="validity_days" data-detail="validity_days" value="{{ det.validity_days }}" inputmode="numeric"></div>
+        <div class="field"><label for="completion">{{ "Completion period" if d.kind == "works" else "Delivery period" if d.kind == "goods" else "Service period" }}</label>
+          <input id="completion" data-detail="completion" value="{{ det.completion }}" placeholder="{{ '180 calendar days' if d.kind == 'works' else '30 days after contract signing' }}"></div>
+        {% if d.kind == "goods" %}<div class="field"><label for="warranty">Warranty</label><input id="warranty" data-detail="warranty" value="{{ det.warranty }}" placeholder="12 months from delivery"></div>{% endif %}
+        <div class="field"><label for="discount">Discount</label><input id="discount" data-detail="discount" value="{{ det.discount }}" placeholder="None"></div>
+        <div class="field"><label for="vat_mode">VAT</label>
+          <select id="vat_mode" data-detail="vat"><option value="add" {{ "selected" if det.vat == "add" }}>Prices exclude VAT; add 15%</option><option value="incl" {{ "selected" if det.vat == "incl" }}>Prices already include VAT</option><option value="none" {{ "selected" if det.vat == "none" }}>No VAT</option></select>
+          {% if not x.prof.vat_registered %}<p class="hint">Your profile says you are not VAT registered, so no VAT is added.</p>{% endif %}</div>
+        <div class="field"><label for="performance_security">Performance security</label><input id="performance_security" data-detail="performance_security" value="{{ det.performance_security }}"><p class="hint">Usually 10% of the contract price.</p></div>
+        <div class="field"><label for="sign_place">Place of signing</label><input id="sign_place" data-detail="sign_place" value="{{ det.sign_place }}"></div>
+      </div>
+
+    {% elif f.type == "letter" %}
+      <div class="letter-edit">
+        <div><label class="small muted" for="lt-{{ f.key }}">Wording. Words in {braces} fill in from your company file and this bid.</label>
+          <textarea id="lt-{{ f.key }}" data-letter="{{ f.key }}" rows="18" data-standard="{{ f.standard }}">{{ f.text }}</textarea>
+          <button class="btn sm ghost" type="button" data-standard-for="{{ f.key }}" style="margin-top:6px">Use the standard wording</button></div>
+        <div><p class="small muted" style="margin:0 0 4px">How it prints</p><div class="letter-preview" data-preview="{{ f.key }}">{{ paras(f.filled) }}</div></div>
+      </div>
+      {% if f.key == "bid_sheet" or f.key == "consult_fin" %}<p class="hint" style="margin-top:8px">The price comes from the {{ "bill of quantities" if d.kind == "works" else "price schedule" }}. Printed with the signature block: name, capacity, signature, date and stamp.</p>{% endif %}
+
+    {% elif f.type == "table" %}
+      <div class="table-wrap"><table class="fin form-table" data-table="{{ f.key }}">
+        <thead><tr>{% for c in f.cols %}<th>{{ F.COL[c] }}</th>{% endfor %}<th><span class="sr">Remove</span></th></tr></thead>
+        <tbody>{% for r in f.rows + [{}] %}<tr>{% for c in f.cols %}<td><input data-col="{{ c }}" value="{{ r[c] }}" aria-label="{{ F.COL[c] }}"{% if c in ('value_etb', 'remaining_etb', 'amount_etb', 'qty', 'years', 'similar_years', 'start', 'weeks', 'share', 'months', 'days', 'y1', 'y2', 'y3') %} inputmode="decimal" class="narrow"{% endif %}></td>{% endfor %}
+          <td><button class="iconbtn del-row" type="button" aria-label="Remove row" title="Remove row">{{ icon("x") }}</button></td></tr>{% endfor %}</tbody>
+      </table></div>
+      <div class="pane-actions"><button class="btn sm ghost" type="button" data-add-row="{{ f.key }}">{{ icon("plus") }}Add a row</button>
+        {% if f.prefill %}<button class="btn sm ghost" type="button" data-refill="{{ f.key }}" data-rows="{{ f.prefill | tojson | forceescape }}">Fill from company file</button>{% endif %}
+        {% if f.key in ("experience", "key_staff", "equipment", "turnover", "team", "assignments") %}<a class="btn sm quiet" href="/profile?back=/bids/{{ b.id }}">Edit company profile</a>{% endif %}</div>
+      {% if f.key == "turnover" and f.rows %}<p class="small muted" style="margin:8px 0 0" data-average="{{ f.key }}"></p>{% endif %}
+
+    {% elif f.type == "text" %}
+      <textarea data-field="{{ f.field }}" {% if not f.field %}data-text="{{ f.key }}"{% endif %} rows="18" aria-labelledby="fh-{{ f.key }}" {% if f.outline_text %}data-outline="{{ f.outline_text }}"{% endif %}>{{ f.text }}</textarea>
+      {% if f.outline_text %}<div class="pane-actions"><button class="btn sm ghost" type="button" data-use-outline>Start from an outline</button><span class="hint">Headings the evaluators look for. Write under each, or press Draft this bid.</span></div>{% endif %}
+      {% if f.field in ("technical", "cover_letter", "profile_section") %}<div class="pane-actions">{{ reuse_form(f.field, f.key) }}</div>{% endif %}
+
+    {% elif f.type == "price" %}
+      {% set goods = d.kind == "goods" %}
+      <div class="table-wrap"><table class="fin" id="fin">
+        <thead><tr><th style="width:56px">No.</th><th>{{ "Description of works" if d.kind == "works" else "Description" }}</th>{% if goods %}<th>Country of origin</th>{% endif %}<th>Unit</th><th class="num">Qty</th><th class="num">{{ "Rate" if d.kind == "works" else "Unit price" }}</th><th class="num">Amount</th><th><span class="sr">Remove</span></th></tr></thead>
+        <tbody>{% for r in (d.financial or []) + [{}] %}<tr>
+          <td><input data-col="no" value="{{ r.no }}" aria-label="Item number" class="narrow" placeholder="{{ loop.index }}"></td>
+          <td><input data-col="item" value="{{ r.item }}" aria-label="Description"></td>
+          {% if goods %}<td><input data-col="origin" value="{{ r.origin }}" aria-label="Country of origin" class="narrow" style="width:110px"></td>{% endif %}
+          <td><input data-col="unit" value="{{ r.unit }}" aria-label="Unit" class="narrow"></td>
+          <td class="num"><input data-col="qty" value="{{ r.qty }}" inputmode="decimal" aria-label="Quantity" class="narrow"></td>
+          <td class="num"><input data-col="price" value="{{ r.price }}" inputmode="decimal" aria-label="Unit price" style="width:120px"></td>
+          <td class="num" data-amount></td><td><button class="iconbtn del-row" type="button" aria-label="Remove line" title="Remove line">{{ icon("x") }}</button></td></tr>{% endfor %}</tbody>
+      </table></div>
+      <div class="pane-actions"><button class="btn sm ghost" type="button" id="add-line">{{ icon("plus") }}Add a line</button>
+        <button class="btn sm ghost" type="button" data-paste-open>Paste from Excel</button></div>
+      <div class="pane-actions">{{ reuse_form("financial", f.key) }}</div>
+      <div class="paste-box" data-paste-box hidden>
+        <label class="small muted" for="paste-{{ f.key }}">Copy the rows from Excel or the buyer's Word table and paste here. Columns: {{ "No., " }}Description, Unit, Qty{{ ", Rate" if d.kind == "works" else ", Unit price" }} (rate is optional).</label>
+        <textarea id="paste-{{ f.key }}" data-paste rows="6"></textarea>
+        <div class="pane-actions"><button class="btn sm" type="button" data-paste-add>Add these lines</button><button class="btn sm quiet" type="button" data-paste-open>Cancel</button></div>
+      </div>
+      <div class="fin-sum">
+        <div><span class="muted">Total before VAT</span><b data-total>{{ "{:,.2f}".format(total) }}</b></div>
+        <div data-vat-row {{ "hidden" if not x.vat }}><span class="muted">VAT 15%</span><b data-vat>{{ "{:,.2f}".format(x.vat) }}</b></div>
+        <div class="grand"><span>Bid price, ETB</span><b data-grand>{{ "{:,.2f}".format(total + x.vat) }}</b></div>
+        <p class="small muted" data-words>{{ x["values"].total_words or "" }}</p>
+      </div>
+
+    {% elif f.type == "security" %}
+      <div class="form-grid">
+        <div class="field"><label for="security_type">Form of bid security</label>
+          <select id="security_type" data-detail="security_type" data-reload>{% for k, v in F.SECURITY_LABEL.items() %}<option value="{{ k }}" {{ "selected" if det.security_type == k }}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="security_amount">Amount</label><input id="security_amount" data-detail="security_amount" value="{{ det.security_amount }}" placeholder="ETB 50,000"></div>
+        {% if det.security_type in ("cpo", "guarantee") %}
+        <div class="field"><label for="security_bank">Issuing bank and branch</label><input id="security_bank" data-detail="security_bank" value="{{ det.security_bank }}" placeholder="Commercial Bank of Ethiopia, Bole branch"></div>
+        <div class="field"><label for="security_number">{{ "CPO number" if det.security_type == "cpo" else "Guarantee number" }}</label><input id="security_number" data-detail="security_number" value="{{ det.security_number }}" class="mono"></div>
+        <div class="field"><label for="security_date">Date issued</label><input id="security_date" type="date" data-detail="security_date" value="{{ det.security_date }}"></div>
+        {% endif %}
+      </div>
+      {% if x.security_until and det.security_type == "guarantee" %}<p class="alert info" style="margin-top:10px">The guarantee must stay valid until at least <b data-security-until>{{ x.security_until | long_date }}</b>: {{ det.validity_days }} days of bid validity after closing, plus 28 days.</p>{% endif %}
+      {% if det.security_type == "cpo" %}<p class="hint" style="margin-top:10px">A CPO is payable to the buyer by name. Ask the bank to write the buyer's name exactly as it appears on the notice: {{ t.buyer }}.</p>{% endif %}
+      {% if det.security_type == "declaration" %}<p class="small muted" style="margin-top:12px">The bid-securing declaration prints as its own signed page:</p><div class="letter-preview">{{ paras(x["values"].securing_declaration) }}</div>{% endif %}
+
+    {% elif f.type == "papers" %}
+      <ul class="checklist">
+      {% for r in env["items"] if r.from == "file" %}{% set p = x.held.get(r.key) %}<li>{{ mark(r.state) }}<div class="body"><b>{{ r.label }}</b>
+          {% if p %}<p>{% if p.number %}No. {{ p.number }}{% endif %}{% if p.issuer %} · {{ p.issuer }}{% endif %}{% if p.expires %} · valid until {{ p.expires | long_date }}{% endif %}{% if p.file %} · scan on file{% endif %}</p>{% endif %}{% if r.note %}<p>{{ r.note }}</p>{% endif %}</div>
+          <div class="end">{{ env_state(r) }}{% if r.state in ("missing", "late") %}<a class="btn sm ghost" href="/file?add={{ r.key }}#add">Add to file</a>{% endif %}</div></li>{% endfor %}
+      </ul>
+      <p class="hint" style="margin-top:8px">The printed bid lists these as attachments with their numbers and dates. The list comes from the notice, so check it against the bidding document's list of required documents.</p>
+
+    {% elif f.type == "profile" %}
+      {% set pr = x.prof %}
+      <table class="kv"><tbody>
+        {% for lbl, v in [("Legal name", pr.legal_name), ("Address", pr.address), ("P.O. Box", pr.po_box), ("Telephone", pr.phone), ("Email", pr.email), ("TIN", pr.tin),
+                          ("VAT registration number", pr.vat_number), ("Year established", pr.year_established), ("Grade or licence class", pr.grade), ("Permanent staff", pr.staff_count),
+                          ("Authorised representative", (pr.signatory_name or "") ~ (", " ~ pr.signatory_title if pr.signatory_title else "")), ("Bank", pr.bank_name), ("Bank account", pr.bank_account)] %}
+        <tr><th>{{ lbl }}</th><td>{% if v and v|trim %}{{ v }}{% else %}<span class="muted">Not in your profile</span>{% endif %}</td></tr>{% endfor %}
+      </tbody></table>
+      {% if pr.licences %}<p class="small muted" style="margin:10px 0 4px">Licences and certificates, printed with this form</p>
+      <table class="kv"><tbody>{% for l in pr.licences %}<tr><th>{{ l.name }}</th><td>{{ l.number }}{% if l.expires %} · valid until {{ l.expires | long_date }}{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+      <div class="pane-actions"><a class="btn sm ghost" href="/profile?back=/bids/{{ b.id }}">Edit company profile</a></div>
+    {% endif %}
+    </div>
+    <div class="pane-foot"><span class="pane-state {{ 'ok' if f.done }}" data-state-for="{{ f.key }}">{{ "Ready" if f.done else "To finish" }}</span>
+      <span class="grow"></span>{% if not loop.last %}<a class="btn sm ghost" href="#f-{{ x.forms[loop.index].key }}" data-form="{{ x.forms[loop.index].key }}">Next: {{ x.forms[loop.index].title }}</a>{% endif %}</div>
+  </section>
+  {% endfor %}
+  </div>
+</div>
+</div>

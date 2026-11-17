@@ -21,6 +21,9 @@
       <div class="field"><label for="email">Email</label><input id="email" name="email" value="{{ d.email }}" type="email"></div>
       <div class="field"><label for="year_established">Established (year)</label><input id="year_established" name="year_established" value="{{ d.year_established }}" inputmode="numeric"></div>
       <div class="field"><label for="staff_count">Permanent staff</label><input id="staff_count" name="staff_count" value="{{ d.staff_count }}" inputmode="numeric"></div>
+      <div class="field"><label for="po_box">P.O. Box</label><input id="po_box" name="po_box" value="{{ d.po_box }}"></div>
+      <div class="field"><label for="bank_name">Bank and branch</label><input id="bank_name" name="bank_name" value="{{ d.bank_name }}" placeholder="Commercial Bank of Ethiopia, Bole branch"></div>
+      <div class="field"><label for="bank_account">Bank account number</label><input id="bank_account" name="bank_account" value="{{ d.bank_account }}" inputmode="numeric" class="mono"></div>
       <div class="field"><label for="signatory_name">Signs bids: name</label><input id="signatory_name" name="signatory_name" value="{{ d.signatory_name }}"></div>
       <div class="field"><label for="signatory_title">Signs bids: title</label><input id="signatory_title" name="signatory_title" value="{{ d.signatory_title }}" placeholder="General Manager"></div>
     </div>
@@ -30,19 +33,20 @@
       <div class="field span2"><label for="work_types">Work and goods you bid on</label><input id="work_types" name="work_types" value="{{ d.work_types }}" placeholder="IT equipment, data centre, software, networking"><p class="hint">Separate with commas.</p></div>
       <div class="field"><label for="grade">Grade or licence class</label><input id="grade" name="grade" value="{{ d.grade }}" placeholder="GC Grade 3, or leave empty"></div>
       <div class="field"><label for="regions">Regions you work in</label><input id="regions" name="regions" value="{{ d.regions }}" placeholder="Addis Ababa, Oromia"></div>
-      <div class="field span2"><label for="equipment">Equipment you own</label><input id="equipment" name="equipment" value="{{ d.equipment }}" placeholder="2 trucks, test lab, server room"></div>
+      <div class="field span2"><label for="equipment">Equipment you own, in short</label><input id="equipment" name="equipment" value="{{ d.equipment }}" placeholder="2 trucks, test lab, server room"></div>
       <div class="field span2"><label for="turnover">Annual turnover, ETB (one year per line)</label><textarea id="turnover" name="turnover" rows="3" placeholder="2017: 12,500,000&#10;2016: 9,800,000">{{ d.turnover }}</textarea></div>
     </div>
   </section>
-  {% set titles = {"licences": "Licences and certificates", "projects": "Past projects (similar experience)", "key_personnel": "Key staff"} %}
+  {% set titles = {"licences": "Licences and certificates", "projects": "Past projects (similar experience)", "key_personnel": "Key staff", "equipment_items": "Equipment (for equipment schedules)"} %}
   {% set heads = {"name": "Name", "number": "Number", "issuer": "Issued by", "expires": "Valid until", "client": "Client", "value_etb": "Value, ETB", "year_completed": "Year done",
-                  "region": "Region", "role": "Your role", "scope": "What you did", "qualification": "Qualification", "years_experience": "Years"} %}
+                  "region": "Region", "role": "Your role", "scope": "What you did", "qualification": "Qualification", "years_experience": "Years", "similar_years": "Years in similar work",
+                  "item": "Equipment type and capacity", "qty": "Number", "ownership": "Owned, leased or to buy", "year_made": "Year made"} %}
   {% for key, cols in ROWS.items() %}
   <section class="card"><h2 style="margin-bottom:12px">{{ titles[key] }}</h2>
     <div class="table-wrap"><table class="rows-table" data-rows="{{ key }}">
       <thead><tr>{% for col in cols %}<th>{{ heads[col] if not (key == "key_personnel" and col == "role") else "Role" }}{% if key == "key_personnel" and col == "name" %} (name){% endif %}</th>{% endfor %}</tr></thead>
       <tbody>
-      {% for row in (d[key] or []) + [{}] * (2 if d[key] else 3) %}<tr>{% for col in cols %}<td><input name="{{ key }}.{{ col }}" value="{{ row.get(col, '') }}" aria-label="{{ heads.get(col, col) }}"{% if col == "expires" %} type="date"{% endif %}{% if col in ("value_etb", "year_completed", "years_experience") %} inputmode="numeric"{% endif %}></td>{% endfor %}</tr>{% endfor %}
+      {% for row in (d[key] or []) + [{}] * (2 if d[key] else 3) %}<tr>{% for col in cols %}<td><input name="{{ key }}.{{ col }}" value="{{ row.get(col, '') }}" aria-label="{{ heads.get(col, col) }}"{% if col == "expires" %} type="date"{% endif %}{% if col in ("value_etb", "year_completed", "years_experience", "similar_years", "qty", "year_made") %} inputmode="numeric"{% endif %}></td>{% endfor %}</tr>{% endfor %}
       </tbody></table></div>
     <button class="btn sm ghost add-row" type="button" data-for="{{ key }}" style="margin-top:8px">{{ icon("plus") }}Add a row</button>
   </section>
@@ -51,4 +55,15 @@
     <textarea name="notes" rows="3" aria-label="Notes" placeholder="Partnerships, brands you are authorised to sell, ISO certificates…">{{ d.notes }}</textarea></section>
   <div class="actions"><button class="btn" type="submit">Save profile</button>{% if back %}<a class="btn ghost" href="{{ back }}">Back to the bid</a>{% endif %}</div>
 </form>
+<section class="card" id="stamp" style="margin-top:16px"><h2 style="margin-bottom:6px">Company stamp</h2>
+  <p class="small muted" style="margin:0 0 10px">Printed in the signature block of every form, and on every page when a buyer asks for each page to be stamped. Photograph or scan your stamp on white paper; a PNG with a clear background prints best.</p>
+  <div class="row-flex" style="gap:16px;align-items:center;flex-wrap:wrap">
+    {% if d.stamp_v %}<img src="/profile/stamp?v={{ d.stamp_v }}" alt="Your company stamp" style="width:96px;height:96px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff">{% endif %}
+    <form method="post" action="/profile/stamp" enctype="multipart/form-data" class="row-flex" style="gap:8px;flex-wrap:wrap">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+      <input type="file" name="stamp" accept="image/png,image/jpeg" required aria-label="Stamp picture">
+      <button class="btn sm" type="submit">{{ "Replace stamp" if d.stamp_v else "Upload stamp" }}</button></form>
+    {% if d.stamp_v %}<form method="post" action="/profile/stamp/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm danger" type="submit">Remove stamp</button></form>{% endif %}
+  </div>
+</section>
 {% endblock %}

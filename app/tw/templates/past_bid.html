@@ -2,8 +2,8 @@
 {% block title %}{{ pb.name }} | Past bids | Tender Watcher{% endblock %}
 {% block crumbs %}<a href="/bids">Bid Room</a>{{ icon("chev-r") }}<a href="/past-bids">Past bids</a>{{ icon("chev-r") }}<span class="here">{{ pb.name }}</span>{% endblock %}
 {% block body %}
-{% set heads = {"name": "Name", "number": "Number", "issuer": "Issued by", "expires": "Valid until", "client": "Client", "value_etb": "Value, ETB", "year_completed": "Year", "region": "Region", "role": "Role", "scope": "What you did", "qualification": "Qualification", "years_experience": "Years"} %}
-{% set labels = {"legal_name": "Legal name", "grade": "Grade", "address": "Address", "phone": "Phone", "email": "Email", "tin": "TIN", "vat_number": "VAT number", "signatory_name": "Signs bids: name", "signatory_title": "Signs bids: title", "year_established": "Established", "staff_count": "Permanent staff", "regions": "Regions", "work_types": "Work and goods", "equipment": "Equipment", "notes": "Other notes"} %}
+{% set heads = {"name": "Name", "number": "Number", "issuer": "Issued by", "expires": "Valid until", "client": "Client", "value_etb": "Value, ETB", "year_completed": "Year", "region": "Region", "role": "Role", "scope": "What you did", "qualification": "Qualification", "years_experience": "Years", "similar_years": "Years on similar work", "item": "Item", "qty": "Qty", "ownership": "Owned or hired", "year_made": "Year made"} %}
+{% set labels = {"legal_name": "Legal name", "grade": "Grade", "address": "Address", "phone": "Phone", "email": "Email", "tin": "TIN", "vat_number": "VAT number", "signatory_name": "Signs bids: name", "signatory_title": "Signs bids: title", "year_established": "Established", "staff_count": "Permanent staff", "regions": "Regions", "work_types": "Work and goods", "equipment": "Equipment", "notes": "Other notes", "po_box": "P.O. Box", "bank_name": "Bank", "bank_account": "Bank account"} %}
 <div {% if state == "reading" %}data-poll-state="/past-bids/{{ pb.id }}/state"{% endif %}>
 <div class="page-header">
   <div class="ph-t">{% if d.about.buyer %}<p class="ph-sub" style="margin:0 0 4px">{{ d.about.buyer }}{% if d.about.reference %} · <span class="mono">{{ d.about.reference }}</span>{% endif %}{% if d.about.year %} · {{ d.about.year }}{% endif %}</p>{% endif %}
@@ -29,7 +29,7 @@
     <div class="card-h"><div><h2>Add to your company profile</h2><p class="small muted">Found in this bid and not yet in your profile. New items are ticked; where your profile says something else, it stays unless you tick it.</p></div></div>
     <ul class="checklist">
     {% for f in o.fields %}<li><label class="check grow"><input type="checkbox" name="f" value="{{ f.key }}" {{ "checked" if f.new }}> <span><b>{{ labels.get(f.key, f.key) }}:</b> {{ f.value }}{% if f.have %}<span class="sub muted"> Your profile says: {{ f.have }}</span>{% endif %}</span></label></li>{% endfor %}
-    {% for kind, title in [("licences", "Licence"), ("projects", "Project"), ("key_personnel", "Key staff")] %}{% for x in o.rows[kind] %}
+    {% for kind, title in [("licences", "Licence"), ("projects", "Project"), ("key_personnel", "Key staff"), ("equipment_items", "Equipment")] if kind in ROWS %}{% for x in o.rows[kind] %}
       <li><label class="check grow"><input type="checkbox" name="r" value="{{ kind }}:{{ x.i }}" checked> <span><b>{{ title }}:</b> {% for c in ROWS[kind] if x.row[c] %}{{ x.row[c] }}{{ " · " if not loop.last }}{% endfor %}</span></label></li>{% endfor %}{% endfor %}
     {% for x in o.turnover %}<li><label class="check grow"><input type="checkbox" name="r" value="turnover:{{ x.i }}" checked> <span><b>Turnover {{ x.row.year }}:</b> {{ x.row.amount_etb }} ETB</span></label></li>{% endfor %}
     </ul>
@@ -46,8 +46,8 @@
   {% if d.price_lines %}<section class="card flush"><div class="card-h"><h2>Price schedule</h2>{% if d.price_notes %}<span class="small muted">{{ d.price_notes }}</span>{% endif %}</div>
     <div class="table-wrap"><table class="dt"><thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price</th></tr></thead>
     <tbody>{% for r in d.price_lines %}<tr><td>{{ r.item }}</td><td>{{ r.unit }}</td><td class="num">{{ r.qty }}</td><td class="num">{{ r.price }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
-  {% for kind, title in [("projects", "Experience in this bid"), ("key_personnel", "Staff in this bid"), ("licences", "Licences in this bid")] if d[kind] %}
-  <section class="card flush"><div class="card-h"><h2>{{ title }}</h2></div><div class="table-wrap"><table class="dt"><thead><tr>{% for c in ROWS[kind] %}<th>{{ heads[c] }}</th>{% endfor %}</tr></thead>
+  {% for kind, title in [("projects", "Experience in this bid"), ("key_personnel", "Staff in this bid"), ("equipment_items", "Equipment in this bid"), ("licences", "Licences in this bid")] if kind in ROWS and d[kind] %}
+  <section class="card flush"><div class="card-h"><h2>{{ title }}</h2></div><div class="table-wrap"><table class="dt"><thead><tr>{% for c in ROWS[kind] %}<th>{{ heads.get(c, c) }}</th>{% endfor %}</tr></thead>
     <tbody>{% for r in d[kind] %}<tr>{% for c in ROWS[kind] %}<td class="small">{{ r[c] or "–" }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></section>
   {% endfor %}
 </div>

@@ -3,18 +3,25 @@ and the bidding document, the prose is drafted from the company profile, and the
 saves as it's typed and prints as a ready-to-stamp document."""
 import datetime as dt
 import json
+import re
 import threading
 
-from fastapi import Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+import os
+import time
+
+from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 
-from . import bids
+from . import bidforms, bids, export, stamping
 from .db import Bid, PastBid, Paper, Tender
 from . import desk as desk_mod
 from . import library
 
 MEMBERS = ("member",)
+MAX_STAMP = 3_000_000
+MAX_BID_PDF = 120_000_000
+IMAGE_TYPES = {b"\x89PNG": ".png", b"\xff\xd8\xff": ".jpg"}
 
 
 def age(when):
@@ -56,12 +63,116 @@ def register(app, h):
         form = await request.form()
         h.check_csrf(u, form.get("csrf"))
         d = bids.profile_from_form(form, u.company)
+        if bids.load_profile(u.company).get("stamp_v"):  # the stamp is uploaded on its own; keep it
+            d["stamp_v"] = bids.load_profile(u.company)["stamp_v"]
         u.company.profile = json.dumps(d, ensure_ascii=False)
         session.commit()
         back = str(form.get("back", ""))
         if back.startswith("/bids/"):
             return RedirectResponse(back + "?profile=1", 303)
         return RedirectResponse("/profile?saved=1", 303)
+
+    # -- the company stamp: printed in every signature block, and on every page when the buyer asks
+    stamps = os.path.join(h.data_dir, "stamps")
+
+    def stamp_path(company_id):
+        return os.path.join(stamps, f"{int(company_id)}.img")
+
+    def stamp_bytes(company_id):
+        try:
+            with open(stamp_path(company_id), "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+
+    @app.post("/profile/stamp")
+    async def upload_stamp(request: Request, csrf: str = Form(""), back: str = Form(""),
+                           stamp: UploadFile | None = File(None), session=Depends(db)):
+        u = member(request, session)
+        h.check_csrf(u, csrf)
+        data = await stamp.read(MAX_STAMP + 1) if stamp else b""
+        if not data or len(data) > MAX_STAMP or not any(data.startswith(k) for k in IMAGE_TYPES):
+            raise HTTPException(400, "Choose a PNG or JPG picture of your stamp, under 3 MB. A PNG with a clear background prints best.")
+        try:
+            data = stamping.clean_stamp(data)
+        except stamping.StampError as e:
+            raise HTTPException(400, str(e))
+        os.makedirs(stamps, exist_ok=True)
+        with open(stamp_path(u.company_id), "wb") as f:
+            f.write(data)
+        d = bids.load_profile(u.company)
+        d["stamp_v"] = str(int(time.time()))
+        u.company.profile = json.dumps(d, ensure_ascii=False)
+        session.commit()
+        return RedirectResponse((back if back.startswith("/bids/") else "/profile?saved=1") + "#stamp", 303)
+
+    @app.post("/profile/stamp/delete")
+    def delete_stamp(request: Request, csrf: str = Form(""), session=Depends(db)):
+        u = member(request, session)
+        h.check_csrf(u, csrf)
+        try:
+            os.remove(stamp_path(u.company_id))
+        except OSError:
+            pass
+        d = bids.load_profile(u.company)
+        d.pop("stamp_v", None)
+        u.company.profile = json.dumps(d, ensure_ascii=False)
+        session.commit()
+        return RedirectResponse("/profile?saved=1#stamp", 303)
+
+    @app.get("/profile/stamp")
+    def show_stamp(request: Request, session=Depends(db)):
+        u = member(request, session)
+        data = stamp_bytes(u.company_id)
+        if not data:
+            raise HTTPException(404, "No stamp yet.")
+        return Response(data, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
+
+    # -- stamp and number every page of a finished bid
+    @app.post("/bids/{bid_id}/stamp")
+    async def stamp_bid(request: Request, bid_id: int, session=Depends(db)):
+        u = member(request, session)
+        form = await request.form(max_files=40, max_part_size=MAX_BID_PDF)
+        h.check_csrf(u, form.get("csrf"))
+        b = own_bid(session, u, bid_id)
+        pdfs, size = [], 0
+        for up in form.getlist("pdf"):
+            if not hasattr(up, "read"):
+                continue
+            data = await up.read(MAX_BID_PDF + 1)
+            size += len(data)
+            if size > MAX_BID_PDF:
+                raise HTTPException(413, "The PDFs are over 120 MB together. Stamp the bid in two parts.")
+            if data:
+                if not data.startswith(b"%PDF"):
+                    raise HTTPException(400, f"{up.filename or 'A file'} is not a PDF. Save it as PDF first.")
+                pdfs.append(data)
+        if form.get("papers"):  # the company file's scans this tender asks for, after the bid itself
+            x = bundle(session, u, b)
+            folder = os.path.join(h.data_dir, "papers", str(u.company_id))
+            for r in x["env"]["items"]:
+                p = x["held"].get(r["key"]) if r.get("from") == "file" else None
+                if not p or not p.file:
+                    continue
+                try:
+                    with open(os.path.join(folder, os.path.basename(p.file)), "rb") as f:
+                        data = f.read()
+                except OSError:
+                    continue
+                pdfs.append(data if data.startswith(b"%PDF") else stamping.image_pdf(data))
+        if not pdfs:
+            raise HTTPException(400, "Choose the PDF of your bid, or tick the company file papers.")
+        prof = bids.load_profile(u.company)
+        stamp = stamp_bytes(u.company_id) if form.get("stamp") else None
+        footer = prof.get("legal_name", "") + (f" · {b.tender.reference}" if b.tender.reference else "")
+        try:
+            out, pages = stamping.stamp_pdf(pdfs, stamp, footer=footer if form.get("numbers") else "",
+                                            numbers=bool(form.get("numbers")))
+        except stamping.StampError as e:
+            raise HTTPException(400, str(e))
+        name = re.sub(r"[^A-Za-z0-9]+", "-", b.tender.title or "bid")[:50].strip("-") or "bid"
+        return Response(out, media_type="application/pdf", headers={
+            "Content-Disposition": f'attachment; filename="stamped-{name}.pdf"', "X-Pages": str(pages)})
 
     # -- bids
     @app.get("/bids", response_class=HTMLResponse)
@@ -104,16 +215,50 @@ def register(app, h):
             session.commit()
         return RedirectResponse(f"/bids/{b.id}", 303)
 
+    def bundle(session, u, b):
+        """Everything the room and the printed bid show: the bid's forms with their filled text and rows."""
+        d = bids.ensure(bids.load(b), b.tender)
+        prof = bids.load_profile(u.company)
+        papers = session.scalars(select(Paper).where(Paper.company_id == u.company_id)).all()
+        env = desk_mod.envelope(b.tender, papers, today(), d)
+        total = bids.total(d)
+        values = bidforms.tokens(b.tender, prof, d, total, today())
+        forms = bidforms.form_list(d)
+        for f in forms:
+            if f["type"] == "letter":
+                f["text"] = bidforms.letter_text(d, f["key"])
+                f["standard"] = bidforms.standard_text(f["key"], d["kind"])
+                f["filled"] = bidforms.render(f["text"], values)
+            elif f["type"] == "table":
+                f["rows"] = bidforms.table_rows(d, f["key"], prof)
+                f["prefill"] = bidforms.prefill_rows(f["key"], prof, d)
+            elif f["type"] == "text":
+                f["text"] = d.get(f["field"]) if f["field"] else ((d.get("forms") or {}).get(f["key"]) or {}).get("text", "")
+                f["outline_text"] = bidforms.OUTLINES.get(f["outline"], "")
+            f["done"] = bidforms.form_done(f, d, prof, values, env)
+        det = d["details"]
+        if det.get("security_type") == "declaration":
+            values["securing_declaration"] = bidforms.render(bidforms.SECURING_DECLARATION, values)
+        held = {}
+        for r in env["items"]:
+            if r.get("from") == "file":
+                held[r["key"]] = desk_mod.best(papers, r["key"], today())
+        live = [f for f in forms if f["on"] and f["type"] != "details"]
+        letters = [f["filled"] for f in live if f["type"] == "letter"]
+        return {"d": d, "prof": prof, "env": env, "total": total, "values": values, "forms": forms, "held": held,
+                "forms_done": sum(1 for f in live if f["done"]), "forms_total": len(live),
+                "confirm": bids.to_confirm(d, letters), "vat": total * bidforms.VAT_RATE
+                if det.get("vat") == "add" and prof.get("vat_registered") else 0.0,
+                "security_until": bidforms.security_valid_until(b.tender, det)}
+
     @app.get("/bids/{bid_id}", response_class=HTMLResponse)
     def room(request: Request, bid_id: int, session=Depends(db)):
         u = member(request, session)
         b = own_bid(session, u, bid_id)
-        d = bids.load(b)
-        prof = bids.load_profile(u.company)
+        x = bundle(session, u, b)
+        d, prof, env = x["d"], x["prof"], x["env"]
         pct, missing = bids.completeness(prof)
-        projects = {f"p{i + 1}": x for i, x in enumerate(prof.get("projects", []))}
-        papers = session.scalars(select(Paper).where(Paper.company_id == u.company_id)).all()
-        env = desk_mod.envelope(b.tender, papers, today(), d)
+        projects = {f"p{i + 1}": p for i, p in enumerate(prof.get("projects", []))}
         activity = [("Bid started", b.created_at)]
         if d.get("drafted_at"):
             activity.append(("Drafted by Bid Room", d["drafted_at"]))
@@ -121,8 +266,8 @@ def register(app, h):
         past = [pb for pb, _ in library.ranked(session.scalars(select(PastBid).where(
             PastBid.company_id == u.company_id, PastBid.state == "ready")).all(), b.tender)]
         return page(request, "bid.html", u, b=b, t=b.tender, d=d, prog=progress(d), pct=pct, missing=missing, past=past,
-                    confirm=bids.to_confirm(d), total=bids.total(d), projects=projects, STATUS=bids.STATUS_LABEL,
-                    drafting=b.state == "drafting", env=env, activity=activity)
+                    confirm=x["confirm"], total=x["total"], projects=projects, STATUS=bids.STATUS_LABEL,
+                    drafting=b.state == "drafting", env=env, activity=activity, x=x, F=bidforms, label=desk_mod.label)
 
     @app.post("/bids/{bid_id}/save")
     async def autosave(request: Request, bid_id: int, session=Depends(db)):
@@ -137,13 +282,16 @@ def register(app, h):
             raise HTTPException(400, "Bad save.")
         if not isinstance(incoming, dict):
             raise HTTPException(400, "Bad save.")
-        d = bids.clean_save(bids.load(b), incoming)
+        d = bids.clean_save(bids.ensure(bids.load(b), b.tender), incoming)
         b.data, b.updated_at = json.dumps(d, ensure_ascii=False), now()
         if incoming.get("state") in ("open", "submitted") and b.state != "drafting":
             b.state = incoming["state"]
         session.commit()
-        return {"ok": True, "saved": b.updated_at.astimezone(h.TZ).strftime("%H:%M"), "total": bids.total(d),
-                "progress": progress(d), "confirm": bids.to_confirm(d)}
+        x = bundle(session, u, b)
+        return {"ok": True, "saved": b.updated_at.astimezone(h.TZ).strftime("%H:%M"), "total": x["total"],
+                "progress": progress(d), "confirm": x["confirm"], "values": x["values"],
+                "forms": {f["key"]: f["done"] for f in x["forms"]}, "forms_done": x["forms_done"],
+                "forms_total": x["forms_total"], "vat": x["vat"], "security_until": x["security_until"]}
 
     def drafting_job(bid_id, profile_dict, use_past=False):
         with h.Session() as session:
@@ -185,13 +333,38 @@ def register(app, h):
         b = own_bid(session, u, bid_id)
         return JSONResponse({"state": b.state, "error": b.draft_error})
 
-    @app.get("/bids/{bid_id}/print", response_class=HTMLResponse)
-    def printable(request: Request, bid_id: int, session=Depends(db)):
+    def print_page(request, bid_id, session, word=False):  # word: no screen bar or scripts
         u = member(request, session)
         b = own_bid(session, u, bid_id)
-        d = bids.load(b)
-        prof = bids.load_profile(u.company)
-        projects = {f"p{i + 1}": x for i, x in enumerate(prof.get("projects", []))}
-        chosen = [projects[i] for i in d.get("projects", []) if i in projects] or list(projects.values())
-        return page(request, "bid_print.html", u, b=b, t=b.tender, d=d, p=prof, chosen=chosen, total=bids.total(d),
-                    confirm=bids.to_confirm(d), STATUS=bids.STATUS_LABEL, num=bids._num)
+        x = bundle(session, u, b)
+        only = request.query_params.get("part", "")
+        return page(request, "bid_print.html", u, b=b, t=b.tender, d=x["d"], p=x["prof"], x=x, total=x["total"],
+                    confirm=x["confirm"], STATUS=bids.STATUS_LABEL, num=bids._num, F=bidforms, word=word,
+                    only=only if only in ("T", "F") else "", label=desk_mod.label)
+
+    @app.get("/bids/{bid_id}/print", response_class=HTMLResponse)
+    def printable(request: Request, bid_id: int, session=Depends(db)):
+        return print_page(request, bid_id, session)
+
+    @app.get("/bids/{bid_id}/download")
+    def download(request: Request, bid_id: int, session=Depends(db)):
+        """The whole bid as Word or PDF, at any time, to finish offline. prices=blank leaves the rates
+        and totals empty for firms that keep their prices off the platform."""
+        u = member(request, session)
+        b = own_bid(session, u, bid_id)
+        x = bundle(session, u, b)
+        q = request.query_params
+        fmt = "pdf" if q.get("format") == "pdf" else "docx"
+        blank = q.get("prices") == "blank" or not x["total"]
+        stamp = stamp_bytes(u.company_id) if q.get("stamp") != "0" else None
+        pages = export.build(x, b.tender, x["prof"], today(), blank_prices=blank)
+        footer = x["prof"].get("legal_name", "") + (f" · {b.tender.reference}" if b.tender.reference else "")
+        if fmt == "pdf":
+            data = export.to_pdf(pages, x["prof"], stamp, footer, stamp_every=q.get("every") == "1")
+            kind = "application/pdf"
+        else:
+            data = export.to_docx(pages, x["prof"], stamp, footer)
+            kind = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        name = re.sub(r"[^A-Za-z0-9]+", "-", b.tender.title or "bid")[:60].strip("-") or "bid"
+        return Response(data, media_type=kind,
+                        headers={"Content-Disposition": f'attachment; filename="bid-{name}.{fmt}"'})

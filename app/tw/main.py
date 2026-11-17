@@ -1438,7 +1438,7 @@ def create_app(settings=None, claude=None):
                                                 paginate=paginate, check_csrf=check_csrf, TZ=TZ, sync=sync,
                                                 board_json=s.board_json, site_url=s.site_url, photos=photos))
     from . import bidroom
-    bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
+    bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf, data_dir=s.data_dir,
                                           TZ=TZ, has_access=has_bidroom, get_claude=get_claude, Session=Session,
                                           sync_drafts=False))
     desk_h = SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,

@@ -3,17 +3,10 @@
 {% block page_id %}bid{% endblock %}
 {% block crumbs %}<a href="/bids">Bid Room</a>{{ icon("chev-r") }}<span class="here">{{ t.title }}</span>{% endblock %}
 {% block body %}
-{% macro reuse_form(part) -%}
-{%- if past and not drafting %}<form method="post" action="/bids/{{ b.id }}/reuse" class="row-flex reuse" data-reuse>
-  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part" value="{{ part }}">
-  <label class="sr" for="past-{{ part }}">Past bid to copy from</label>
-  <select id="past-{{ part }}" name="past" class="sm" style="max-width:200px">{% for pb in past %}<option value="{{ pb.id }}">{{ pb.name[:50] }}</option>{% endfor %}</select>
-  <button class="btn sm ghost" type="submit">{{ icon("file") }}{{ "Add its lines" if part == "financial" else "Copy from past bid" }}</button></form>
-{%- endif %}
-{%- endmacro %}
 {% set gaps = d.checklist|selectattr("status", "equalto", "gap")|rejectattr("done")|list %}
-{% set all_done = prog.done + env.done %}{% set all_total = prog.total + env.total %}
-<div id="room" data-bid="{{ b.id }}" data-csrf="{{ csrf }}" data-state="{{ b.state }}">
+{% set all_done = prog.done + x.forms_done %}{% set all_total = prog.total + x.forms_total %}
+<div id="room" data-bid="{{ b.id }}" data-csrf="{{ csrf }}" data-state="{{ b.state }}" data-kind="{{ d.kind }}">
+<script type="application/json" id="bid-values">{{ x["values"] | tojson }}</script>
 <div class="page-header">
   <div class="ph-t">
     <p class="ph-sub" style="margin:0 0 4px"><a href="/t/{{ t.id }}">{{ t.buyer }}</a>{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}</p>
@@ -27,6 +20,17 @@
   </div>
   <div class="ph-act">
     <a class="btn ghost" href="/bids/{{ b.id }}/print" target="_blank" rel="noopener">{{ icon("print") }}Print or save PDF</a>
+    <details class="menu dl-menu"><summary class="btn ghost">Download</summary>
+      <form class="menu-pop" method="get" action="/bids/{{ b.id }}/download">
+        <p class="small muted" style="margin:0 0 8px">The whole bid, to finish offline at any time.</p>
+        <label class="check"><input type="radio" name="format" value="docx" checked> Word (.docx), to edit</label>
+        <label class="check"><input type="radio" name="format" value="pdf"> PDF, ready to print</label>
+        <hr style="margin:8px 0">
+        <label class="check"><input type="checkbox" name="prices" value="blank" {{ "checked" if not total }}> Leave prices blank</label>
+        <p class="hint" style="margin:2px 0 6px 20px">Rates, totals and the price in the letter stay empty for you to write in.</p>
+        {% if x.prof.stamp_v %}<label class="check"><input type="checkbox" name="every" value="1"> Stamp every page (PDF)</label>{% endif %}
+        <button class="btn sm" type="submit" style="margin-top:8px;width:100%">Download</button>
+      </form></details>
     <form method="post" action="/bids/{{ b.id }}/draft" id="draft-form"><input type="hidden" name="csrf" value="{{ csrf }}">
       <button class="btn" type="submit" {{ "disabled" if drafting }}>{{ icon("spark") }}{% if drafting %}Drafting…{% elif d.drafted_at %}Draft again{% else %}Draft this bid{% endif %}</button>
       {% if past %}<label class="check small" style="margin-top:4px"><input type="checkbox" name="use_past" value="1" checked> Reuse wording from my {{ past|length }} past bid{{ "s" if past|length != 1 }}</label>{% endif %}</form>
@@ -40,14 +44,12 @@
 <div class="layout-side">
   <div class="room-main" style="min-width:0">
     <div class="room-tabs"><div class="tabs" role="tablist" data-tabs aria-label="Bid sections">
-      <button type="button" role="tab" aria-controls="tab-checklist" aria-selected="true">Checklist{% if gaps %} <em class="bad">{{ gaps|length }}</em>{% elif prog.total %} <em>{{ prog.done }}/{{ prog.total }}</em>{% endif %}</button>
-      <button type="button" role="tab" aria-controls="tab-envelope">Envelope{% if env.blockers %} <em class="bad">{{ env.blockers|length }}</em>{% else %} <em>{{ env.done }}/{{ env.total }}</em>{% endif %}</button>
-      <button type="button" role="tab" aria-controls="tab-letter">Cover letter</button>
-      <button type="button" role="tab" aria-controls="tab-company">Company section</button>
-      <button type="button" role="tab" aria-controls="tab-technical">Technical offer</button>
-      <button type="button" role="tab" aria-controls="tab-price">Financial offer</button>
+      <button type="button" role="tab" aria-controls="tab-forms" aria-selected="true">Bid forms <em data-forms-count>{{ x.forms_done }}/{{ x.forms_total }}</em></button>
+      <button type="button" role="tab" aria-controls="tab-checklist">Checklist{% if gaps %} <em class="bad">{{ gaps|length }}</em>{% elif prog.total %} <em>{{ prog.done }}/{{ prog.total }}</em>{% endif %}</button>
       <button type="button" role="tab" aria-controls="tab-document">Bidding document</button>
     </div></div>
+
+    {% include "bid_forms.html" %}
 
     <div class="room-panel" id="tab-checklist" role="tabpanel">
       <section class="card flush" id="checklist" aria-labelledby="cl-h">
@@ -68,47 +70,6 @@
       {% if d.open_questions %}<section class="card" style="margin-top:12px"><h2>Decide before submitting</h2><ul style="margin:0">{% for q in d.open_questions %}<li>{{ q }}</li>{% endfor %}</ul></section>{% endif %}
     </div>
 
-    <div class="room-panel" id="tab-envelope" role="tabpanel">
-      <section class="card flush" aria-labelledby="env-h">
-        <div class="card-h"><h2 id="env-h">What goes in the envelope</h2><span class="small muted">{{ env.done }} of {{ env.total }} in</span></div>
-        <p class="small muted" style="margin:0;padding:8px 16px;border-bottom:1px solid var(--line)">Papers come from your document vault and are checked against the closing date. The list is read from the notice, so check it against the bid document.</p>
-        <ul class="checklist">
-          {% for r in env["items"] %}<li>{{ mark(r.state) }}<div class="body"><b>{{ r.label }}</b>{% if r.note %}<p>{{ r.note }}</p>{% endif %}</div>
-            <div class="end">{{ env_state(r) }}
-              {% if r.state in ("missing", "late") %}<a class="btn sm ghost" href="/file?add={{ r.key }}#add">Add to vault</a>
-              {% elif r.key == "technical" and r.state != "in" %}<a class="btn sm ghost" href="#technical" data-tab-link="technical">Write</a>
-              {% elif r.key == "price" and r.state != "in" %}<a class="btn sm ghost" href="#price" data-tab-link="price">Add prices</a>{% endif %}</div></li>{% endfor %}
-        </ul>
-      </section>
-    </div>
-
-    {% for key, tab, label, hint in [("cover_letter", "letter", "Cover letter", "The body of your bid submission letter. Address, date and signature are added when you print."),
-                                     ("profile_section", "company", "Company section", "Who you are, your licences, capacity and why you suit this contract."),
-                                     ("technical", "technical", "Technical offer", "Your approach, specifications, delivery schedule, warranty and support.")] %}
-    <div class="room-panel" id="tab-{{ tab }}" role="tabpanel">
-      <section class="card editor" aria-labelledby="{{ key }}-h">
-        <div class="card-h"><div><h2 id="{{ key }}-h">{{ label }}</h2><p class="small muted">{{ hint }}</p></div>{{ reuse_form(key) }}</div>
-        <textarea data-field="{{ key }}" rows="{{ 16 if key != 'technical' else 14 }}" aria-labelledby="{{ key }}-h">{{ d[key] }}</textarea>
-      </section>
-    </div>
-    {% endfor %}
-
-    <div class="room-panel" id="tab-price" role="tabpanel">
-      <section class="card flush" aria-labelledby="fin-h">
-        <div class="card-h"><h2 id="fin-h">Financial offer</h2>{{ reuse_form("financial") }}<button class="btn sm ghost" type="button" id="add-line">{{ icon("plus") }}Add a line</button></div>
-        <div class="table-wrap"><table class="fin" id="fin">
-          <thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th><span class="sr">Remove</span></th></tr></thead>
-          <tbody>{% for r in (d.financial or []) + [{}] %}<tr>
-            <td><input data-col="item" value="{{ r.item }}" aria-label="Item"></td><td><input data-col="unit" value="{{ r.unit }}" aria-label="Unit" style="width:80px"></td>
-            <td class="num"><input data-col="qty" value="{{ r.qty }}" inputmode="decimal" aria-label="Quantity" style="width:80px"></td>
-            <td class="num"><input data-col="price" value="{{ r.price }}" inputmode="decimal" aria-label="Unit price" style="width:120px"></td>
-            <td class="num" data-amount></td><td><button class="iconbtn del-row" type="button" aria-label="Remove line" title="Remove line">{{ icon("x") }}</button></td></tr>{% endfor %}</tbody>
-        </table></div>
-        <div class="fin-total"><span class="muted">Total</span><b data-total>{{ "{:,.2f}".format(total) }}</b><span>ETB</span></div>
-      </section>
-      <p class="hint" style="margin-top:8px">Prices stay in your bid only. Check VAT and the price schedule format the tender asks for.</p>
-    </div>
-
     <div class="room-panel" id="tab-document" role="tabpanel">
       <section class="card editor" aria-labelledby="doc-h">
         <div class="card-h"><div><h2 id="doc-h">The bidding document</h2><p class="small muted">Newspaper notices are short. Paste the bidding document's instructions and qualification criteria (ITB, Section III, data sheet) for a complete checklist, then press Draft again.</p></div></div>
@@ -120,12 +81,12 @@
   <aside>
     <section class="card" aria-labelledby="rd-h">
       <p class="section-title" id="rd-h">Submission readiness</p>
-      {{ ready_ring(all_done, all_total, "Ready to submit" if all_total and all_done == all_total else (all_total - all_done) ~ " thing" ~ ("s" if all_total - all_done != 1 else "") ~ " to finish", "Checklist and envelope together") }}
+      {{ ready_ring(all_done, all_total, "Ready to submit" if all_total and all_done == all_total else (all_total - all_done) ~ " thing" ~ ("s" if all_total - all_done != 1 else "") ~ " to finish", "Checklist and forms together") }}
       <div class="stack" style="margin-top:14px">
         <div><div class="prog-row" style="justify-content:space-between"><span>Requirements</span><span data-progress>{{ prog.done }} of {{ prog.total }} done</span></div>
           <span class="prog"><i data-bar style="width:{{ (prog.done * 100 // prog.total) if prog.total else 0 }}%"></i></span></div>
-        <div><div class="prog-row" style="justify-content:space-between"><span>Envelope papers</span><span>{{ env.done }} of {{ env.total }} in</span></div>
-          <span class="prog {{ 'bad' if env.blockers }}"><i style="width:{{ (env.done * 100 // env.total) if env.total else 0 }}%"></i></span></div>
+        <div><div class="prog-row" style="justify-content:space-between"><span>Bid forms</span><span data-forms-text>{{ x.forms_done }} of {{ x.forms_total }} ready</span></div>
+          <span class="prog"><i data-forms-bar style="width:{{ (x.forms_done * 100 // x.forms_total) if x.forms_total else 0 }}%"></i></span></div>
         <div><div class="prog-row" style="justify-content:space-between"><span>Company profile</span><a href="/profile?back=/bids/{{ b.id }}">{{ pct }}% ready</a></div>
           <span class="prog {{ 'ok' if pct >= 80 else 'warn' }}"><i style="width:{{ [pct, 4]|max }}%"></i></span></div>
       </div>
@@ -136,7 +97,18 @@
     </section>
     {% if env.blockers %}<section class="card" aria-label="Blocking papers"><p class="section-title">Blocking</p>
       <div class="stack">{% for r in env.blockers %}<div class="row-flex"><span class="ind bad grow">{{ r.label }}{% if r.state == "late" %}: expires before closing{% endif %}</span><a class="btn sm ghost" href="/file?add={{ r.key }}#add">Add</a></div>{% endfor %}</div></section>{% endif %}
-    <section class="card" data-confirm-box {{ "hidden" if not confirm }}><p class="section-title">To confirm</p><p class="small muted">Facts the draft needs and your profile doesn't have. Replace each [TO CONFIRM] in the text.</p><ul data-confirm class="small" style="margin:0">{% for c in confirm %}<li>{{ c }}</li>{% endfor %}</ul></section>
+    <section class="card" id="stamp-pdf" aria-labelledby="sp-h"><p class="section-title" id="sp-h">Stamp and number every page</p>
+      <p class="small muted" style="margin:0 0 8px">For buyers who want the stamp on every page. Choose the finished bid as PDF, even 300 pages; you get it back with {{ "your stamp and " if x.prof.stamp_v }}"Page N of M" on every page.</p>
+      {% if not x.prof.stamp_v %}<p class="small" style="margin:0 0 8px"><a href="/profile?back=/bids/{{ b.id }}#stamp">Add your stamp</a> first to put it on the pages.</p>{% endif %}
+      <form method="post" action="/bids/{{ b.id }}/stamp" enctype="multipart/form-data" class="stack" data-stamp-form>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="file" name="pdf" accept="application/pdf" multiple aria-label="PDF files of the bid">
+        <label class="check"><input type="checkbox" name="papers" value="1" checked> Add the scans from my company file at the end</label>
+        {% if x.prof.stamp_v %}<label class="check"><input type="checkbox" name="stamp" value="1" checked> Stamp every page</label>{% endif %}
+        <label class="check"><input type="checkbox" name="numbers" value="1" checked> Number the pages</label>
+        <button class="btn sm" type="submit">Stamp and download</button>
+      </form></section>
+    <section class="card" data-confirm-box {{ "hidden" if not confirm }}><p class="section-title">To confirm</p><p class="small muted">Facts the forms need and your profile or this bid doesn't have yet. Fill them and they disappear from here.</p><ul data-confirm class="small" style="margin:0">{% for c in confirm %}<li>{{ c }}</li>{% endfor %}</ul></section>
     {% if d.projects %}<section class="card"><p class="section-title">Experience to show</p><ul class="small" style="margin:0">{% for i in d.projects if i in projects %}{% set x = projects[i] %}<li>{{ x.name }}<span class="muted"> · {{ x.client }}{% if x.year_completed %}, {{ x.year_completed }}{% endif %}</span></li>{% endfor %}</ul></section>{% endif %}
     <section class="card"><p class="section-title">Activity</p>
       <ul class="timeline">{% for label, when in activity %}<li class="{{ 'ok' if label == 'Submitted' }}"><b>{{ label }}</b>{% if when is string %}{{ when | long_date }}{% else %}{{ when.strftime("%d %b %Y, %H:%M") }}{% endif %}</li>{% endfor %}</ul></section>
