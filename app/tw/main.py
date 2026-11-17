@@ -17,7 +17,7 @@ from sqlalchemy import func, or_, select
 
 from . import notices
 from . import auth
-from .auth import check_password, hash_password, norm_phone
+from .auth import check_password, hash_password, norm_login, norm_phone
 from .config import Settings
 from .db import (AlertSent, AuditLog, Bid, Company, LoginFailure, Paper, Payment, Price, SavedTender, Setting, Tender,
                  User, make_session, now)
@@ -612,7 +612,7 @@ def create_app(settings=None, claude=None):
     @app.post("/login")
     def login(request: Request, phone: str = Form(""), password: str = Form(""), next: str = Form("/"),
               session=Depends(db)):
-        p = norm_phone(phone)
+        p = norm_login(phone)
         keys = ["ip:" + client_ip(request)[:60]] + (["phone:" + p] if p else [])
         since = now() - dt.timedelta(minutes=LOCK_MINUTES)
         for key in keys:
@@ -628,7 +628,7 @@ def create_app(settings=None, claude=None):
             session.add_all([LoginFailure(key=k) for k in keys])
             session.commit()
             return page(request, "login.html", None, status=400, next=next,
-                        error="That phone number and password don't match. Check both and try again.")
+                        error="That phone number (or username) and password don't match. Check both and try again.")
         if admin_host and (u.role in TWO_STEP_ROLES) != on_admin(request):
             where = (s.admin_url if u.role in TWO_STEP_ROLES else s.site_url).split("//")[-1]
             return page(request, "login.html", None, status=400, next=next,
