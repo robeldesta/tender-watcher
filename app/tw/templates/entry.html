@@ -1,0 +1,67 @@
+{% extends layout %}{% block title %}Check the tender | Tender Watcher{% endblock %}
+{% block body %}
+{% set v = form if form else t %}
+<p><a href="{{ '/review' if me.role in ('admin','reviewer') else '/collect' }}">← Back</a></p>
+<h1>{% if t.status == "pending" %}Check the tender{% else %}{{ t.status|capitalize }}{% endif %}</h1>
+{% if new and new > 1 %}<p class="alert ok">This photo holds {{ new }} tenders. Check each one; they are listed under the photo.</p>{% endif %}
+{% if request.query_params.get("saved") %}<p class="alert ok">Saved.</p>{% endif %}
+{% for e in errors or [] %}<p class="alert bad">{{ e }}</p>{% endfor %}
+{% if t.doubts %}<p class="alert warn">{{ t.doubts }}</p>{% endif %}
+<div class="split">
+  <div>
+    {% if not t.photo and t.url | safe_url %}<div class="panel"><b>Found on {{ t.source or "a buyer's website" }}</b><p class="small muted" style="margin:6px 0 10px">Open the page, check the details against it, then approve or reject.</p><a class="btn ghost" href="{{ t.url | safe_url }}" target="_blank" rel="noopener nofollow">Open {{ t.url | host }}</a></div>{% endif %}
+    {% if t.photo %}<div class="photo"><a href="/notices/{{ t.photo }}" target="_blank"><img src="/notices/{{ t.photo }}" alt="The notice photo"></a></div>{% endif %}
+    {% if siblings %}<h3 style="margin-top:14px">Other tenders in this photo</h3><ul>{% for o in siblings %}<li><a href="/entry/{{ o.id }}">{{ o.title or o.id }}</a> <span class="small muted">{{ o.status }}</span></li>{% endfor %}</ul>{% endif %}
+    <p class="small muted">Added by {{ t.collector.name if t.collector else "the website watcher" }}{% if t.closes_raw %} · Date as printed: {{ t.closes_raw }}{% endif %}</p>
+  </div>
+  <form method="post" action="/entry/{{ t.id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <fieldset style="border:0;padding:0;margin:0" {{ "disabled" if not editable }}>
+    <div class="field"><label for="buyer">Buyer</label><input id="buyer" name="buyer" value="{{ v.buyer }}" required></div>
+    <div class="field"><label for="title">What they are buying</label><input id="title" name="title" value="{{ v.title }}" required></div>
+    <div class="grid">
+      <div class="field"><label for="category">Category</label><select id="category" name="category">
+        {% for k, lab in CATEGORIES.items() %}<option value="{{ k }}" {{ "selected" if v.category == k }}>{{ lab }}</option>{% endfor %}</select></div>
+      <fieldset class="field" style="border:0;padding:0;grid-column:1/-1"><legend style="font-size:14px;font-weight:600;color:var(--ink-2);margin-bottom:6px">Also list under</legend>
+        <input type="hidden" name="cats_shown" value="1">
+        <div class="chips">{% set have = (t.categories or "").strip(",").split(",") %}{% for k, lab in CATEGORIES.items() if k != "other" %}<label class="chip"><input type="checkbox" name="also" value="{{ k }}" {{ "checked" if k in have }}>{{ lab }}</label>{% endfor %}</div></fieldset>
+      <div class="field"><label for="type">Buyer type</label><select id="type" name="type">
+        {% for k, lab in TYPES.items() %}<option value="{{ k }}" {{ "selected" if v.type == k }}>{{ lab }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="grade">Grade (construction only)</label><input id="grade" name="grade" value="{{ v.grade }}" placeholder="GC-5"></div>
+    </div>
+    <div class="grid">
+      <div class="field"><label for="region">Region</label><select id="region" name="region"><option value="">Not stated</option>
+        {% for r in REGIONS %}<option {{ "selected" if v.region == r }}>{{ r }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="place">Town or woreda</label><input id="place" name="place" value="{{ v.place }}"></div>
+    </div>
+    <div class="grid">
+      <div class="field"><label for="closes">Closing date</label><input id="closes" name="closes" type="date" value="{{ v.closes }}">
+        <label style="font-weight:500;margin-top:8px;display:flex;gap:8px;align-items:center"><input type="checkbox" name="no_date" value="1" {{ "checked" if form and form.get("no_date") }}> The notice gives no closing date</label></div>
+      <div class="field"><label for="time">Closing time</label><input id="time" name="time" value="{{ v.time }}" placeholder="10:00" inputmode="numeric"></div>
+    </div>
+    <details class="field"><summary class="small">Notice gives an Ethiopian date? Enter it here instead</summary>
+      <div class="grid" style="margin-top:8px">
+        <div><label for="eth_day">Day</label><input id="eth_day" name="eth_day" inputmode="numeric" placeholder="11"></div>
+        <div><label for="eth_month">Month (1 = Meskerem)</label><input id="eth_month" name="eth_month" inputmode="numeric" placeholder="3"></div>
+        <div><label for="eth_year">Year (E.C.)</label><input id="eth_year" name="eth_year" inputmode="numeric" placeholder="2019"></div>
+      </div></details>
+    <div class="grid">
+      <div class="field"><label for="bid_security">Bid security</label><input id="bid_security" name="bid_security" value="{{ v.bid_security }}"></div>
+      <div class="field"><label for="document_fee">Document fee</label><input id="document_fee" name="document_fee" value="{{ v.document_fee }}"></div>
+    </div>
+    <div class="grid">
+      <div class="field"><label for="source">Published in</label><input id="source" name="source" value="{{ v.source }}"></div>
+      <div class="field"><label for="reference">Reference number</label><input id="reference" name="reference" value="{{ v.reference }}"></div>
+    </div>
+    <div class="field"><label for="notice">Notice text (optional)</label><textarea id="notice" name="notice">{{ v.notice }}</textarea></div>
+    </fieldset>
+    {% if editable %}<div class="actions">
+      <button class="btn ghost" name="action" value="save">Save</button>
+      {% if me.role in ("admin","reviewer") and t.status != "published" %}
+        <button class="btn" name="action" value="approve">Approve and publish</button>
+        <button class="btn danger" name="action" value="reject">Reject</button>
+      {% elif me.role in ("admin","reviewer") %}<button class="btn" name="action" value="save">Update</button>{% endif %}
+    </div>{% endif %}
+  </form>
+</div>
+{% endblock %}

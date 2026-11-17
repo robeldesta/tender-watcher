@@ -1,0 +1,16 @@
+# Postgres for the Tender Watcher app only. Bound to localhost; its own volume; touches nothing else.
+name: tenders
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tw
+      POSTGRES_USER: tw
+      POSTGRES_PASSWORD: ${TW_DB_PASSWORD:?set TW_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5442:5432"
+    volumes:
+      - tenders-pg:/var/lib/postgresql/data
+volumes:
+  tenders-pg:

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tender Watcher Buyers</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a site notice board. Filter bar on top, then one row per tender ordered by closing date, deadline in a left column. */
+:root{
+  --paper:#fbfaf7; --panel:#f1efe8; --ink:#1d2328; --muted:#5b636b; --rule:#d9d5ca;
+  --accent:#b8740f; --accent-ink:#8a5306; --accent-soft:#f6e8cf;
+  --ok:#2f7a4a; --warn:#a4570a; --bad:#b03a2e; --ok-soft:#e3f1e7; --warn-soft:#fbecd8; --bad-soft:#f7e1de;
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#15191c; --panel:#1e2327; --ink:#e7e4dc; --muted:#a2a8ad; --rule:#343a3f;
+  --accent:#e2a24a; --accent-ink:#f0bd72; --accent-soft:#3a2d18;
+  --ok:#6cc08a; --warn:#eaa458; --bad:#ec8576; --ok-soft:#1c3324; --warn-soft:#3a2a15; --bad-soft:#3d1f1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#15191c; --panel:#1e2327; --ink:#e7e4dc; --muted:#a2a8ad; --rule:#343a3f;
+  --accent:#e2a24a; --accent-ink:#f0bd72; --accent-soft:#3a2d18;
+  --ok:#6cc08a; --warn:#eaa458; --bad:#ec8576; --ok-soft:#1c3324; --warn-soft:#3a2a15; --bad-soft:#3d1f1b; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
+h1,h2{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(26px,5.5vw,36px);font-weight:800}
+h2{font-size:20px;font-weight:700}
+p{margin:0}
+a{color:var(--accent-ink);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)} .small{font-size:15px}
+header{display:flex;flex-direction:column;gap:10px}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;background:var(--panel);border-radius:6px;padding:14px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+label{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+select,input{font:inherit;font-size:16px;padding:9px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%}
+.count{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.list{display:flex;flex-direction:column;border-top:2px solid var(--ink)}
+.row{display:grid;grid-template-columns:104px 1fr;gap:4px 16px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.due{font-family:var(--mono);font-size:12.5px;line-height:1.35;color:var(--muted)}
+.due b{display:block;font-family:var(--display);font-size:21px;font-weight:800;color:var(--ink)}
+.body{min-width:0;display:flex;flex-direction:column;gap:5px}
+.buyer{font-weight:700}
+.meta{display:flex;flex-wrap:wrap;gap:6px}
+.tag{display:inline-block;font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:3px;background:var(--panel);color:var(--muted);white-space:nowrap}
+.tag.grade{background:var(--accent-soft);color:var(--accent-ink)}
+.tag.new{background:var(--ok-soft);color:var(--ok)}
+.tag.soon{background:var(--bad-soft);color:var(--bad)}
+.tag.week{background:var(--warn-soft);color:var(--warn)}
+.empty{padding:28px 0;color:var(--muted)}
+.cta{background:var(--ink);color:var(--paper);border-radius:6px;padding:20px clamp(16px,4vw,24px);display:flex;flex-direction:column;gap:10px}
+.cta h2{color:var(--paper)} .cta a{color:var(--paper)}
+footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+@media (max-width:520px){
+  .row{grid-template-columns:1fr}
+  .due{display:flex;gap:8px;align-items:baseline}
+  .due b{display:inline;font-size:17px}
+}
+
+.buyerrow{padding:14px 0;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:6px}
+.buyerrow summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;list-style:none}
+.buyerrow summary::-webkit-details-marker{display:none}
+.buyerrow ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:15px}
+nav.top{display:flex;gap:16px;font-size:15px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <nav class="top"><a href="/">Open tenders</a><b>Buyers</b></nav>
+  <span class="eyebrow">Tender Watcher · who buys what in Ethiopia</span>
+  <h1>Buyer directory</h1>
+  <p class="muted">Every organisation that has put a tender on our board, with what it is buying now and what it bought before. Built from the tenders we collect, updated every morning.</p>
+</header>
+<form class="filters" onsubmit="event.preventDefault()">
+  <div class="field"><label for="q">Search buyers</label><input id="q" type="search" placeholder="e.g. bank, university, Red Cross"></div>
+  <div class="field"><label for="t">Buyer type</label><select id="t"><option value="">All buyers</option><option value="gov">Government</option><option value="ngo">NGO / UN</option><option value="donor">Donor funded</option><option value="company">Company / bank</option></select></div>
+</form>
+<p class="count" id="count" aria-live="polite"></p>
+<div class="list" id="list"></div>
+<footer><p>Names as published in the tender notices. To correct a buyer's details, reply to the message this link came in.</p></footer>
+</div>
+<script>
+(function(){
+  var TYPES={gov:'Government',ngo:'NGO / UN',donor:'Donor funded',company:'Company / bank'};
+  var CATS={construction:'Construction',goods:'Goods',services:'Services',consultancy:'Consultancy',vehicles:'Vehicles and machinery',it:'IT and telecom',electrical:'Electrical and power',medical:'Medical',sale:'Sale / auction',rental:'Rent / lease',other:'Other'};
+  function el(tag,cls,text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  function get(u){ return fetch(u,{cache:'no-cache'}).then(function(r){ return r.ok?r.json():{tenders:[]}; }).catch(function(){ return {tenders:[]}; }); }
+  var today=new Date().toISOString().slice(0,10);
+  Promise.all([get('tenders.json'),get('archive.json')]).then(function(res){
+    var by={};
+    function add(t,isOpen){
+      var key=(t.buyer||'').trim(); if(!key) return;
+      var b=by[key.toLowerCase()]||(by[key.toLowerCase()]={name:key,type:t.type,regions:{},cats:{},open:[],past:[]});
+      if(t.region) b.regions[t.region]=1; b.cats[t.category||'construction']=1;
+      (isOpen && (!t.closes || t.closes>=today) ? b.open : b.past).push(t);
+    }
+    res[0].tenders.forEach(function(t){ add(t,true); });
+    res[1].tenders.forEach(function(t){ add(t,false); });
+    var all=Object.keys(by).map(function(k){ return by[k]; }).sort(function(a,b){ return b.open.length-a.open.length || a.name.localeCompare(b.name); });
+    var q=document.getElementById('q'), ty=document.getElementById('t');
+    function render(){
+      var s=q.value.trim().toLowerCase(), tv=ty.value;
+      var rows=all.filter(function(b){ return (!s || b.name.toLowerCase().indexOf(s)>=0) && (!tv || b.type===tv); });
+      document.getElementById('count').textContent=rows.length+' buyer'+(rows.length===1?'':'s');
+      var list=document.getElementById('list'); list.textContent='';
+      if(!rows.length){ list.appendChild(el('p','empty','No buyers match. Try a shorter search.')); return; }
+      rows.forEach(function(b){
+        var d=el('details','buyerrow'), sm=el('summary');
+        sm.appendChild(el('span','buyer',b.name));
+        var meta=el('span','meta');
+        meta.appendChild(el('span','tag'+(b.open.length?' new':''),b.open.length+' open'));
+        if(b.past.length) meta.appendChild(el('span','tag',b.past.length+' past'));
+        meta.appendChild(el('span','tag',TYPES[b.type]||b.type||''));
+        Object.keys(b.cats).forEach(function(c){ meta.appendChild(el('span','tag grade',CATS[c]||c)); });
+        sm.appendChild(meta); d.appendChild(sm);
+        var regions=Object.keys(b.regions); if(regions.length) d.appendChild(el('p','small muted',regions.join(', ')));
+        var ul=el('ul');
+        b.open.concat(b.past).forEach(function(t){
+          var li=el('li'); var txt=t.title+(t.closes?' · closes '+t.closes:'');
+          if(b.open.indexOf(t)>=0 && t.id){ var a=el('a',null,txt); a.href='/#t/'+encodeURIComponent(t.id); li.appendChild(a); } else li.textContent=txt;
+          if(b.past.indexOf(t)>=0) li.appendChild(el('span','muted',' (closed)'));
+          ul.appendChild(li);
+        });
+        d.appendChild(ul); list.appendChild(d);
+      });
+    }
+    q.addEventListener('input',render); ty.addEventListener('change',render); render();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% from "_due.html" import check %}{% block title %}Start your free trial | Tender Watcher{% endblock %}
+{% block page %}
+<div class="auth">
+  <section class="auth-main">
+    <form method="post" action="/signup">
+      <h1>Start your {{ TRIAL }}-day free trial</h1>
+      <p class="muted">No payment to start. After the trial, ETB {{ "{:,}".format(PRICES.ETB.month) }} a month or ETB {{ "{:,}".format(PRICES.ETB.year) }} a year. <a href="/pricing">Pricing</a></p>
+      {% if error %}<p class="alert bad">{{ error }}</p>{% endif %}
+      <div class="field"><label for="company">Company name</label><input id="company" name="company" value="{{ form.company }}" autocomplete="organization" required></div>
+      <div class="field"><label for="name">Your name</label><input id="name" name="name" value="{{ form.name }}" autocomplete="name" required></div>
+      <div class="field"><label for="phone">Mobile number</label><input id="phone" name="phone" value="{{ form.phone }}" inputmode="tel" autocomplete="tel" placeholder="0911 234 567" required><p class="hint">You sign in with this number.</p></div>
+      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required><p class="hint">At least 10 characters.</p></div>
+      <div class="field"><label for="tin">Company TIN <span class="muted" style="font-weight:400">(optional)</span></label><input id="tin" name="tin" value="{{ form.tin }}" inputmode="numeric" placeholder="0012345678"></div>
+      <button class="btn big block" type="submit">Start free trial</button>
+      <p class="small muted" style="margin-top:20px">Already have an account? <a href="/login">Sign in</a>.</p>
+    </form>
+  </section>
+  <section class="auth-side" aria-label="What you get">
+    {% include "_tg.html" %}
+  </section>
+</div>
+{% endblock %}
+{% block footer %}{% endblock %}

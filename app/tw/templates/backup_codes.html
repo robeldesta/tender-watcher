@@ -1,0 +1,10 @@
+{% extends layout %}{% block title %}Backup codes | Tender Watcher{% endblock %}
+{% block body %}
+<div class="narrow">
+<h1>Save your backup codes</h1>
+<p class="alert ok">Two-step sign-in is on. From now on you sign in with your password and a code from your app.</p>
+<p>If you lose your phone, each of these codes signs you in once. They are shown only now: print them or keep them in your password manager, not on the same phone.</p>
+<ol class="codes">{% for c in codes %}<li><code>{{ c }}</code></li>{% endfor %}</ol>
+<a class="btn" href="{{ '/admin' if me.role in ('admin', 'reviewer') else '/security' }}">I've saved them</a>
+</div>
+{% endblock %}

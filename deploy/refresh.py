@@ -3,13 +3,15 @@
 
 Reads the public listing pages and the public teaser of each tender page
 (robots.txt allows /tenders/*; the gated part of a page is never requested
-or bypassed). Keeps construction works only, merges into tenders.json and
+or bypassed). Keeps construction works from the construction listings, plus ICT and
+electrical/power tenders, merges into tenders.json and
 writes it atomically.
 
 Usage: python3 refresh.py [--out /opt/tenders/site/tenders.json] [--dry-run]
 """
 import argparse
 import datetime as dt
+import fcntl
 import html
 import json
 import os
@@ -27,13 +29,14 @@ DELAY = 2.0  # seconds between requests, minimum
 TZ = ZoneInfo("Africa/Addis_Ababa")
 STALE_DAYS = 21
 
-# listing path -> grade implied by that listing ("" = none)
-LISTINGS = [
-    ("/tenders/industry/construction", ""),
-    ("/tenders/competency/general-contractor-grade-3", "GC-3"),
-    ("/tenders/competency/general-contractor-grade-5", "GC-5"),
-    ("/tenders/competency/building-contractor-grade-5", "BC-5"),
-]
+# listing path -> (grade implied by that listing ("" = none), board category,
+# max pages to read). Construction listings are filtered to real works; other
+# listings take their category as given. Listings are newest first, so the
+# busy construction listings only need page 1 on a daily run.
+# Competitor listings (Modern Tenders, Reporter Tenders, 2merkato) are NOT a source.
+# Robel, 2026-11-07: our own sources only (freelancers, buyer websites, official feeds).
+LISTINGS = []
+COMPETITORS = re.compile(r"moderntenders|reportertenders|2merkato", re.I)
 
 # Construction works signals (English + Amharic).
 WORKS = re.compile(
@@ -83,6 +86,31 @@ GRADE_RE = [
     (re.compile(r"road\s+contractors?\D{0,30}?grade\s*(\d{1,2})", re.I), "RC"),
 ]
 CODE_RE = re.compile(r"/tenders/([a-z0-9]{10})-")
+CHECK_DAYS = 183  # a closing date further out than this is almost always a typo in the source
+
+
+def check_reasons(closes, time_, today):
+    """Why a closing date/time looks wrong; empty when it looks fine. Dates are never changed."""
+    why = []
+    if closes:
+        try:
+            days = (dt.date.fromisoformat(closes) - today).days
+        except ValueError:
+            days = None
+        if days is None or days > CHECK_DAYS:
+            why.append("closing date more than 6 months away")
+    if time_ and not ("06:00" <= time_ <= "18:00"):
+        why.append("closing time outside 06:00-18:00 (Ethiopian clock?)")
+    return why
+
+
+def flag_checks(tenders, today):
+    for t in tenders:
+        why = check_reasons(t.get("closes", ""), t.get("time", ""), today)
+        t.pop("check", None)
+        t.pop("check_why", None)
+        if why:
+            t["check"], t["check_why"] = True, "; ".join(why)
 
 
 _last = [0.0]
@@ -103,6 +131,75 @@ def fetch(path_or_url):
             return r.read().decode("utf-8", "replace")
     finally:
         _last[0] = time.monotonic()
+
+
+WB_API = ("https://search.worldbank.org/api/v2/procnotices?format=json&rows=200"
+          "&project_ctry_name_exact=Ethiopia&srt=submission_date&order=desc")
+WB_GROUPS = {"CW": "construction", "GO": "goods", "CS": "consultancy", "NC": "services"}
+WB_SKIP = {"contract award", "general procurement notice"}
+
+
+def worldbank(payload, today, existing_ids):
+    """World Bank-financed tenders in Ethiopia, with the full notice text kept on our own page."""
+    out = []
+    for n in payload.get("procnotices", []):
+        if (n.get("notice_type") or "").strip().lower() in WB_SKIP or not n.get("id"):
+            continue
+        if "individual" in (n.get("procurement_method_name") or "").lower():
+            continue  # hiring one person, not a tender a firm can bid on
+        tid = "wb-" + n["id"]
+        closes = (n.get("submission_deadline_date") or "")[:10]
+        title = (n.get("bid_description") or n.get("project_name") or "").strip()
+        if tid in existing_ids or not title or not closes or closes < today.isoformat():
+            continue
+        place = (n.get("contact_address") or "").replace("\n", ", ").strip(", ")
+        notice = text(n.get("notice_text") or "")
+        category = WB_GROUPS.get(n.get("procurement_group") or "", "other")
+        out.append({
+            "id": tid,
+            "buyer": (n.get("contact_organization") or n.get("project_name") or "World Bank-financed project").strip(),
+            "title": title[:300],
+            "category": category,
+            "region": "",
+            "place": place[:80] or "Ethiopia",
+            "grade": find_grade(title + " " + notice) if category == "construction" else "",
+            "closes": closes,
+            "time": "" if (n.get("submission_deadline_time") or "")[:5] in ("", "00:00") else n["submission_deadline_time"][:5],
+            "type": "donor",
+            "firstSeen": today.isoformat(),
+            "url": f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{n['id']}",
+            "source": "World Bank procurement notices",
+            "reference": n.get("bid_reference_no") or "",
+            "project": n.get("project_name") or "",
+            "method": n.get("procurement_method_name") or "",
+            "contact": ", ".join(x for x in (n.get("contact_name"), n.get("contact_email"), n.get("contact_phone_no")) if x),
+            "notice": notice[:8000],
+        })
+    return out
+
+
+def _words(s):
+    return set(re.findall(r"\w{3,}", (s or "").lower()))
+
+
+def is_competitor(t):
+    return t.get("id", "").startswith("mt-") or bool(COMPETITORS.search(t.get("url", "") + " " + t.get("source", "")))
+
+
+def drop_copies(tenders):
+    """When our own source (buyer website, collector, World Bank) has a tender that Modern Tenders
+    also listed, keep ours and drop the Modern Tenders copy."""
+    own = [t for t in tenders if not t.get("id", "").startswith("mt-")]
+    keep = []
+    for t in tenders:
+        if t.get("id", "").startswith("mt-") and t.get("closes"):
+            tw = _words(t.get("title")) | _words(t.get("buyer"))
+            dup = any(o.get("closes") == t["closes"] and tw and
+                      len(tw & (_words(o.get("title")) | _words(o.get("buyer")))) / len(tw) >= 0.6 for o in own)
+            if dup:
+                continue
+        keep.append(t)
+    return keep
 
 
 def text(fragment):
@@ -238,23 +335,36 @@ def main():
         if c:
             known_codes[c.group(1)] = t
 
-    seen = {}  # code -> (url, set of implied grades)
-    for path, grade in LISTINGS:
-        try:
-            page = fetch(path)
-        except Exception as e:  # keep going with the other listings
-            print(f"listing failed {path}: {e}", file=sys.stderr)
-            continue
-        codes = listing_codes(page)
-        print(f"{path}: {len(codes)} tenders")
+    seen = {}  # code -> (url, set of implied grades, set of categories)
+    for path, grade, cat, max_pages in LISTINGS:
+        codes, last = {}, 1
+        for n in range(1, max_pages + 1):
+            if n > last:
+                break  # past the last page (the site repeats it)
+            try:
+                page = fetch(path if n == 1 else f"{path}?page={n}")
+            except Exception as e:  # keep going with the other listings
+                print(f"listing failed {path} page {n}: {e}", file=sys.stderr)
+                break
+            if n == 1:
+                nums = [int(x) for x in re.findall(re.escape(path) + r"\?page=(\d+)", page)]
+                last = max(nums, default=1)
+            codes.update(listing_codes(page))
+            # Later pages repeat page 1's JSON-LD, so also read the card links,
+            # which carry ?from=<listing> (e.g. ?from=industry/ict-technology).
+            frm = path[len("/tenders/"):]
+            for code, slug in re.findall(r'href="/tenders/([a-z0-9]{10})-([^"?]*)\?from=' + re.escape(frm) + r'"', page):
+                codes.setdefault(code, f"{BASE}/tenders/{code}-{html.unescape(slug)}")
+        print(f"{path}: {len(codes)} tenders ({min(last, max_pages)} pages)")
         for code, url in codes.items():
-            u, g = seen.setdefault(code, (url, set()))
+            u, g, cats = seen.setdefault(code, (url, set(), set()))
             if grade:
                 g.add(grade)
+            cats.add(cat)
 
     added, skipped, failed = 0, 0, 0
     fresh = []
-    for code, (url, grades) in seen.items():
+    for code, (url, grades, cats) in seen.items():
         if code in known_codes:
             continue  # already on the board; keep its data and firstSeen
         try:
@@ -263,12 +373,18 @@ def main():
             failed += 1
             print(f"detail failed {url}: {e}", file=sys.stderr)
             continue
-        if not d["title"] or not is_works(d):
+        if not d["title"]:
             skipped += 1
             continue
-        grade = find_grade(" ".join([d["title"], d["summary"], d["keywords"]]))
-        if not grade and grades:
-            grade = min(grades, key=lambda x: int(x.split("-")[1]))
+        if "construction" in cats and is_works(d):
+            category, grade = "construction", find_grade(" ".join([d["title"], d["summary"], d["keywords"]]))
+            if not grade and grades:
+                grade = min(grades, key=lambda x: int(x.split("-")[1]))
+        elif cats - {"construction"}:
+            category, grade = sorted(cats - {"construction"})[0], ""
+        else:
+            skipped += 1  # construction listing, but not works
+            continue
         fresh.append({
             "id": "mt-" + code,
             "buyer": d["buyer"],
@@ -276,6 +392,7 @@ def main():
             "region": d["region"],
             "place": d["place"],
             "grade": grade,
+            "category": category,
             "closes": d["closes"],
             "time": d["time"],
             "type": guess_type(d["buyer"] or d["title"], d["author"]),
@@ -284,6 +401,14 @@ def main():
             "source": "Modern Tenders",
         })
         added += 1
+
+    try:
+        wb = worldbank(json.loads(fetch(WB_API)), today, {t.get("id") for t in existing})
+        print(f"World Bank: {len(wb)} new open notices")
+        fresh += wb
+        added += len(wb)
+    except Exception as e:
+        print(f"World Bank failed: {e}", file=sys.stderr)
 
     def keep(t):
         c = t.get("closes", "")
@@ -295,7 +420,8 @@ def main():
             return True
         return (today - first_seen).days <= STALE_DAYS
 
-    merged = [t for t in existing + fresh if keep(t)]
+    merged = [t for t in existing + fresh if keep(t) and not is_competitor(t)]
+    gone = [t for t in existing if not keep(t)]
     dropped = len(existing) + len(fresh) - len(merged)
     merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
     out = {"updated": today_s, "tenders": merged}
@@ -305,7 +431,41 @@ def main():
         json.dump(fresh, sys.stdout, ensure_ascii=False, indent=1)
         return
 
-    d = os.path.dirname(os.path.abspath(args.out))
+    # The entry bot writes the same file; take the shared lock and pick up
+    # anything it added while we were fetching.
+    lock = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(args.out))), "tenders.lock")
+    with open(lock, "a") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            with open(args.out, encoding="utf-8") as f:
+                now = json.load(f).get("tenders", [])
+        except (OSError, ValueError):
+            now = []
+        have = {t.get("id") for t in merged}
+        merged += [t for t in now if t.get("id") not in have and keep(t)]
+        merged.sort(key=lambda t: (t.get("closes") or "9999-99-99", t.get("time") or "", t.get("buyer", "")))
+        merged[:] = [t for t in drop_copies(merged) if not is_competitor(t)]
+        flag_checks(merged, today)
+        write_atomic(args.out, out)
+        archive(os.path.join(os.path.dirname(os.path.abspath(args.out)), "archive.json"), gone)
+
+
+def archive(path, gone):
+    """Keep closed tenders in archive.json, for the buyer directory's history."""
+    if not gone:
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = json.load(f).get("tenders", [])
+    except (OSError, ValueError):
+        old = []
+    have = {t.get("id") for t in old}
+    old += [t for t in gone if t.get("id") not in have]
+    write_atomic(path, {"tenders": old})
+
+
+def write_atomic(path, out):
+    d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".tenders.", suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -314,7 +474,7 @@ def main():
         with open(tmp, encoding="utf-8") as f:
             json.load(f)  # sanity check before replacing
         os.chmod(tmp, 0o644)
-        os.replace(tmp, args.out)
+        os.replace(tmp, path)
     except BaseException:
         if os.path.exists(tmp):
             os.unlink(tmp)

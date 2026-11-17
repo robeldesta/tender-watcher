@@ -1,0 +1,26 @@
+{% extends layout %}{% block title %}Team | Tender Watcher{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Team</h1><p class="sub">Staff who collect, review and run the platform. Admins and reviewers must use two-step sign-in.</p></div></div>
+{% if request.query_params.get("reset") %}<p class="alert ok">Two-step sign-in reset. They set it up again the next time they sign in.</p>{% endif %}
+{% if request.query_params.get("added") %}<p class="alert ok">Added. Give them their phone number and password; they sign in at tenders.sonador.et/login.</p>{% endif %}
+{% if error %}<p class="alert bad">{{ error }}</p>{% endif %}
+<table><thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Two-step</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+{% for p in people %}<tr><td>{{ p.name }}</td><td>{{ p.phone }}</td><td>{{ p.role|capitalize }}</td><td>{% if p.totp_secret %}<span class="pill ok">On</span>{% elif p.role in ("admin", "reviewer") %}<span class="pill warn">Not set up</span>{% else %}<span class="pill">Off</span>{% endif %}</td>
+<td class="small muted">{{ p.last_login.strftime("%d %b %H:%M") if p.last_login else "Never" }}</td>
+<td><div class="row-actions">{% if p.id != me.id and p.totp_secret %}<form method="post" action="/admin/team/{{ p.id }}/reset-two-step"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost" type="submit">Reset two-step</button></form>{% endif %}{% if p.id != me.id %}<form method="post" action="/admin/team/{{ p.id }}/toggle"><input type="hidden" name="csrf" value="{{ csrf }}">
+<button class="btn {{ 'danger' if p.active else 'ghost' }}" type="submit">{{ "Turn off sign-in" if p.active else "Turn on sign-in" }}</button></form>{% endif %}</div></td></tr>{% endfor %}
+</tbody></table>
+<h2 style="margin-top:28px">Add a person</h2>
+<form class="panel" method="post" action="/admin/team">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="grid">
+    <div class="field"><label for="name">Name</label><input id="name" name="name" value="{{ form.name if form }}" required></div>
+    <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" inputmode="tel" value="{{ form.phone if form }}" placeholder="0911 234 567" required></div>
+    <div class="field"><label for="role">Role</label><select id="role" name="role">
+      {% for r, lab in [("collector","Collector: adds tenders"),("reviewer","Reviewer: approves tenders"),("admin","Admin: also manages the team")] %}
+      <option value="{{ r }}" {{ "selected" if form and form.role == r }}>{{ lab }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="password">Password (10+ characters)</label><input id="password" name="password" type="text" autocomplete="off" required></div>
+  </div>
+  <button class="btn" type="submit">Add person</button>
+</form>
+{% endblock %}

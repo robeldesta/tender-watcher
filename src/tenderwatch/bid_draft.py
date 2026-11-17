@@ -41,8 +41,9 @@ CATEGORIES = ["eligibility", "licence", "experience", "financial", "personnel", 
 STATUSES = ["met", "gap", "check"]
 STATUS_LABEL = {"met": "Met", "gap": "GAP", "check": "Check"}
 
-SYSTEM = """You prepare first drafts of bid documents for Ethiopian construction and
-water-works contractors bidding on public, donor-funded and NGO tenders.
+SYSTEM = """You prepare first drafts of bid documents for Ethiopian firms (contractors,
+suppliers, IT and service providers, consultants) bidding on public, bank, donor-funded
+and NGO tenders.
 
 You get the firm's profile and the tender. The profile is supplied by the firm and
 is the only source of facts about the firm. The tender notice (and any bidding
@@ -72,16 +73,23 @@ Produce:
 
 3. cover_letter: the body paragraphs of a formal bid submission letter, in
    English, without the address block, salutation or signature (those are added
-   later). Say which tender the firm is bidding for, state its grade and the most
-   relevant experience, confirm the bid's validity period and bid security only
+   later). Say which tender the firm is bidding for, state its grade or licences
+   and the most relevant experience, confirm the bid's validity period and bid security only
    as the tender requires them, and list what is enclosed. Plain, formal, short:
    3 to 5 paragraphs. Do not state a bid price.
 
 4. profile_section: 2 to 4 paragraphs presenting the firm for this tender: who
-   they are, grade and licences, the regions and types of work they know, their
+   they are, grade and licences, the regions and types of work or goods they know, their
    capacity (staff, equipment, personnel) and why that suits this contract.
 
-5. open_questions: things the firm must decide or find out before submitting
+5. technical_offer: 3 to 6 paragraphs of the technical proposal: how the firm
+   will deliver what the tender asks for (approach and method, the goods or
+   specifications offered against what the tender states, delivery or work
+   schedule, team, quality, warranty and after-sales support), drawing only on
+   the tender and the profile. Where it needs a product model, quantity, period
+   or other fact neither gives, write [TO CONFIRM: what is needed].
+
+6. open_questions: things the firm must decide or find out before submitting
    (missing documents, unclear requirements, lots to choose).
 
 Ethiopian contractor grades run from Grade 1 (highest) downward, so a firm with a
@@ -113,10 +121,11 @@ SCHEMA = {
         "relevant_project_ids": {"type": "array", "items": {"type": "string"}},
         "cover_letter": {"type": "array", "items": {"type": "string"}},
         "profile_section": {"type": "array", "items": {"type": "string"}},
+        "technical_offer": {"type": "array", "items": {"type": "string"}},
         "open_questions": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["requirements", "relevant_project_ids", "cover_letter", "profile_section",
-                 "open_questions"],
+                 "technical_offer", "open_questions"],
     "additionalProperties": False,
 }
 
@@ -140,6 +149,7 @@ class BidPack:
     profile_section: list[str]
     open_questions: list[str]
     warnings: list[str] = field(default_factory=list)  # filled by checks in code, not by the model
+    technical_offer: list[str] = field(default_factory=list)
     drafted_on: date = field(default_factory=date.today)
 
 
@@ -168,7 +178,7 @@ def _tender(t: Tender, extra_text: str) -> str:
 
 def draft(t: Tender, p: BidProfile, client, extra_text: str = "", today: date | None = None) -> BidPack:
     """One Claude call, then code-side checks. Raises on API errors, refusals or malformed replies."""
-    msg = client.beta.messages.create(
+    kw = dict(
         model=MODEL,
         max_tokens=12000,
         system=SYSTEM,
@@ -177,9 +187,11 @@ def draft(t: Tender, p: BidProfile, client, extra_text: str = "", today: date | 
             "content": f"Firm profile:\n{facts(p)}\n\n<tender>\n{_tender(t, extra_text)}\n</tender>",
         }],
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
     )
+    try:
+        msg = client.beta.messages.create(**kw, betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+    except TypeError:  # an SDK without server-side fallback: same request without it
+        msg = client.messages.create(**kw)
     if msg.stop_reason != "end_turn":
         raise ValueError(f"Bid draft stopped early: {msg.stop_reason}")
     data = json.loads(next(b.text for b in msg.content if b.type == "text"))
@@ -208,6 +220,7 @@ def build_pack(t: Tender, p: BidProfile, data: dict, extra_text: str = "", today
         cover_letter=[clean(x, MAX_PARAGRAPH_CHARS) for x in data["cover_letter"] if x.strip()],
         profile_section=[clean(x, MAX_PARAGRAPH_CHARS) for x in data["profile_section"] if x.strip()],
         open_questions=[clean(x, MAX_ITEM_CHARS) for x in data["open_questions"] if x.strip()],
+        technical_offer=[clean(x, MAX_PARAGRAPH_CHARS) for x in data.get("technical_offer", []) if x.strip()],
         drafted_on=today or date.today(),
     )
     pack.warnings = checks(pack, extra_text)
@@ -241,7 +254,7 @@ def checks(pack: BidPack, extra_text: str = "") -> list[str]:
         out.append("No past project was picked as similar experience. Check the experience "
                    "requirement and add projects to the profile if the firm has them.")
     known = _numbers(facts(p) + t.title + t.raw_text + extra_text + (t.deadline.isoformat() if t.deadline else ""))
-    prose = " ".join(pack.cover_letter + pack.profile_section)
+    prose = " ".join(pack.cover_letter + pack.profile_section + pack.technical_offer)
     unknown = sorted(_numbers(prose) - known - {str(pack.drafted_on.year)})
     if unknown:
         out.append("These figures in the letter or profile are not in the firm's profile or the "
@@ -250,7 +263,7 @@ def checks(pack: BidPack, extra_text: str = "") -> list[str]:
 
 
 def to_confirm(pack: BidPack) -> list[str]:
-    text = " ".join(pack.cover_letter + pack.profile_section)
+    text = " ".join(pack.cover_letter + pack.profile_section + pack.technical_offer)
     return list(dict.fromkeys(m.strip() for m in re.findall(r"\[TO CONFIRM:([^\]]*)\]", text)))
 
 

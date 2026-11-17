@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% from "_env.html" import stamp, words %}
+{% block title %}Company file | Tender Watcher{% endblock %}
+{% block body %}
+{% if saved %}<p class="alert ok">Saved. Every envelope is checked again against your file.</p>{% endif %}
+{% if error %}<p class="alert warn" role="alert">{{ error }}</p>{% endif %}
+<div class="file-head">
+  <h1 class="desk-h">{% if g.missing or g.expired %}{{ words((g.missing|length) + (g.expired|length)) }} {{ "paper" if (g.missing|length) + (g.expired|length) == 1 else "papers" }} would get any bid of yours thrown out today.
+    {%- elif g.total %}Your company file is in order. Every envelope starts from here.
+    {%- else %}Put your company papers here once. Every bid is checked against them.{% endif %}</h1>
+  <a class="btn ink big" href="#add">Add a paper</a>
+</div>
+
+{% if g.missing or g.expired %}
+<section class="file-sec">
+  <h2>Missing</h2>
+  <p class="muted">Almost every tender asks for these. Add each one with its number and expiry date, and a scan if you have it.</p>
+  <div class="cards">
+  {% for m in g.missing %}
+    <div class="paper gap">
+      <h3>{{ m.label }}</h3>
+      <p>{% set b = blocked.get(m.kind, []) %}{% if b %}It holds up {{ "your envelope for" if b|length == 1 else (b|length ~ " envelopes, first") }} {{ b[0].bid.tender.buyer }}{% if b[0].days is not none %}, closing in {{ b[0].days }} day{{ "s" if b[0].days != 1 }}{% endif %}.{% else %}No open envelope needs it today, but the next one will.{% endif %}</p>
+      <a class="btn ink" href="/file?add={{ m.kind }}#add">Add the {{ m.label|lower }}</a>
+    </div>
+  {% endfor %}
+  {% for p in g.expired %}
+    <div class="paper gap">
+      <h3>{{ label(p) }}</h3>
+      <p>Expired on {{ p.expires | long_date }}. Add the renewed one and remove this.</p>
+      <div class="acts"><a class="btn ink" href="/file?add={{ p.kind }}#add">Add the renewed one</a>
+        <form method="post" action="/file/{{ p.id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn link" type="submit">Remove</button></form></div>
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if g.soon or g.ok %}
+<section class="file-sec">
+  <h2>In order</h2>
+  <div class="cards">
+  {% for p in g.soon + g.ok %}
+    <div class="paper">
+      <div class="paper-b">
+        <h3>{{ label(p) }}</h3>
+        <p class="muted">{% if p.number %}No. {{ p.number }}. {% endif %}{% if p.issuer %}{{ p.issuer }}. {% endif %}{% if p.expires %}Valid until {{ p.expires | long_date }}{% if p in g.soon %}, {{ p.expires | days_from(today) }} days from now{% endif %}.{% else %}Does not expire.{% endif %}</p>
+        <div class="acts">{% if p.file %}<a href="/file/{{ p.id }}/scan">See the scan</a>{% endif %}
+          <form method="post" action="/file/{{ p.id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn link" type="submit">Remove</button></form></div>
+      </div>
+      {{ stamp([-13, 9, -5, 15][loop.index0 % 4], "Valid", 50) }}
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="file-sec" id="add">
+  <h2>Add a paper</h2>
+  <form class="add-paper" method="post" action="/file" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field"><label for="kind">Which paper</label>
+      <select id="kind" name="kind" required>{% for k, v in KINDS.items() %}<option value="{{ k }}"{% if k == add %} selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="number">Number on the paper</label><input id="number" name="number" maxlength="80" autocomplete="off"></div>
+    <div class="field"><label for="issuer">Issued by</label><input id="issuer" name="issuer" maxlength="160" placeholder="For example Ministry of Revenues"></div>
+    <div class="field"><label for="expires">Valid until</label><input id="expires" name="expires" type="date"><span class="hint">Leave empty if it does not expire. For a licence in its renewal window, give the last day of the window.</span></div>
+    <div class="field"><label for="name">Your own name for it</label><input id="name" name="name" maxlength="160" placeholder="Only if you hold several of this kind"></div>
+    <div class="field"><label for="scan">Scan or photo</label><input id="scan" name="scan" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span class="hint">PDF, JPG or PNG, up to 15 MB. Only your company can open it.</span></div>
+    <div class="field wide"><button class="btn ink big" type="submit">Save to the company file</button></div>
+  </form>
+</section>
+{% endblock %}

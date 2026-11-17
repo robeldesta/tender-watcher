@@ -1,0 +1,322 @@
+{
+  "note": "Buyer websites the entry bot checks once a day. url = the page that lists tenders (or the home page until we find it). Run `entry_bot.py --check-sources` after editing; set enabled false for any that FAIL or are blocked by robots.txt.",
+  "sources": [
+    {
+      "id": "ppa",
+      "group": "gov",
+      "type": "gov",
+      "name": "Public Procurement and Property Authority",
+      "url": "https://www.ppa.gov.et/"
+    },
+    {
+      "id": "egp",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ethiopian e-GP",
+      "url": "https://egp.ppa.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "mof",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ministry of Finance",
+      "url": "https://www.mofed.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "era",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ethiopian Roads Administration",
+      "url": "https://www.era.gov.et/"
+    },
+    {
+      "id": "moe",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ministry of Education",
+      "url": "https://moe.gov.et/"
+    },
+    {
+      "id": "moh",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ministry of Health",
+      "url": "https://www.moh.gov.et/"
+    },
+    {
+      "id": "mint",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ministry of Innovation and Technology",
+      "url": "https://www.mint.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "insa",
+      "group": "gov",
+      "type": "gov",
+      "name": "Information Network Security Administration",
+      "url": "https://www.insa.gov.et/"
+    },
+    {
+      "id": "epss",
+      "group": "gov",
+      "type": "gov",
+      "name": "Ethiopian Pharmaceutical Supply Service",
+      "url": "https://epss.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "aacity",
+      "group": "gov",
+      "type": "gov",
+      "name": "Addis Ababa City Administration",
+      "url": "https://www.addisababa.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "aacra",
+      "group": "gov",
+      "type": "gov",
+      "name": "Addis Ababa City Roads Authority",
+      "url": "https://aacra.gov.et/"
+    },
+    {
+      "id": "aawsa",
+      "group": "gov",
+      "type": "gov",
+      "name": "Addis Ababa Water and Sewerage Authority",
+      "url": "https://aawsa.gov.et/"
+    },
+    {
+      "id": "aaland",
+      "group": "gov",
+      "type": "gov",
+      "name": "Addis Ababa Land Development and Administration",
+      "url": "https://www.aalpdb.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "oromia",
+      "group": "gov",
+      "type": "gov",
+      "name": "Oromia Regional Government",
+      "url": "https://www.oromia.gov.et/",
+      "enabled": false
+    },
+    {
+      "id": "amhara",
+      "group": "gov",
+      "type": "gov",
+      "name": "Amhara Regional Government",
+      "url": "https://www.amhara.gov.et/"
+    },
+    {
+      "id": "eep",
+      "group": "utility",
+      "type": "gov",
+      "name": "Ethiopian Electric Power",
+      "url": "https://www.eep.com.et/"
+    },
+    {
+      "id": "eeu",
+      "group": "utility",
+      "type": "gov",
+      "name": "Ethiopian Electric Utility",
+      "url": "https://www.eeu.gov.et/"
+    },
+    {
+      "id": "ethiotelecom",
+      "group": "utility",
+      "type": "gov",
+      "name": "Ethio Telecom",
+      "url": "https://www.ethiotelecom.et/",
+      "enabled": false
+    },
+    {
+      "id": "ethiopian",
+      "group": "utility",
+      "type": "gov",
+      "name": "Ethiopian Airlines",
+      "url": "https://corporate.ethiopianairlines.com/"
+    },
+    {
+      "id": "erc",
+      "group": "utility",
+      "type": "gov",
+      "name": "Ethiopian Railways Corporation",
+      "url": "https://www.erc.gov.et/"
+    },
+    {
+      "id": "esl",
+      "group": "utility",
+      "type": "gov",
+      "name": "Ethiopian Shipping and Logistics",
+      "url": "https://www.eslse.et/"
+    },
+    {
+      "id": "aau",
+      "group": "gov",
+      "type": "gov",
+      "name": "Addis Ababa University",
+      "url": "https://www.aau.edu.et/"
+    },
+    {
+      "id": "nbe", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "National Bank of Ethiopia",
+      "url": "https://nbe.gov.et/announcements/"
+    },
+    {
+      "id": "cbe", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Commercial Bank of Ethiopia",
+      "url": "https://combanketh.et/misalliance/tenders"
+    },
+    {
+      "id": "dbe", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Development Bank of Ethiopia",
+      "url": "https://dbe.com.et/?page_id=7700"
+    },
+    {
+      "id": "awash", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Awash Bank",
+      "url": "https://awashbank.com/bid/"
+    },
+    {
+      "id": "dashen", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Dashen Bank",
+      "url": "https://dashenbanksc.com/bids-tenders/"
+    },
+    {
+      "id": "boa", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Bank of Abyssinia",
+      "url": "https://www.bankofabyssinia.com/tenders/"
+    },
+    {
+      "id": "coop", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Cooperative Bank of Oromia",
+      "url": "https://coopbankoromia.com.et/tender-2/"
+    },
+    {
+      "id": "hibret", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Hibret Bank",
+      "url": "https://www.hibretbank.com.et/category/bid/"
+    },
+    {
+      "id": "wegagen",
+      "group": "bank",
+      "type": "company",
+      "name": "Wegagen Bank",
+      "url": "https://www.wegagen.com/",
+      "enabled": false
+    },
+    {
+      "id": "nib",
+      "group": "bank",
+      "type": "company",
+      "name": "Nib International Bank",
+      "url": "https://www.nibbanksc.com/"
+    },
+    {
+      "id": "zemen", "render": true,
+      "group": "bank",
+      "type": "company",
+      "name": "Zemen Bank",
+      "url": "https://zemenbank.com/announcement/"
+    },
+    {
+      "id": "eic",
+      "group": "bank",
+      "type": "company",
+      "name": "Ethiopian Insurance Corporation",
+      "url": "https://www.eic.com.et/",
+      "enabled": false
+    },
+    {
+      "id": "afdb",
+      "group": "donor",
+      "type": "donor",
+      "name": "African Development Bank",
+      "url": "https://www.afdb.org/en/projects-and-operations/procurement",
+      "enabled": false
+    },
+    {
+      "id": "undp",
+      "group": "donor",
+      "type": "donor",
+      "name": "UNDP procurement notices",
+      "url": "https://procurement-notices.undp.org/",
+      "enabled": false
+    },
+    {
+      "id": "unicef",
+      "group": "donor",
+      "type": "donor",
+      "name": "UNICEF Ethiopia",
+      "url": "https://www.unicef.org/ethiopia/"
+    },
+    {
+      "id": "uneca",
+      "group": "donor",
+      "type": "donor",
+      "name": "UN Economic Commission for Africa",
+      "url": "https://www.uneca.org/procurements",
+      "enabled": false
+    },
+    {
+      "id": "au",
+      "group": "donor",
+      "type": "donor",
+      "name": "African Union Commission",
+      "url": "https://au.int/en/bids"
+    },
+    {
+      "id": "usembassy",
+      "group": "donor",
+      "type": "donor",
+      "name": "U.S. Embassy Addis Ababa",
+      "url": "https://et.usembassy.gov/",
+      "enabled": false
+    },
+    {
+      "id": "giz",
+      "group": "donor",
+      "type": "donor",
+      "name": "GIZ Ethiopia",
+      "url": "https://www.giz.de/en/worldwide/336.html"
+    },
+    {
+      "id": "savechildren",
+      "group": "ngo",
+      "type": "ngo",
+      "name": "Save the Children Ethiopia",
+      "url": "https://ethiopia.savethechildren.net/",
+      "enabled": false
+    },
+    {
+      "id": "sossahel",
+      "group": "ngo",
+      "type": "ngo",
+      "name": "SOS Sahel Ethiopia",
+      "url": "https://www.sossahel.org.et/",
+      "enabled": false
+    }
+  ]
+}

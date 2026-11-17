@@ -1,0 +1,18 @@
+{% macro when(d) -%}{% if d %}<span class="nowrap" title="{{ d.strftime('%Y-%m-%d %H:%M') }} UTC">{{ d.strftime("%d %b %H:%M") }}</span>{% endif %}{%- endmacro %}
+{% macro money(cur, amount) -%}<span class="nowrap">{{ cur }} {{ "{:,}".format(amount) }}</span>{%- endmacro %}
+{% macro tstatus(t, today) -%}
+{%- if t.status == "pending" -%}<span class="pill warn">Review</span>
+{%- elif t.status == "rejected" -%}<span class="pill bad">Rejected</span>
+{%- elif t.status == "unlisted" -%}<span class="pill">Taken down</span>
+{%- elif t.closes and t.closes < today -%}<span class="pill">Closed</span>
+{%- else -%}<span class="pill ok">Open</span>{%- endif -%}
+{%- endmacro %}
+{% macro cstate(st) -%}
+{%- if st == "paid" %}<span class="pill ok">Paying</span>{% elif st == "trial" %}<span class="pill info">Trial</span>{% else %}<span class="pill bad">Ended</span>{% endif -%}
+{%- endmacro %}
+{% set ACTIONS = {"sign_in": "Signed in", "password_wrong": "Wrong password", "code_wrong": "Wrong code", "backup_code_used": "Used a backup code",
+  "two_step_on": "Turned on two-step", "two_step_off": "Turned off two-step", "two_step_reset": "Reset two-step", "backup_codes_new": "New backup codes",
+  "password_changed": "Changed password", "price_changed": "Changed a price", "trial_changed": "Changed trial length", "payment_recorded": "Recorded a payment",
+  "tender_approved": "Approved a tender", "tender_rejected": "Rejected a tender", "tender_unlisted": "Took down a tender", "tender_relisted": "Put a tender back",
+  "staff_added": "Added staff", "staff_on": "Turned on staff sign-in", "staff_off": "Turned off staff sign-in", "access_extended": "Extended access",
+  "member_on": "Turned on a customer", "member_off": "Turned off a customer"} %}
