@@ -335,12 +335,12 @@
     flush().catch(function () {}).then(function () { form.submit(); });
   });
   totals(); average();
-  if (room.dataset.state === "drafting") {
+  if (room.dataset.state === "drafting" || room.dataset.state === "reading") {
     room.querySelectorAll(".room-main input, .room-main textarea, .room-main select, .room-main button:not([role=tab])").forEach(function (el) { el.disabled = true; });
     var tries = 0;
     (function poll() {
       fetch("/bids/" + id + "/state", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j.state !== "drafting" || ++tries > 120) location.reload(); else setTimeout(poll, 4000);
+        if ((j.state !== "drafting" && j.state !== "reading") || ++tries > 120) location.reload(); else setTimeout(poll, 4000);
       }).catch(function () { setTimeout(poll, 8000); });
     })();
   }

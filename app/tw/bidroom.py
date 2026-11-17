@@ -264,15 +264,16 @@ def register(app, h):
         activity.append(("Submitted" if b.state == "submitted" else "Last saved", b.updated_at))
         return page(request, "bid.html", u, b=b, t=b.tender, d=d, prog=progress(d), pct=pct, missing=missing,
                     confirm=x["confirm"], total=x["total"], projects=projects, STATUS=bids.STATUS_LABEL,
-                    drafting=b.state == "drafting", env=env, activity=activity, x=x, F=bidforms, label=desk_mod.label)
+                    drafting=b.state in ("drafting", "reading"), env=env, activity=activity, x=x, F=bidforms,
+                    label=desk_mod.label, private=b.tender.status == "private")
 
     @app.post("/bids/{bid_id}/save")
     async def autosave(request: Request, bid_id: int, session=Depends(db)):
         u = member(request, session)
         h.check_csrf(u, request.headers.get("x-csrf", ""))
         b = own_bid(session, u, bid_id)
-        if b.state == "drafting" and age(b.updated_at) < 600:
-            raise HTTPException(409, "Bid Room is drafting this bid. Your changes can be made when it finishes.")
+        if b.state in ("drafting", "reading") and age(b.updated_at) < 600:
+            raise HTTPException(409, "Bid Room is reading or drafting this bid. Your changes can be made when it finishes.")
         try:
             incoming = await request.json()
         except ValueError:
@@ -281,7 +282,7 @@ def register(app, h):
             raise HTTPException(400, "Bad save.")
         d = bids.clean_save(bids.ensure(bids.load(b), b.tender), incoming)
         b.data, b.updated_at = json.dumps(d, ensure_ascii=False), now()
-        if incoming.get("state") in ("open", "submitted") and b.state != "drafting":
+        if incoming.get("state") in ("open", "submitted") and b.state not in ("drafting", "reading"):
             b.state = incoming["state"]
         session.commit()
         x = bundle(session, u, b)
@@ -308,7 +309,7 @@ def register(app, h):
         u = member(request, session)
         h.check_csrf(u, csrf)
         b = own_bid(session, u, bid_id)
-        if b.state == "drafting" and age(b.updated_at) < 600:  # already drafting
+        if b.state in ("drafting", "reading") and age(b.updated_at) < 600:  # already busy
             return RedirectResponse(f"/bids/{b.id}", 303)
         d = bids.load(b)
         if doc_text.strip():
