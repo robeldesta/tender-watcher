@@ -960,8 +960,8 @@ PAST = {"about": {"title": "Supply of servers to Awash Bank", "buyer": "Awash Ba
                      {"name": "Branch network refresh", "client": "Awash Bank", "value_etb": "2100000",
                       "year_completed": "2024", "region": "Addis Ababa", "role": "Main contractor", "scope": "120 switches"}],
         "key_personnel": [{"role": "Project manager", "name": "Hana T", "qualification": "MSc CS", "years_experience": "9"}],
-        "equipment_items": [{"item": "Fibre splicer", "qty": "2", "ownership": "Owned", "year_made": "2022"},
-                            {"item": "OTDR tester", "qty": "1", "ownership": "Owned", "year_made": "2023"}],
+        "equipment_items": [["Fibre splicer", "2", "Owned", "2022"],  # rows come back as lists in column order
+                            ["OTDR tester", "1", "Owned", "2023"]],
         "turnover": [{"year": "2024", "amount_etb": "12500000"}, {"year": "n/a", "amount_etb": "1"}],
         "methodology": [{"heading": "Delivery and installation", "paragraphs": ["We stage every server in our Bole lab before delivery."]},
                         {"heading": "Warranty", "paragraphs": ["Three years on site, next business day."]}],
