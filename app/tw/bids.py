@@ -17,17 +17,22 @@ for _p in (os.environ.get("TENDERWATCH_SRC", ""), os.path.join(_here, "..", ".."
 from tenderwatch import bid_draft, bid_profile  # noqa: E402
 from tenderwatch.models import Tender as EngineTender  # noqa: E402
 
+from . import bidforms  # noqa: E402
+
 STATUS_LABEL = {"met": "Met", "gap": "Gap", "check": "Check"}
 MAX_DOC_CHARS = bid_draft.MAX_TENDER_CHARS
 MAX_TEXT = 20000
 MAX_ROWS = 60
+MAX_PRICE_ROWS = 400  # a works bill of quantities runs to hundreds of items
 ROWS = {  # profile tables: field name -> columns
     "licences": ["name", "number", "issuer", "expires"],
     "projects": ["name", "client", "value_etb", "year_completed", "region", "role", "scope"],
-    "key_personnel": ["role", "name", "qualification", "years_experience"],
+    "key_personnel": ["role", "name", "qualification", "years_experience", "similar_years"],
+    "equipment_items": ["item", "qty", "ownership", "year_made"],
 }
 TEXT_FIELDS = ["legal_name", "grade", "address", "phone", "email", "tin", "vat_number", "signatory_name", "signatory_title",
-               "year_established", "staff_count", "regions", "work_types", "equipment", "turnover", "notes"]
+               "year_established", "staff_count", "regions", "work_types", "equipment", "turnover", "notes",
+               "po_box", "bank_name", "bank_account"]
 
 
 def load_profile(c):
@@ -133,7 +138,18 @@ def engine_tender(t):
 def blank():
     return {"checklist": [], "cover_letter": "", "profile_section": "", "technical": "", "financial": [],
             "open_questions": [], "warnings": [], "projects": [], "doc_text": "", "notes": "", "drafted_at": "",
-            "have": []}  # have: envelope items the firm ticked itself, such as the bid security
+            "have": [],  # have: envelope items the firm ticked itself, such as the bid security
+            "kind": "", "details": {}, "forms": {}}  # the bid's forms: see bidforms.py
+
+
+def ensure(d, t):
+    """Fill the bid's kind and details from the tender the first time the bid is opened."""
+    if d.get("kind") not in bidforms.KINDS:
+        d["kind"] = bidforms.guess_kind(t)
+    det = bidforms.details_blank(t, d["kind"])
+    det.update({k: v for k, v in (d.get("details") or {}).items() if v not in (None,)})
+    d["details"] = det
+    return d
 
 
 def load(bid):
@@ -159,15 +175,39 @@ def clean_save(d, incoming):
             item["done"] = i in done
     if isinstance(incoming.get("financial"), list):
         rows = []
-        for r in incoming["financial"][:MAX_ROWS]:
+        for r in incoming["financial"][:MAX_PRICE_ROWS]:
             if not isinstance(r, dict):
                 continue
             row = {"item": str(r.get("item", ""))[:300], "unit": str(r.get("unit", ""))[:40],
                    "qty": str(r.get("qty", ""))[:20], "price": str(r.get("price", ""))[:20]}
             if any(row.values()):
+                if str(r.get("no", "")).strip():
+                    row["no"] = str(r["no"])[:20]
+                if str(r.get("origin", "")).strip():
+                    row["origin"] = str(r["origin"])[:60]
                 rows.append(row)
         out["financial"] = rows
+    if incoming.get("kind") in bidforms.KINDS:
+        out["kind"] = incoming["kind"]
+    if isinstance(incoming.get("details"), dict):
+        out["details"] = {**(out.get("details") or {}), **bidforms.clean_details(incoming["details"])}
+    if isinstance(incoming.get("forms"), dict):
+        forms = {k: dict(v) for k, v in (out.get("forms") or {}).items()}
+        for k, v in bidforms.clean_forms(incoming["forms"], out.get("kind")).items():
+            if "text" in v and bidforms.FORMS[k]["type"] == "letter" and \
+                    _same(v["text"], bidforms.standard_text(k, out.get("kind"))):
+                v["text"] = ""  # the standard wording: kept out of storage so improvements reach old bids
+            forms.setdefault(k, {}).update(v)
+        out["forms"] = forms
+    if isinstance(incoming.get("details"), dict):  # a bid security with its number counts as in the envelope
+        det = out["details"]
+        if det.get("security_type") == "declaration" or (det.get("security_type") in ("cpo", "guarantee") and det.get("security_number")):
+            out["have"] = sorted(set(out.get("have") or []) | {"security"})
     return out
+
+
+def _same(a, b):
+    return re.sub(r"\s+", " ", a or "").strip() == re.sub(r"\s+", " ", b or "").strip()
 
 
 def total(d):
@@ -200,6 +240,6 @@ def run_draft(client, t, profile_dict, d, today=None):
     return out
 
 
-def to_confirm(d):
-    text = " ".join([d.get("cover_letter", ""), d.get("profile_section", ""), d.get("technical", "")])
+def to_confirm(d, extra=()):
+    text = " ".join([d.get("cover_letter", ""), d.get("profile_section", ""), d.get("technical", ""), *extra])
     return list(dict.fromkeys(m.strip() for m in re.findall(r"\[TO CONFIRM:([^\]]*)\]", text)))
