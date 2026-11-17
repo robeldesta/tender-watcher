@@ -1,81 +1,135 @@
-{% extends "base.html" %}{% from "_due.html" import leaf, left_text %}{% block title %}Bid: {{ t.title }} | Tender Watcher{% endblock %}
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, deadline, days_text, bid_state, ready_ring, mark, env_state %}
+{% block title %}Bid: {{ t.title }} | Tender Watcher{% endblock %}
 {% block page_id %}bid{% endblock %}
+{% block crumbs %}<a href="/bids">Bid Room</a>{{ icon("chev-r") }}<span class="here">{{ t.title }}</span>{% endblock %}
 {% block body %}
+{% set gaps = d.checklist|selectattr("status", "equalto", "gap")|rejectattr("done")|list %}
+{% set all_done = prog.done + env.done %}{% set all_total = prog.total + env.total %}
 <div id="room" data-bid="{{ b.id }}" data-csrf="{{ csrf }}" data-state="{{ b.state }}">
-<p class="small" style="margin:0 0 8px"><a href="/bids">← Bid Room</a> · <a href="/t/{{ t.id }}">The tender</a></p>
-<div class="room-head">
-  {{ leaf(t, today) }}
-  <div class="grow"><span class="small muted">{{ t.buyer }}{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}</span>
+<div class="page-header">
+  <div class="ph-t">
+    <p class="ph-sub" style="margin:0 0 4px"><a href="/t/{{ t.id }}">{{ t.buyer }}</a>{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}</p>
     <h1>{{ t.title }}</h1>
-    <p class="small muted" style="margin:0">{{ left_text(t, today) }}{% if t.bid_security %} · Bid security: {{ t.bid_security }}{% endif %}</p></div>
-  <div class="room-actions">
+    <div class="ph-meta">{{ bid_state(b.state) }}
+      {% set dd = (t.closes | days_from(today)) if t.closes else none %}
+      <span class="pill {{ 'bad' if dd is not none and dd <= 3 else 'warn' if dd is not none and dd <= 7 }}">{{ icon("clock", "s") }}{{ days_text(t.closes, today) }}{% if t.closes %}, {{ t.closes | short_date }}{% if t.time %} {{ t.time }}{% endif %}{% endif %}</span>
+      {% if t.bid_security %}<span class="pill">Bid security: {{ t.bid_security }}</span>{% endif %}
+      <span class="save-state" data-save>{{ "Saved " ~ b.updated_at.strftime("%H:%M") }}</span>
+    </div>
+  </div>
+  <div class="ph-act">
+    <a class="btn ghost" href="/bids/{{ b.id }}/print" target="_blank" rel="noopener">{{ icon("print") }}Print or save PDF</a>
     <form method="post" action="/bids/{{ b.id }}/draft" id="draft-form"><input type="hidden" name="csrf" value="{{ csrf }}">
-      <button class="btn" type="submit" {{ "disabled" if drafting }}>{% if drafting %}Drafting…{% elif d.drafted_at %}Draft again{% else %}Draft this bid{% endif %}</button></form>
-    <a class="btn ghost" href="/bids/{{ b.id }}/print" target="_blank" rel="noopener">Print or save PDF</a>
+      <button class="btn" type="submit" {{ "disabled" if drafting }}>{{ icon("spark") }}{% if drafting %}Drafting…{% elif d.drafted_at %}Draft again{% else %}Draft this bid{% endif %}</button></form>
   </div>
 </div>
-{% if drafting %}<p class="alert info" id="drafting-note" role="status">Reading the tender and your profile, building the checklist and writing the letter. This takes about a minute; the page updates by itself.</p>{% endif %}
-{% if b.draft_error %}<p class="alert bad" role="alert">{{ b.draft_error }}</p>{% endif %}
-{% if request.query_params.get("profile") %}<p class="alert ok">Profile saved. Draft again to use it in this bid.</p>{% endif %}
+{% if drafting %}<div class="alert info" id="drafting-note" role="status"><div class="grow"><p>Reading the tender and your profile, building the checklist and writing the letter. This takes about a minute; the page updates by itself.</p><span class="skel" style="width:60%;margin-top:8px"></span></div></div>{% endif %}
+{% if b.draft_error %}<div class="alert bad" role="alert"><div class="grow"><p>{{ b.draft_error }}</p></div></div>{% endif %}
+{% if request.query_params.get("profile") %}<div class="toast" role="status">{{ icon("check") }}Profile saved. Draft again to use it in this bid.</div>{% endif %}
 
-<div class="room">
-  <div class="room-main">
-    <section class="card" id="checklist" aria-labelledby="cl-h">
-      <div class="panel-h"><h2 id="cl-h">What the tender requires</h2><span class="small muted" data-progress>{{ prog.done }} of {{ prog.total }} done</span></div>
-      {% if d.checklist %}
-      <ol class="reqs">
-      {% for r in d.checklist %}<li class="req {{ r.status }}{{ ' done' if r.done }}">
-        <label class="tick"><input type="checkbox" data-done="{{ loop.index0 }}" {{ "checked" if r.done }}><span class="sr">Done</span></label>
-        <div><b>{{ r.requirement }}</b> <span class="pill {{ {'met': 'ok', 'gap': 'bad', 'check': 'warn'}[r.status] }}">{{ STATUS[r.status] }}</span>
-          <p>{{ r.action }}</p>{% if r.notice_says %}<p class="quote">“{{ r.notice_says }}”</p>{% endif %}</div></li>{% endfor %}
-      </ol>
-      {% else %}
-      <p class="muted">Press <b>Draft this bid</b>. Bid Room reads the notice and lists every requirement: eligibility, licences, experience, bid security, documents and how to submit, each marked met, gap or check against your profile.</p>
-      {% endif %}
-    </section>
+<div class="layout-side">
+  <div class="room-main" style="min-width:0">
+    <div class="room-tabs"><div class="tabs" role="tablist" data-tabs aria-label="Bid sections">
+      <button type="button" role="tab" aria-controls="tab-checklist" aria-selected="true">Checklist{% if gaps %} <em class="bad">{{ gaps|length }}</em>{% elif prog.total %} <em>{{ prog.done }}/{{ prog.total }}</em>{% endif %}</button>
+      <button type="button" role="tab" aria-controls="tab-envelope">Envelope{% if env.blockers %} <em class="bad">{{ env.blockers|length }}</em>{% else %} <em>{{ env.done }}/{{ env.total }}</em>{% endif %}</button>
+      <button type="button" role="tab" aria-controls="tab-letter">Cover letter</button>
+      <button type="button" role="tab" aria-controls="tab-company">Company section</button>
+      <button type="button" role="tab" aria-controls="tab-technical">Technical offer</button>
+      <button type="button" role="tab" aria-controls="tab-price">Financial offer</button>
+      <button type="button" role="tab" aria-controls="tab-document">Bidding document</button>
+    </div></div>
 
-    <section class="card" aria-labelledby="doc-h">
-      <h2 id="doc-h">The bidding document</h2>
-      <p class="small muted">Newspaper notices are short. Paste the bidding document's instructions and qualification criteria (ITB, Section III, data sheet) for a complete checklist, then press Draft again.</p>
-      <textarea name="doc_text" form="draft-form" data-field="doc_text" rows="5" aria-label="Bidding document text" placeholder="Paste the bidding document text here">{{ d.doc_text }}</textarea>
-    </section>
+    <div class="room-panel" id="tab-checklist" role="tabpanel">
+      <section class="card flush" id="checklist" aria-labelledby="cl-h">
+        <div class="card-h"><h2 id="cl-h">What the tender requires</h2><span class="small muted" data-progress>{{ prog.done }} of {{ prog.total }} done</span></div>
+        {% if d.checklist %}
+        <ol class="checklist reqs">
+        {% for r in d.checklist %}<li class="req {{ r.status }}{{ ' done' if r.done }}">
+          <span class="ck{{ ' ok' if r.done }}" data-mark>{{ icon("check") }}</span>
+          <div class="body"><b>{{ r.requirement }}</b> <span class="pill {{ {'met': 'ok', 'gap': 'bad', 'check': 'warn'}[r.status] }}">{{ STATUS[r.status] }}</span>
+            <p>{{ r.action }}</p>{% if r.notice_says %}<p class="quote">“{{ r.notice_says }}”</p>{% endif %}</div>
+          <label class="check end"><input type="checkbox" data-done="{{ loop.index0 }}" {{ "checked" if r.done }}><span class="small">Done</span></label></li>{% endfor %}
+        </ol>
+        {% else %}
+        <div class="empty"><h3>No checklist yet</h3><p>Press <b>Draft this bid</b>. Bid Room reads the notice and lists every requirement: eligibility, licences, experience, bid security, documents and how to submit, each marked met, gap or check against your profile.</p></div>
+        {% endif %}
+      </section>
+      {% if d.warnings %}<div class="alert warn" style="margin-top:12px"><div class="grow"><p><b>Before you send</b></p><ul style="margin:4px 0 0">{% for w in d.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div></div>{% endif %}
+      {% if d.open_questions %}<section class="card" style="margin-top:12px"><h2>Decide before submitting</h2><ul style="margin:0">{% for q in d.open_questions %}<li>{{ q }}</li>{% endfor %}</ul></section>{% endif %}
+    </div>
 
-    {% for key, label, hint in [("cover_letter", "Cover letter", "The body of your bid submission letter. Address, date and signature are added when you print."),
-                                ("profile_section", "Company section", "Who you are, your licences, capacity and why you suit this contract."),
-                                ("technical", "Technical offer", "Your approach, specifications, delivery schedule, warranty and support.")] %}
-    <section class="card" aria-labelledby="{{ key }}-h">
-      <h2 id="{{ key }}-h">{{ label }}</h2><p class="small muted">{{ hint }}</p>
-      <textarea data-field="{{ key }}" rows="{{ 10 if key != 'technical' else 8 }}" aria-labelledby="{{ key }}-h">{{ d[key] }}</textarea>
-    </section>
+    <div class="room-panel" id="tab-envelope" role="tabpanel">
+      <section class="card flush" aria-labelledby="env-h">
+        <div class="card-h"><h2 id="env-h">What goes in the envelope</h2><span class="small muted">{{ env.done }} of {{ env.total }} in</span></div>
+        <p class="small muted" style="margin:0;padding:8px 16px;border-bottom:1px solid var(--line)">Papers come from your document vault and are checked against the closing date. The list is read from the notice, so check it against the bid document.</p>
+        <ul class="checklist">
+          {% for r in env["items"] %}<li>{{ mark(r.state) }}<div class="body"><b>{{ r.label }}</b>{% if r.note %}<p>{{ r.note }}</p>{% endif %}</div>
+            <div class="end">{{ env_state(r) }}
+              {% if r.state in ("missing", "late") %}<a class="btn sm ghost" href="/file?add={{ r.key }}#add">Add to vault</a>
+              {% elif r.key == "technical" and r.state != "in" %}<a class="btn sm ghost" href="#technical" data-tab-link="technical">Write</a>
+              {% elif r.key == "price" and r.state != "in" %}<a class="btn sm ghost" href="#price" data-tab-link="price">Add prices</a>{% endif %}</div></li>{% endfor %}
+        </ul>
+      </section>
+    </div>
+
+    {% for key, tab, label, hint in [("cover_letter", "letter", "Cover letter", "The body of your bid submission letter. Address, date and signature are added when you print."),
+                                     ("profile_section", "company", "Company section", "Who you are, your licences, capacity and why you suit this contract."),
+                                     ("technical", "technical", "Technical offer", "Your approach, specifications, delivery schedule, warranty and support.")] %}
+    <div class="room-panel" id="tab-{{ tab }}" role="tabpanel">
+      <section class="card editor" aria-labelledby="{{ key }}-h">
+        <div class="card-h"><div><h2 id="{{ key }}-h">{{ label }}</h2><p class="small muted">{{ hint }}</p></div></div>
+        <textarea data-field="{{ key }}" rows="{{ 16 if key != 'technical' else 14 }}" aria-labelledby="{{ key }}-h">{{ d[key] }}</textarea>
+      </section>
+    </div>
     {% endfor %}
 
-    <section class="card" aria-labelledby="fin-h">
-      <div class="panel-h"><h2 id="fin-h">Financial offer</h2><span class="small">Total: <b data-total>{{ "{:,.2f}".format(total) }}</b> ETB</span></div>
-      <div class="table-wrap"><table class="fin" id="fin">
-        <thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th><span class="sr">Remove</span></th></tr></thead>
-        <tbody>{% for r in (d.financial or []) + [{}] %}<tr>
-          <td><input data-col="item" value="{{ r.item }}" aria-label="Item"></td><td><input data-col="unit" value="{{ r.unit }}" aria-label="Unit" style="width:80px"></td>
-          <td class="num"><input data-col="qty" value="{{ r.qty }}" inputmode="decimal" aria-label="Quantity" style="width:80px"></td>
-          <td class="num"><input data-col="price" value="{{ r.price }}" inputmode="decimal" aria-label="Unit price" style="width:120px"></td>
-          <td class="num" data-amount></td><td><button class="btn ghost del-row" type="button" aria-label="Remove line">×</button></td></tr>{% endfor %}</tbody>
-      </table></div>
-      <button class="btn ghost" type="button" id="add-line">Add a line</button>
-      <p class="hint">Prices stay in your bid only. Check VAT and the price schedule format the tender asks for.</p>
-    </section>
+    <div class="room-panel" id="tab-price" role="tabpanel">
+      <section class="card flush" aria-labelledby="fin-h">
+        <div class="card-h"><h2 id="fin-h">Financial offer</h2><button class="btn sm ghost" type="button" id="add-line">{{ icon("plus") }}Add a line</button></div>
+        <div class="table-wrap"><table class="fin" id="fin">
+          <thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th><span class="sr">Remove</span></th></tr></thead>
+          <tbody>{% for r in (d.financial or []) + [{}] %}<tr>
+            <td><input data-col="item" value="{{ r.item }}" aria-label="Item"></td><td><input data-col="unit" value="{{ r.unit }}" aria-label="Unit" style="width:80px"></td>
+            <td class="num"><input data-col="qty" value="{{ r.qty }}" inputmode="decimal" aria-label="Quantity" style="width:80px"></td>
+            <td class="num"><input data-col="price" value="{{ r.price }}" inputmode="decimal" aria-label="Unit price" style="width:120px"></td>
+            <td class="num" data-amount></td><td><button class="iconbtn del-row" type="button" aria-label="Remove line" title="Remove line">{{ icon("x") }}</button></td></tr>{% endfor %}</tbody>
+        </table></div>
+        <div class="fin-total"><span class="muted">Total</span><b data-total>{{ "{:,.2f}".format(total) }}</b><span>ETB</span></div>
+      </section>
+      <p class="hint" style="margin-top:8px">Prices stay in your bid only. Check VAT and the price schedule format the tender asks for.</p>
+    </div>
+
+    <div class="room-panel" id="tab-document" role="tabpanel">
+      <section class="card editor" aria-labelledby="doc-h">
+        <div class="card-h"><div><h2 id="doc-h">The bidding document</h2><p class="small muted">Newspaper notices are short. Paste the bidding document's instructions and qualification criteria (ITB, Section III, data sheet) for a complete checklist, then press Draft again.</p></div></div>
+        <textarea name="doc_text" form="draft-form" data-field="doc_text" rows="14" aria-label="Bidding document text" placeholder="Paste the bidding document text here">{{ d.doc_text }}</textarea>
+      </section>
+    </div>
   </div>
 
-  <aside class="room-side">
-    <div class="card">
-      <div class="save-state" data-save>{{ "Saved " ~ b.updated_at.strftime("%H:%M") }}</div>
-      <div class="meter-box"><span>{{ prog.done }} of {{ prog.total }} requirements done</span><span class="bar"><i data-bar style="width:{{ (prog.done * 100 // prog.total) if prog.total else 0 }}%"></i></span></div>
-      <label class="check" style="margin-top:12px"><input type="checkbox" data-submitted {{ "checked" if b.state == "submitted" }}> Bid submitted</label>
-    </div>
-    {% if d.warnings %}<div class="card warn-card"><h2>Before you send</h2><ul>{% for w in d.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
-    <div class="card" data-confirm-box {{ "hidden" if not confirm }}><h2>To confirm</h2><p class="small muted">Facts the draft needs and your profile doesn't have. Replace each [TO CONFIRM] in the text.</p><ul data-confirm>{% for c in confirm %}<li>{{ c }}</li>{% endfor %}</ul></div>
-    {% if d.open_questions %}<div class="card"><h2>Decide before submitting</h2><ul>{% for q in d.open_questions %}<li>{{ q }}</li>{% endfor %}</ul></div>{% endif %}
-    {% if d.projects %}<div class="card"><h2>Experience to show</h2><ul>{% for i in d.projects if i in projects %}{% set x = projects[i] %}<li>{{ x.name }}<span class="small muted"> · {{ x.client }}{% if x.year_completed %}, {{ x.year_completed }}{% endif %}</span></li>{% endfor %}</ul></div>{% endif %}
-    <div class="card"><h2>Company profile</h2><div class="meter-box"><span>{{ pct }}% ready</span><span class="bar"><i style="width:{{ [pct, 4]|max }}%"></i></span></div>
-      {% if missing %}<p class="small muted">Missing: {{ missing|join(", ") }}.</p>{% endif %}<a class="btn ghost block" href="/profile?back=/bids/{{ b.id }}">Edit profile</a></div>
+  <aside>
+    <section class="card" aria-labelledby="rd-h">
+      <p class="section-title" id="rd-h">Submission readiness</p>
+      {{ ready_ring(all_done, all_total, "Ready to submit" if all_total and all_done == all_total else (all_total - all_done) ~ " thing" ~ ("s" if all_total - all_done != 1 else "") ~ " to finish", "Checklist and envelope together") }}
+      <div class="stack" style="margin-top:14px">
+        <div><div class="prog-row" style="justify-content:space-between"><span>Requirements</span><span data-progress>{{ prog.done }} of {{ prog.total }} done</span></div>
+          <span class="prog"><i data-bar style="width:{{ (prog.done * 100 // prog.total) if prog.total else 0 }}%"></i></span></div>
+        <div><div class="prog-row" style="justify-content:space-between"><span>Envelope papers</span><span>{{ env.done }} of {{ env.total }} in</span></div>
+          <span class="prog {{ 'bad' if env.blockers }}"><i style="width:{{ (env.done * 100 // env.total) if env.total else 0 }}%"></i></span></div>
+        <div><div class="prog-row" style="justify-content:space-between"><span>Company profile</span><a href="/profile?back=/bids/{{ b.id }}">{{ pct }}% ready</a></div>
+          <span class="prog {{ 'ok' if pct >= 80 else 'warn' }}"><i style="width:{{ [pct, 4]|max }}%"></i></span></div>
+      </div>
+      {% if missing %}<p class="small muted" style="margin:10px 0 0">Profile missing: {{ missing|join(", ") }}.</p>{% endif %}
+      <hr style="margin:12px 0">
+      <label class="check"><input type="checkbox" data-submitted {{ "checked" if b.state == "submitted" }}> Bid submitted</label>
+      <p class="hint" style="margin-top:4px">Tick when the sealed envelope is handed in. It moves to Submitted in your bids.</p>
+    </section>
+    {% if env.blockers %}<section class="card" aria-label="Blocking papers"><p class="section-title">Blocking</p>
+      <div class="stack">{% for r in env.blockers %}<div class="row-flex"><span class="ind bad grow">{{ r.label }}{% if r.state == "late" %}: expires before closing{% endif %}</span><a class="btn sm ghost" href="/file?add={{ r.key }}#add">Add</a></div>{% endfor %}</div></section>{% endif %}
+    <section class="card" data-confirm-box {{ "hidden" if not confirm }}><p class="section-title">To confirm</p><p class="small muted">Facts the draft needs and your profile doesn't have. Replace each [TO CONFIRM] in the text.</p><ul data-confirm class="small" style="margin:0">{% for c in confirm %}<li>{{ c }}</li>{% endfor %}</ul></section>
+    {% if d.projects %}<section class="card"><p class="section-title">Experience to show</p><ul class="small" style="margin:0">{% for i in d.projects if i in projects %}{% set x = projects[i] %}<li>{{ x.name }}<span class="muted"> · {{ x.client }}{% if x.year_completed %}, {{ x.year_completed }}{% endif %}</span></li>{% endfor %}</ul></section>{% endif %}
+    <section class="card"><p class="section-title">Activity</p>
+      <ul class="timeline">{% for label, when in activity %}<li class="{{ 'ok' if label == 'Submitted' }}"><b>{{ label }}</b>{% if when is string %}{{ when | long_date }}{% else %}{{ when.strftime("%d %b %Y, %H:%M") }}{% endif %}</li>{% endfor %}</ul></section>
   </aside>
 </div>
 </div>

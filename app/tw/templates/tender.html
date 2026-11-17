@@ -1,53 +1,86 @@
-{% extends "base.html" %}{% from "_due.html" import due, leaf, bar, left_text, check %}{% from "_env.html" import sheets, words %}
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, deadline, fit, cats, check, mark, env_state, days_text, save_button %}
+{% from "_env.html" import words %}
 {% block title %}{{ t.title }} | Tender Watcher{% endblock %}
+{% block page_id %}tender{% endblock %}
+{% block crumbs %}<a href="/">Tenders</a>{{ icon("chev-r") }}<span class="here">{{ t.title }}</span>{% endblock %}
 {% block body %}
-<a class="crumb" href="/#tenders"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>All open tenders</a>
-<div class="t-head">
-  <div>
-    <div class="buyer"><span class="avatar" aria-hidden="true">{{ t.buyer[:1] }}</span>{{ t.buyer }}</div>
+{% set d = (t.closes | days_from(today)) if t.closes else none %}
+{% set where = t.place ~ ((", " if t.place else "") ~ t.region if t.region and t.region not in t.place else "") %}
+{% macro bid_action(big=False) -%}
+  {%- if (not me or me.role == "member") -%}
+  {%- if bid and win %}<a class="btn{{ ' big' if big }}" href="/bids/{{ bid.id }}">{{ icon("briefcase") }}Open your bid</a>
+  {%- elif win %}<form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn{{ ' big' if big }}" type="submit">{{ icon("briefcase") }}Start this bid</button></form>
+  {%- elif me %}<a class="btn{{ ' big' if big }}" href="/account#plans">Choose Win to {{ "open your bid" if bid else "start this bid" }}</a>
+  {%- else %}<a class="btn{{ ' big' if big }}" href="/signup">Start {{ TRIAL }}-day free trial</a>{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+<div class="page-header">
+  <div class="ph-t">
+    <p class="ph-sub" style="margin:0 0 4px">{{ t.buyer }}{% if t.reference and full %} · <span class="mono">{{ t.reference }}</span>{% endif %}</p>
     <h1>{{ t.title }}</h1>
-    <div class="tags">{{ due(t, today) }}{% for c in (t.categories or "," ~ t.category ~ ",").strip(",").split(",") if c %}<span class="tag">{{ CATEGORIES.get(c, c) }}</span>{% endfor %}<span class="tag">{{ TYPES.get(t.type, t.type) }}</span>
-      {% if t.status != "published" %}<span class="tag warn">{{ t.status|capitalize }}, not public</span>{% endif %}</div>
+    <div class="ph-meta">
+      {% if d is none %}<span class="pill">No closing date</span>{% elif d < 0 %}<span class="pill">Closed</span>{% elif d <= 3 %}<span class="pill bad">{{ days_text(t.closes, today) }}</span>{% elif d <= 7 %}<span class="pill warn">{{ days_text(t.closes, today) }}</span>{% else %}<span class="pill">{{ days_text(t.closes, today) }}</span>{% endif %}
+      {% for c in (t.categories or "," ~ t.category ~ ",").strip(",").split(",") if c %}<span class="pill">{{ CATEGORIES.get(c, c) }}</span>{% endfor %}
+      <span class="pill">{{ TYPES.get(t.type, t.type) }}</span>
+      {% if t.status != "published" %}<span class="pill warn">{{ t.status|capitalize }}, not public</span>{% endif %}
+    </div>
+  </div>
+  <div class="ph-act">
+    {% if member %}<form method="post" action="/t/{{ t.id }}/save"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/t/{{ t.id }}">
+      <button class="btn ghost" type="submit" aria-pressed="{{ 'true' if is_saved else 'false' }}">{{ icon("star") }}{{ "Saved" if is_saved else "Save" }}</button></form>{% endif %}
+    {% if full %}<button class="btn ghost hide-sm" type="button" data-print>{{ icon("print") }}Print</button>{% endif %}
+    {% if not me %}<a class="btn ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}
+    {{ bid_action() }}
   </div>
 </div>
-{% if env %}
-<section class="envelope">
-  <div class="env-top">
-    <div><h2>{% if not env.blockers %}Yes, you can bid. {% endif %}{{ words(env.done) }} of the {{ words(env.total)|lower }} papers {{ "is" if env.done == 1 else "are" }} already in{{ " the envelope" if bid else " your file" }}.</h2>
-      <p>{% if env.blockers %}Missing from your company file: {{ env.blockers|map(attribute="label")|join(", ")|lower }}. {% endif %}{% if not bid %}The technical offer and price schedule are written in Bid Room.{% endif %} This list is read from the notice, so check it against the bid document.</p></div>
-    {% if bid %}<a class="btn ink big" href="/bids/{{ bid.id }}">Open your bid</a>
-    {% else %}<form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ink big" type="submit">Start this bid</button></form>{% endif %}
-  </div>
-  {{ sheets(env) }}
-  {% if env.blockers %}<div class="env-acts"><a class="btn line" href="/file?add={{ env.blockers[0].key }}#add">Add your {{ env.blockers[0].label|lower }}</a></div>{% endif %}
-</section>
-{% endif %}
-<div class="t-grid">
-  <div>
-    {% set where = t.place ~ ((", " if t.place else "") ~ t.region if t.region and t.region not in t.place else "") %}
-    <div class="{{ 'locked' if not full }}">
-    <dl class="facts">
-      <div><dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}</dd></div>
-      <div><dt>Where</dt><dd>{{ where or "Not stated" }}</dd></div>
-      {% if t.category == "construction" %}<div><dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd></div>{% endif %}
-      {% if full %}
-      <div><dt>Bid security</dt><dd>{{ t.bid_security or "Not stated" }}</dd></div>
-      <div><dt>Document fee</dt><dd>{{ t.document_fee or "Not stated" }}</dd></div>
-      {% if t.reference %}<div><dt>Reference</dt><dd>{{ t.reference }}</dd></div>{% endif %}
-      {% if t.source %}<div{% if not t.reference %} class="wide"{% endif %}><dt>Published in</dt><dd>{{ t.source }}</dd></div>{% endif %}
-      {% else %}
-      <div><dt>Bid security <span style="position:absolute;left:-9999px">(subscribers only)</span></dt><dd class="blur" aria-hidden="true">ETB 00,000 bank guarantee</dd></div>
-      <div><dt>Document fee</dt><dd class="blur" aria-hidden="true">ETB 000, non-refundable</dd></div>
-      <div class="wide"><dt>Where to get the bid documents</dt><dd class="blur" aria-hidden="true">Procurement office, room 000, from 8:30</dd></div>
-      {% endif %}
-    </dl>
-    </div>
+
+<div class="layout-side">
+  <div class="ws-col">
+    {% if env %}
+    <section class="card flush" aria-labelledby="env-h">
+      <div class="card-h"><h2 id="env-h">Can you bid?</h2>{{ "" }}<span class="small muted">{{ env.done }} of {{ env.total }} ready</span></div>
+      <div style="padding:12px 16px;border-bottom:1px solid var(--line)">
+        <p style="margin:0;font-weight:500">{% if not env.blockers %}Yes, you can bid. {% endif %}{{ words(env.done) }} of the {{ words(env.total)|lower }} papers {{ "is" if env.done == 1 else "are" }} already in{{ " the envelope" if bid else " your file" }}.</p>
+        <p class="small muted" style="margin:4px 0 0">{% if env.blockers %}Missing from your company file: {{ env.blockers|map(attribute="label")|join(", ")|lower }}. {% endif %}{% if not bid %}The technical offer and price schedule are written in Bid Room.{% endif %} This list is read from the notice, so check it against the bid document.</p>
+      </div>
+      <ul class="checklist">
+        {% for r in env["items"] %}<li>{{ mark(r.state) }}<div class="body"><b>{{ r.label }}</b>{% if r.key == "security" and r.note %}<p>{{ r.note }}</p>{% elif r.note %}<p>{{ r.note }}</p>{% endif %}</div>
+          <div class="end">{{ env_state(r) }}{% if r.state in ("missing", "late") %}<a class="btn sm ghost" href="/file?add={{ r.key }}#add">Add</a>{% endif %}</div></li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="card flush" aria-labelledby="det-h">
+      <div class="card-h"><h2 id="det-h">Details</h2>{% if not full %}<span class="pill">{{ icon("lock", "s") }}Some details need a subscription</span>{% endif %}</div>
+      <dl class="facts">
+        <div><dt>Buyer</dt><dd>{{ t.buyer }}</dd></div>
+        <div><dt>Buyer type</dt><dd>{{ TYPES.get(t.type, t.type) }}</dd></div>
+        <div><dt>Category</dt><dd>{{ cats(t) }}</dd></div>
+        <div><dt>Closes</dt><dd>{% if t.closes %}{{ t.closes | long_date }}{% if t.time %}, {{ t.time }}{% endif %}{% else %}Not stated. Check the notice.{% endif %}</dd></div>
+        <div><dt>Where</dt><dd>{{ where or "Not stated" }}</dd></div>
+        {% if t.category == "construction" or t.grade %}<div><dt>Grade</dt><dd>{{ t.grade + " and above" if t.grade else "Not stated" }}</dd></div>{% else %}<div><dt>Region</dt><dd>{{ t.region or "Not stated" }}</dd></div>{% endif %}
+        {% if full %}
+        <div><dt>Bid security</dt><dd>{{ t.bid_security or "Not stated" }}</dd></div>
+        <div><dt>Document fee</dt><dd>{{ t.document_fee or "Not stated" }}</dd></div>
+        <div><dt>Reference</dt><dd class="mono">{{ t.reference or "Not stated" }}</dd></div>
+        {% if t.source %}<div class="wide"><dt>Published in</dt><dd>{{ t.source }}</dd></div>{% endif %}
+        {% else %}
+        <div><dt>Bid security <span class="sr">(subscribers only)</span></dt><dd class="blur" aria-hidden="true">ETB 00,000 bank guarantee</dd></div>
+        <div><dt>Document fee</dt><dd class="blur" aria-hidden="true">ETB 000, non-refundable</dd></div>
+        <div><dt>Reference</dt><dd class="blur" aria-hidden="true">NCB/000/2026</dd></div>
+        <div class="wide"><dt>Where to get the bid documents</dt><dd class="blur" aria-hidden="true">Procurement office, room 000, from 8:30</dd></div>
+        {% endif %}
+      </dl>
+    </section>
+
     {% if full %}
-      {% if t.photo %}<h2>The notice</h2><div class="photo" style="margin-bottom:28px"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div>{% endif %}
-      {% if t.notice %}<h2>Full notice</h2><div class="notice-text">{{ t.notice }}</div>{% endif %}
-      {% if t.url | safe_url %}<p class="small muted" style="margin-top:16px">Buyer's own page: <a href="{{ t.url | safe_url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }}</a></p>{% endif %}
+      {% if t.photo %}<section class="card flush" aria-labelledby="ph-h"><div class="card-h"><h2 id="ph-h">The notice</h2><a class="small" href="/notices/{{ t.photo }}" target="_blank" rel="noopener">Open full size {{ icon("ext", "s") }}</a></div>
+        <div style="padding:12px 16px"><div class="photo"><img src="/notices/{{ t.photo }}" alt="Photo of the original tender notice" loading="lazy"></div></div></section>{% endif %}
+      {% if t.notice %}<section class="card flush" aria-labelledby="nt-h"><div class="card-h"><h2 id="nt-h">Full notice</h2></div><div class="notice-text">{{ t.notice }}</div></section>{% endif %}
+      {% if t.url | safe_url %}<p class="small muted" style="margin:0">Buyer's own page: <a href="{{ t.url | safe_url }}" rel="noopener nofollow" target="_blank">{{ t.url | host }} {{ icon("ext", "s") }}</a></p>{% endif %}
     {% else %}
-      <div class="lock-card">
+      <section class="card lock-card">
         <h2>See the full notice and everything that fits you</h2>
         <ul>
           <li>{{ check() }}Bid security, document fee and where to buy the documents</li>
@@ -55,45 +88,50 @@
           <li>{{ check() }}Bid Room for this tender: every requirement as a checklist, and your bid drafted from your company profile</li>
           <li>{{ check() }}Every other open tender that matches your business, each morning in Telegram</li>
         </ul>
-        <div class="btns">{% if me %}<a class="btn big" href="/account">Subscribe</a>{% else %}<a class="btn big" href="/signup">Start {{ TRIAL }}-day free trial</a><a class="btn big ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}</div>
+        <div class="btn-group">{% if me %}<a class="btn" href="/account#plans">Subscribe</a>{% else %}<a class="btn" href="/signup">Start {{ TRIAL }}-day free trial</a><a class="btn ghost" href="/login?next=/t/{{ t.id }}">Sign in</a>{% endif %}</div>
         <p class="small muted" style="margin:12px 0 0">From ETB {{ PRICES.ETB.month }} a month, or USD {{ PRICES.USD.month }} for firms abroad. <a href="/pricing">See pricing</a></p>
-      </div>
+      </section>
     {% endif %}
   </div>
-  <aside class="side">
-    <div class="clock">
-      <div class="top">{{ leaf(t, today, True) }}
-        <div>{% if t.closes %}{% set d = t.closes | days_from(today) %}<div class="left-n">{{ d if d >= 0 else 0 }}</div><div class="left-l">{{ "day left" if d == 1 else "days left" }}{% if d < 0 %}: closed{% endif %}</div>
-          {% else %}<div class="left-l">No closing date given</div>{% endif %}</div>
-      </div>
-      {{ bar(t, today) }}
-      <p>{% if t.closes %}Bids close {{ t.closes | long_date }}{% if t.time %} at {{ t.time }}{% endif %}.{% else %}The notice gives no closing date. Check it before you prepare a bid.{% endif %}</p>
+
+  <aside>
+    <section class="card" aria-label="Deadline">
+      <p class="section-title">Closing</p>
+      {% if t.closes %}<div class="countdown {{ 'hot' if d <= 3 else 'soon' if d <= 7 }}"><b>{{ d if d >= 0 else 0 }}</b><span class="muted">{{ "day left" if d == 1 else "days left" }}{% if d < 0 %}: closed{% endif %}</span></div>
+      <p class="small" style="margin:6px 0 0">Bids close {{ t.closes | long_date }}{% if t.time %} at {{ t.time }}{% endif %}.</p>
+      <p class="small muted" style="margin:2px 0 0">{{ eth_date(t.closes) }} E.C.</p>
+      {% else %}<p class="small" style="margin:0">The notice gives no closing date. Check it before you prepare a bid.</p>{% endif %}
       {% for n in date_notes(t, today) %}<p class="note">{{ n }}</p>{% endfor %}
-    </div>
-    {% if (not me or me.role == "member") and not env %}
-    <div class="card bidroom-card">
-      <h2>Bid Room</h2>
-      {% if bid and win %}
-        <p class="small muted">Your bid for this tender is in progress{% if bid.state == "submitted" %} and marked submitted{% endif %}.</p>
-        <a class="btn block" href="/bids/{{ bid.id }}">Open your bid</a>
-      {% elif win %}
-        <p class="small muted">Everything this tender requires, as a checklist checked against your profile. The cover letter, company section and technical offer drafted for you, ready to print and stamp.</p>
-        <form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn block" type="submit">Start this bid</button></form>
-      {% elif me %}
-        <p class="small muted">{% if bid %}Your bid for this tender is kept. {% endif %}Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp. Bid Room is in the Win plan.</p>
-        <a class="btn block" href="/account#plans">Choose Win to {{ "open your bid" if bid else "start this bid" }}</a>
-      {% else %}
-        <p class="small muted">Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp.</p>
-        <a class="btn block" href="/signup">Start your trial to open Bid Room</a>
-      {% endif %}
-    </div>
+    </section>
+    {% if fitness is not none %}
+    <section class="card" aria-label="Fit">
+      <p class="section-title">Fit for {{ me.company.name }}</p>
+      {% if fitness.n %}{{ fit(fitness) }}{% endif %}
+      <p class="small muted" style="margin:6px 0 0">{% if fitness.n %}Matches {{ fitness.why|join(", ") }}.{% else %}{{ (fitness.why|join(", ") or "Not in your interests")|capitalize }}.{% endif %} <a href="/account#interests">Change interests</a></p>
+    </section>
     {% endif %}
-    <div class="origin">
-      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/><path d="M10 14.3l2.7 2.7L18.5 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div>{% if t.id.startswith("wb-") %}<b>From the World Bank's official feed</b>Published by the World Bank for a project it finances in Ethiopia.
-        {% elif t.id.startswith("web-") %}<b>From the buyer's own website</b>Read from the buyer's site and kept on our server.
-        {% else %}<b>Checked by our team</b>Collected from {{ t.source if (full and t.source) else "a newspaper or notice board" }} and checked by a reviewer before it went up.{% endif %}</div>
-    </div>
+    {% if (not me or me.role == "member") and not env %}
+    <section class="card" aria-labelledby="br-h">
+      <h2 id="br-h">Bid Room</h2>
+      {% if bid and win %}<p class="small muted">Your bid for this tender is in progress{% if bid.state == "submitted" %} and marked submitted{% endif %}.</p>
+      {% elif win %}<p class="small muted">Everything this tender requires, as a checklist checked against your profile. The cover letter, company section and technical offer drafted for you, ready to print and stamp.</p>
+      {% elif me %}<p class="small muted">{% if bid %}Your bid for this tender is kept. {% endif %}Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp. Bid Room is in the Win plan.</p>
+      {% else %}<p class="small muted">Every requirement as a checklist, and the bid drafted from your company profile, ready to print and stamp.</p>{% endif %}
+      {% if not me %}<a class="btn block" href="/signup">Start your trial to open Bid Room</a>{% endif %}
+    </section>
+    {% endif %}
+    <section class="card" aria-label="Where this came from">
+      <p class="section-title">Source</p>
+      <p class="small" style="margin:0">{% if t.id.startswith("wb-") %}<b>From the World Bank's official feed.</b> Published by the World Bank for a project it finances in Ethiopia.
+        {% elif t.id.startswith("web-") %}<b>From the buyer's own website.</b> Read from the buyer's site and kept on our server.
+        {% else %}<b>Checked by our team.</b> Collected from {{ t.source if (full and t.source) else "a newspaper or notice board" }} and checked by a reviewer before it went up.{% endif %}</p>
+    </section>
+    {% if related %}
+    <section class="card flush" aria-labelledby="rel-h">
+      <div class="card-h"><h2 id="rel-h">Related open tenders</h2></div>
+      <div class="lines">{% for r in related %}<div class="line"><div><a class="t" href="/t/{{ r.id }}">{{ r.title|truncate(70) }}</a><span class="sub">{{ r.buyer }}</span></div><span class="small muted nowrap">{{ r.closes | short_date }}</span></div>{% endfor %}</div>
+    </section>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}

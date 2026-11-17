@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header %}
+{% block title %}Market and bids | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/reports">Reports</a>{{ icon("chev-r") }}<span class="here">Market and bids</span>{% endblock %}
+{% block body %}
+{% call page_header("Market and bids", "Open tenders right now, where they come from, and how your own bids are going. Counts update as tenders are added.") %}
+  <a class="btn ghost" href="/">{{ icon("list") }}All tenders</a>
+{% endcall %}
+<div class="stat-strip">
+  <a href="/"><span>Open tenders</span><b>{{ total }}</b></a>
+  <div><span>Buyers with open tenders</span><b>{{ buyers_n }}</b></div>
+  <a href="/?within=7"><span>Closing in 7 days</span><b>{{ weeks[0].n }}</b></a>
+  {% if mine %}<a href="/?match=1"><span>Match your interests</span><b>{{ mine.matches }}</b></a>{% endif %}
+</div>
+<div class="cols">
+  <section class="card flush"><div class="card-h"><h2>Open tenders by category</h2><span class="small muted">A tender can sit in several</span></div>
+    <ul class="hbars">{% set top = (cats|map(attribute=1)|max) if cats else 1 %}{% for k, n in cats %}<li><span class="lbl"><a href="/?category={{ k }}">{{ CATEGORIES.get(k, k) }}</a></span><span class="b"><i style="width:{{ n * 100 // top }}%"></i></span><span class="n">{{ n }}</span></li>{% endfor %}</ul></section>
+  <section class="card flush"><div class="card-h"><h2>Closing by week</h2><span class="small muted">Next six weeks</span></div>
+    <ul class="hbars">{% set top = [weeks|map(attribute="n")|max, 1]|max %}{% for w in weeks %}<li><span class="lbl">{{ w.label }}</span><span class="b"><i style="width:{{ w.n * 100 // top }}%"></i></span><span class="n">{{ w.n }}</span></li>{% endfor %}</ul></section>
+  <section class="card flush"><div class="card-h"><h2>Buyers with the most open tenders</h2></div>
+    <ul class="hbars">{% set top = (buyers|map(attribute=1)|max) if buyers else 1 %}{% for k, n in buyers %}<li><span class="lbl" title="{{ k }}"><a href="/?buyer={{ k|urlencode }}">{{ k }}</a></span><span class="b"><i style="width:{{ n * 100 // top }}%"></i></span><span class="n">{{ n }}</span></li>{% endfor %}</ul></section>
+  <section class="card flush"><div class="card-h"><h2>Open tenders by region</h2></div>
+    <ul class="hbars">{% set top = (regions|map(attribute=1)|max) if regions else 1 %}{% for k, n in regions %}<li><span class="lbl">{% if k != "Not stated" %}<a href="/?region={{ k|urlencode }}">{{ k }}</a>{% else %}{{ k }}{% endif %}</span><span class="b"><i style="width:{{ n * 100 // top }}%"></i></span><span class="n">{{ n }}</span></li>{% endfor %}</ul></section>
+  <section class="card flush"><div class="card-h"><h2>By buyer type</h2></div>
+    <ul class="hbars">{% set top = (types|map(attribute=1)|max) if types else 1 %}{% for k, n in types %}<li><span class="lbl"><a href="/?type={{ k }}">{{ TYPES.get(k, k) }}</a></span><span class="b"><i style="width:{{ n * 100 // top }}%"></i></span><span class="n">{{ n }}</span></li>{% endfor %}</ul></section>
+  {% if mine %}
+  <section class="card flush"><div class="card-h"><h2>Your bid record</h2><a class="small" href="/bids">All bids</a></div>
+    <table><tbody>
+      <tr><td>Bids started</td><td class="num">{{ mine.started }}</td></tr>
+      <tr><td>Submitted</td><td class="num">{{ mine.submitted }}</td></tr>
+      <tr><td>In progress, still open</td><td class="num">{{ mine.open }}</td></tr>
+      <tr><td>Closed before submitting</td><td class="num">{{ mine.missed }}</td></tr>
+      <tr><td>Saved tenders</td><td class="num">{{ mine.saved }}</td></tr>
+    </tbody></table>
+    <p class="small muted" style="margin:0;padding:8px 16px;border-top:1px solid var(--line)">Win and loss results aren't recorded yet, so this counts bids, not awards.</p></section>
+  {% endif %}
+</div>
+{% endblock %}

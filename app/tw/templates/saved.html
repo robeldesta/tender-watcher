@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, deadline, fit, save_button, cats, empty, bid_state %}
+{% block title %}Saved tenders | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/">Tenders</a>{{ icon("chev-r") }}<span class="here">Saved</span>{% endblock %}
+{% block body %}
+{% call page_header("Saved tenders", "Your shortlist. Star any tender to keep it here; everyone in your company sees the same list.") %}
+  <a class="btn ghost" href="/?match=1">{{ icon("target") }}Recommended</a>
+{% endcall %}
+<section class="card flush">
+{% if rows %}
+  <div class="table-wrap"><table class="dt stack-sm">
+    <thead><tr><th style="width:36px"><span class="sr">Saved</span></th><th style="width:120px">Closes</th><th>Tender</th><th class="hide-sm">Category</th><th style="width:110px">Fit</th><th style="width:150px">Bid</th></tr></thead>
+    <tbody>{% for t in rows %}<tr>
+      <td class="c-act">{{ save_button(t, saved, csrf, "/saved") }}</td>
+      <td class="inline-sm">{{ deadline(t.closes, t.time, today) }}</td>
+      <td class="tcell"><a class="t clamp" href="/t/{{ t.id }}">{{ t.title }}</a><span class="sub">{{ t.buyer }}</span></td>
+      <td class="hide-sm small">{{ cats(t) }}</td>
+      <td class="inline-sm">{{ fit(fits.get(t.id)) }}</td>
+      <td class="inline-sm">{% if t.id in bids %}<a href="/bids/{{ bids[t.id].id }}">{{ bid_state(bids[t.id].state) }}</a>{% elif shell and shell.win %}<form method="post" action="/t/{{ t.id }}/bid"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm ghost" type="submit">Start this bid</button></form>{% else %}<span class="faint">–</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody></table></div>
+{% else %}
+  {{ empty("Nothing saved yet", "Press the star on any tender to keep it on your shortlist.", "/", "Browse open tenders") }}
+{% endif %}
+</section>
+{% if closed %}
+<section class="card flush" style="margin-top:16px"><div class="card-h"><h2>Closed or taken down</h2><span class="small muted">{{ closed|length }}</span></div>
+  <div class="table-wrap"><table class="dt"><tbody>{% for t in closed %}<tr><td class="tcell">{{ t.title }}<span class="sub">{{ t.buyer }}{% if t.closes %} · closed {{ t.closes | short_date }}{% endif %}</span></td>
+    <td class="c-act" style="width:40px">{{ save_button(t, saved, csrf, "/saved") }}</td></tr>{% endfor %}</tbody></table></div></section>
+{% endif %}
+{% endblock %}

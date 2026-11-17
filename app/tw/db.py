@@ -157,6 +157,15 @@ class Paper(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
+class SavedTender(Base):
+    """A tender a company keeps on its shortlist."""
+    __tablename__ = "saved_tenders"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    tender_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    saved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
 class Setting(Base):
     """A value an admin can change on the site, such as the trial length."""
     __tablename__ = "settings"

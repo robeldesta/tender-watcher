@@ -1,76 +1,90 @@
-{% extends "base.html" %}{% from "_due.html" import check %}{% block title %}Your account | Tender Watcher{% endblock %}
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, check %}{% block title %}Plan and billing | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/profile">Company</a>{{ icon("chev-r") }}<span class="here">Plan and billing</span>{% endblock %}
 {% block body %}
-{% if request.query_params.get("welcome") %}<p class="alert ok">Welcome, {{ me.name }}. Your free trial is on. Tell us what {{ c.name }} bids on below, and your matching tenders appear right away.</p>{% endif %}
-{% if payment == "paid" %}<p class="alert ok">Thank you. Your payment went through and your subscription is extended.</p>
-{% elif payment == "waiting" %}<p class="alert warn">Chapa has not confirmed your payment yet. If you paid, it shows here within a few minutes; reload this page.</p>
-{% elif payment == "unknown" %}<p class="alert bad">We couldn't find that payment. If money left your account, tell us and we'll sort it out.</p>{% endif %}
+{% if request.query_params.get("welcome") %}<div class="alert ok"><div class="grow"><p>Welcome, {{ me.name }}. Your free trial is on. Tell us what {{ c.name }} bids on below, and your matching tenders appear right away.</p></div></div>{% endif %}
+{% if payment == "paid" %}<div class="alert ok"><div class="grow"><p>Thank you. Your payment went through and your subscription is extended.</p></div></div>
+{% elif payment == "waiting" %}<div class="alert warn"><div class="grow"><p>Chapa has not confirmed your payment yet. If you paid, it shows here within a few minutes; reload this page.</p></div></div>
+{% elif payment == "unknown" %}<div class="alert bad"><div class="grow"><p>We couldn't find that payment. If money left your account, tell us and we'll sort it out.</p></div></div>{% endif %}
 {% set subscribed = c.paid_until and c.paid_until >= today %}{% set on_win = c.win_until and c.win_until >= today %}
-<div class="page-head">
-  <div><h1>{{ c.name }}</h1><p class="sub">Signed in as {{ me.name }}, {{ me.phone }} · <a href="/security">Password and two-step sign-in</a></p></div>
-  <span class="status{{ ' ended' if not access }}" style="margin-left:auto">{% if on_win %}Win plan{% elif subscribed %}Watch plan{% elif access %}Free trial{% else %}Trial ended{% endif %}</span>
+{% set state_label = "Win plan" if on_win else "Watch plan" if subscribed else "Free trial" if access else "Trial ended" %}
+<div class="page-header">
+  <div class="ph-t"><h1>{{ c.name }}</h1><p class="ph-sub">Signed in as {{ me.name }}, {{ me.phone }} · <a href="/security">Password and two-step sign-in</a></p></div>
+  <div class="ph-act"><span class="status{{ ' ended' if not access }}">{{ state_label }}</span></div>
 </div>
 
-<div class="cols">
-  <section class="card dark" aria-labelledby="plan-h">
-    <h2 id="plan-h">{% if on_win %}Win until {{ c.win_until | long_date }}{% elif subscribed %}Watch until {{ c.paid_until | long_date }}{% elif access %}Free trial: {{ days_left }} day{{ "s" if days_left != 1 }} left{% else %}Your trial has ended{% endif %}</h2>
-    <p class="muted" style="margin:0">{% if on_win %}Tenders and Bid Room. Paying again adds to the date above.{% if c.paid_until > c.win_until %} Tenders run until {{ c.paid_until | long_date }}.{% endif %}
-      {% elif subscribed %}Tenders, matches and alerts. Bid Room needs Win{% if c.trial_until >= today %} after your trial{% endif %}.
-      {% elif access %}Until {{ c.trial_until | long_date }}, with Bid Room. Paying now adds to the days you have left.{% else %}Choose a plan to keep seeing full notices, your matches and morning alerts{{ ", and to keep building bids" if c.win_until }}.{% endif %}</p>
-    {% if access and not subscribed %}<div class="trial-meter">{% set used = TRIAL - days_left %}<span class="bar"><i style="width:{{ [used * 100 // (TRIAL or 1), 4]|max }}%"></i></span></div>{% endif %}
-    <nav class="cur-switch dark" aria-label="Currency" style="margin-top:16px">
-      <a href="/account" {% if cur == "ETB" %}aria-current="true"{% endif %}>Birr</a>
-      <a href="/account?cur=USD" {% if cur == "USD" %}aria-current="true"{% endif %}>US dollars</a>
-    </nav>
-    {% if chapa_on %}
-    <form method="post" action="/account/pay" id="plans">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <input type="hidden" name="currency" value="{{ cur }}">
-      {% for fam, pre, blurb in [("Win", "win_", "Every tender, plus Bid Room to build and print your bids"), ("Watch", "", "Every tender, your matches and morning alerts")] %}
-      <p class="plan-k"><b>{{ fam }}</b> {{ blurb }}</p>
-      <div class="choose">
-        {% for k in ["year", "m6", "m3", "month"] %}{% set amount = prices[pre ~ k] %}{% set months = TERMS[k][0] %}
-        <button type="submit" name="plan" value="{{ pre ~ k }}"{% if k == "year" and pre %} class="best"{% endif %}>{% if k == "year" and pre %}<em>Best value</em>{% endif %}<b>{{ cur }} {{ "{:,}".format(amount) }}</b><span>{{ TERMS[k][2] }}{% if months > 1 %} · {{ cur }} {{ "{:,}".format((amount / months) | round | int) }} a month{% endif %}</span></button>{% endfor %}
-      </div>
-      {% endfor %}
-    </form>
-    {% if cur == "USD" %}<p class="muted small" style="margin:0">You pay by international card on Chapa's secure page. You can also send a USD or EUR bank transfer to Sonador Systems, and we switch you on.</p>
-    {% else %}<p class="muted small" style="margin:0">You pay on Chapa's secure page with Telebirr, CBE Birr, a bank account or a card. You can also pay Sonador Systems by Telebirr or bank transfer, and we switch you on.</p>{% endif %}
-    {% else %}
-    <p class="muted small" style="margin:16px 0 0" id="plans">Win, with Bid Room: {{ cur }} {{ "{:,}".format(prices.win_month) }} a month, {{ "{:,}".format(prices.win_m3) }} for 3 months, {{ "{:,}".format(prices.win_m6) }} for 6 months or {{ "{:,}".format(prices.win_year) }} a year. Watch: {{ cur }} {{ prices.month }} a month, {{ "{:,}".format(prices.m3) }} for 3 months, {{ "{:,}".format(prices.m6) }} for 6 months or {{ "{:,}".format(prices.year) }} a year. Pay Sonador Systems by {{ "USD or EUR bank transfer" if cur == "USD" else "Telebirr or bank transfer" }}, and we switch you on.</p>
+<div class="layout-side">
+  <div class="ws-col">
+    <section class="card" aria-labelledby="plan-h" id="plans-card">
+      <div class="panel-h"><h2 id="plan-h">{% if on_win %}Win until {{ c.win_until | long_date }}{% elif subscribed %}Watch until {{ c.paid_until | long_date }}{% elif access %}Free trial: {{ days_left }} day{{ "s" if days_left != 1 }} left{% else %}Your trial has ended{% endif %}</h2>
+        <nav class="cur-switch" aria-label="Currency" style="margin:0">
+          <a href="/account" {% if cur == "ETB" %}aria-current="true"{% endif %}>Birr</a>
+          <a href="/account?cur=USD" {% if cur == "USD" %}aria-current="true"{% endif %}>US dollars</a>
+        </nav></div>
+      <p class="muted">{% if on_win %}Tenders and Bid Room. Paying again adds to the date above.{% if c.paid_until > c.win_until %} Tenders run until {{ c.paid_until | long_date }}.{% endif %}
+        {% elif subscribed %}Tenders, matches and alerts. Bid Room needs Win{% if c.trial_until >= today %} after your trial{% endif %}.
+        {% elif access %}Until {{ c.trial_until | long_date }}, with Bid Room. Paying now adds to the days you have left.{% else %}Choose a plan to keep seeing full notices, your matches and morning alerts{{ ", and to keep building bids" if c.win_until }}.{% endif %}</p>
+      {% if access and not subscribed %}{% set used = TRIAL - days_left %}<span class="prog" style="margin-bottom:12px"><i style="width:{{ [used * 100 // (TRIAL or 1), 4]|max }}%"></i></span>{% endif %}
+      {% if chapa_on %}
+      <form method="post" action="/account/pay" id="plans">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="currency" value="{{ cur }}">
+        {% for fam, pre, blurb in [("Win", "win_", "Every tender, plus Bid Room to build and print your bids"), ("Watch", "", "Every tender, your matches and morning alerts")] %}
+        <p class="plan-k"><b>{{ fam }}</b> {{ blurb }}</p>
+        <div class="choose">
+          {% for k in ["year", "m6", "m3", "month"] %}{% set amount = prices[pre ~ k] %}{% set months = TERMS[k][0] %}
+          <button type="submit" name="plan" value="{{ pre ~ k }}"{% if k == "year" and pre %} class="best"{% endif %}>{% if k == "year" and pre %}<em>Best value</em>{% endif %}<b>{{ cur }} {{ "{:,}".format(amount) }}</b><span>{{ TERMS[k][2] }}{% if months > 1 %} · {{ cur }} {{ "{:,}".format((amount / months) | round | int) }} a month{% endif %}</span></button>{% endfor %}
+        </div>
+        {% endfor %}
+      </form>
+      <p class="small muted" style="margin:0">{% if cur == "USD" %}You pay by international card on Chapa's secure page. You can also send a USD or EUR bank transfer to Sonador Systems, and we switch you on.{% else %}You pay on Chapa's secure page with Telebirr, CBE Birr, a bank account or a card. You can also pay Sonador Systems by Telebirr or bank transfer, and we switch you on.{% endif %}</p>
+      {% else %}
+      <p class="small muted" style="margin:0" id="plans">Win, with Bid Room: {{ cur }} {{ "{:,}".format(prices.win_month) }} a month, {{ "{:,}".format(prices.win_m3) }} for 3 months, {{ "{:,}".format(prices.win_m6) }} for 6 months or {{ "{:,}".format(prices.win_year) }} a year. Watch: {{ cur }} {{ prices.month }} a month, {{ "{:,}".format(prices.m3) }} for 3 months, {{ "{:,}".format(prices.m6) }} for 6 months or {{ "{:,}".format(prices.year) }} a year. Pay Sonador Systems by {{ "USD or EUR bank transfer" if cur == "USD" else "Telebirr or bank transfer" }}, and we switch you on.</p>
+      {% endif %}
+      <p class="small" style="margin:8px 0 0"><a href="/pricing{{ '?cur=USD' if cur == 'USD' else '' }}">Compare plans and questions</a></p>
+    </section>
+
+    <section class="card flush" aria-labelledby="int-h" id="interests">
+      <div class="card-h"><div><h2 id="int-h">What does {{ c.name }} bid on?</h2><p class="small muted" style="margin:2px 0 0">Pick everything that fits. We use this for your recommended tenders, fit scores and morning alerts.</p></div></div>
+      <form method="post" action="/account/interests" style="padding:16px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <fieldset class="set"><legend>Categories</legend>
+          <div class="chips">{% for k, v in CATEGORIES.items() %}<label class="chip"><input type="checkbox" name="categories" value="{{ k }}" {{ "checked" if k in i.categories }}>{{ v }}</label>{% endfor %}</div></fieldset>
+        <fieldset class="set"><legend>Regions <span>(leave all off to see every region)</span></legend>
+          <div class="chips">{% for r in REGIONS %}<label class="chip"><input type="checkbox" name="regions" value="{{ r }}" {{ "checked" if r in i.regions }}>{{ r }}</label>{% endfor %}</div></fieldset>
+        <div class="field" style="max-width:560px"><label for="keywords">Words to look for</label>
+          <input id="keywords" name="keywords" value="{{ i.keywords | join(', ') }}" placeholder="laptops, data center, survey, bus">
+          <p class="hint">Separate them with commas. Amharic works too.</p></div>
+        <button class="btn" type="submit">Save and show my tenders</button>
+      </form>
+    </section>
+
+    {% if pays %}
+    <section class="card flush" aria-labelledby="pay-h">
+      <div class="card-h"><h2 id="pay-h">Your payments</h2></div>
+      <div class="table-wrap"><table><thead><tr><th>Paid on</th><th>Plan</th><th>Method</th><th class="num">Amount</th><th>Paid until</th></tr></thead><tbody>
+      {% for p in pays %}<tr><td>{{ p.paid_at.strftime("%d %b %Y") }}</td><td>{{ PLAN_LABEL.get(p.plan, p.plan) }}</td><td>{{ methods.get(p.method, p.method) }}</td><td class="num">{{ p.currency }} {{ "{:,}".format(p.amount) }}</td><td>{{ p.paid_until | long_date }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
     {% endif %}
-    <p class="small" style="margin:8px 0 0"><a href="/pricing{{ '?cur=USD' if cur == 'USD' }}" style="color:inherit">Pricing and questions</a></p>
-    {% if pays %}<details style="margin-top:16px"><summary class="small">Your payments</summary><ul class="small muted" style="padding-left:18px">
-    {% for p in pays %}<li>{{ p.paid_at.strftime("%d %b %Y") }}: {{ p.currency }} {{ "{:,}".format(p.amount) }} ({{ PLAN_LABEL.get(p.plan, p.plan) }}, {{ methods.get(p.method, p.method) }}), paid until {{ p.paid_until | long_date }}</li>{% endfor %}
-    </ul></details>{% endif %}
-  </section>
+  </div>
 
-  <section class="card" aria-labelledby="tg-h">
-    <h2 id="tg-h">Morning alerts in Telegram</h2>
-  {% if me.telegram_chat %}
-    <p><span class="tag ok">{{ check() }} Connected</span></p>
-    <p class="muted">Telegram is connected. Every morning at 8 you get the new tenders that match your interests, each one once.</p>
-    <form method="post" action="/account/telegram/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost" type="submit">Stop Telegram alerts</button></form>
-  {% elif tg_link %}
-    <p class="muted">Get your new matching tenders in Telegram every morning at 8, each one once.</p>
-    <a class="btn big" href="{{ tg_link }}" target="_blank" rel="noopener">Connect Telegram</a>
-    <p class="hint">Telegram opens; tap Start. Then reload this page to see it connected.</p>
-  {% endif %}
-  </section>
+  <aside>
+    <section class="card" aria-labelledby="tg-h">
+      <h2 id="tg-h">Morning alerts in Telegram</h2>
+    {% if me.telegram_chat %}
+      <p style="margin:8px 0"><span class="pill ok">{{ check() }} Connected</span></p>
+      <p class="small muted">Telegram is connected. Every morning at 8 you get the new tenders that match your interests, each one once.</p>
+      <form method="post" action="/account/telegram/stop" data-ask="Stop the morning alerts in Telegram? You can connect again any time." data-ask-label="Stop alerts"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost" type="submit">Stop Telegram alerts</button></form>
+    {% elif tg_link %}
+      <p class="small muted">Get your new matching tenders in Telegram every morning at 8, each one once.</p>
+      <a class="btn" href="{{ tg_link }}" target="_blank" rel="noopener">Connect Telegram</a>
+      <p class="hint" style="margin-top:6px">Telegram opens; tap Start. Then reload this page to see it connected.</p>
+    {% endif %}
+    </section>
+    <section class="card flush" aria-labelledby="tm-h">
+      <div class="card-h"><h2 id="tm-h">Team members</h2><span class="small muted">{{ team|length }}</span></div>
+      <div class="lines">{% for p in team %}<div class="line"><div><span class="t">{{ p.name }}</span><span class="sub">{{ p.phone }}</span></div>{% if p.id == me.id %}<span class="pill">You</span>{% elif not p.active %}<span class="pill">Off</span>{% endif %}</div>{% endfor %}</div>
+    </section>
+  </aside>
 </div>
-
-<section aria-labelledby="int-h">
-  <h2 id="int-h">What does {{ c.name }} bid on?</h2>
-  <p class="muted" style="margin-bottom:24px">Pick everything that fits. We use this for your matches and your morning alerts.</p>
-  <form method="post" action="/account/interests">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <fieldset class="set"><legend>Categories</legend>
-      <div class="chips">{% for k, v in CATEGORIES.items() %}<label class="chip"><input type="checkbox" name="categories" value="{{ k }}" {{ "checked" if k in i.categories }}>{{ v }}</label>{% endfor %}</div></fieldset>
-    <fieldset class="set"><legend>Regions <span>(leave all off to see every region)</span></legend>
-      <div class="chips">{% for r in REGIONS %}<label class="chip"><input type="checkbox" name="regions" value="{{ r }}" {{ "checked" if r in i.regions }}>{{ r }}</label>{% endfor %}</div></fieldset>
-    <div class="field" style="max-width:640px"><label for="keywords">Words to look for</label>
-      <input id="keywords" name="keywords" value="{{ i.keywords | join(', ') }}" placeholder="laptops, data center, survey, bus">
-      <p class="hint">Separate them with commas. Amharic works too.</p></div>
-    <button class="btn big" type="submit">Save and show my tenders</button>
-  </form>
-</section>
 {% endblock %}

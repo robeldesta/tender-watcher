@@ -30,6 +30,13 @@ def norm_phone(s):
     return d if re.fullmatch(r"0[79]\d{8}", d) else ""
 
 
+def norm_login(s):
+    """What someone types to sign in: a mobile number, or a username given to them by us (like "jobale")."""
+    s = (s or "").strip()
+    u = s.lower()
+    return norm_phone(s) or (u if re.fullmatch(r"[a-z][a-z0-9._-]{2,19}", u) else "")
+
+
 # -- two-step sign-in: time-based codes from an authenticator app (RFC 6238), plus one-time backup codes
 import secrets
 import struct
