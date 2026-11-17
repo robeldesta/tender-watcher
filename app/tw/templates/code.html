@@ -7,7 +7,7 @@
       <p class="muted">Open your authenticator app and enter the 6-digit code for Tender Watcher.</p>
       {% if error %}<p class="alert bad" role="alert">{{ error }}</p>{% endif %}
       <input type="hidden" name="next" value="{{ next }}">
-      <div class="field"><label for="code">Code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 a-fA-F-]*" maxlength="20" required autofocus class="code-input"></div>
+      <div class="field"><label for="code">Code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 a-fA-F\-]*" maxlength="20" required autofocus class="code-input"></div>
       <button class="btn big block" type="submit">Sign in</button>
       <p class="small muted" style="margin-top:16px">Lost your phone? Enter one of your backup codes instead, like 3f2a-91c0-7b44. No backup codes? Ask another admin to reset two-step sign-in for you.</p>
     </form>

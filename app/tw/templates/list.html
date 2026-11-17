@@ -1,99 +1,112 @@
-{% extends "base.html" %}{% from "_due.html" import row, leaf, left_text, check, pager %}
-{% set hero = stats and not me %}
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, deadline, fit, pager, save_button, cats, check, days_text %}
+{% set intro = stats and not me %}
 {% block page_id %}list{% endblock %}
-{% block header_class %}{{ "on-forest" if hero }}{% endblock %}
-{% block page %}
-
-{% if hero %}
-<section class="hero">
-  <div class="wrap">
-    <div>
-      <h1>Every tender in Ethiopia. The ones you can win, first.</h1>
-      <p class="lede">Government, bank, NGO and donor tenders, gathered every morning from newspapers, notice boards and buyers' own websites, then checked by our team. Tell us what you do, and every morning we send you the ones that fit.</p>
-      <div class="ctas">
-        <a class="btn big mint" href="/signup">Start your {{ TRIAL }}-day free trial</a>
-        <a class="btn big outline-light" href="#tenders">See today's tenders</a>
-      </div>
-      <div class="facts-row">
-        <div><b>{{ stats.open }}</b><span>open tenders now</span></div>
-        <div><b>{{ stats.buyers }}</b><span>buyers</span></div>
-        {% if stats.week %}<div><b>{{ stats.week }}</b><span>closing in 7 days</span></div>{% endif %}
-      </div>
+{% block title %}{% if f.match %}Recommended tenders{% elif intro %}Tender Watcher: every tender in Ethiopia{% else %}Open tenders{% endif %} | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/">Tenders</a>{{ icon("chev-r") }}<span class="here">{{ "Recommended" if f.match else "All tenders" }}</span>{% endblock %}
+{% block body %}
+{% if intro %}
+<section class="intro">
+  <div>
+    <h1>Every tender in Ethiopia. The ones you can win, first.</h1>
+    <p class="lede">Government, bank, NGO and donor tenders, gathered every morning from newspapers, notice boards and buyers' own websites, checked by our team, matched to what you do.</p>
+    <div class="btn-group"><a class="btn big" href="/signup">Start your {{ TRIAL }}-day free trial</a><a class="btn big ghost" href="#tenders">See today's tenders</a></div>
+    <div class="facts-row">
+      <div><b>{{ stats.open }}</b><span>open tenders now</span></div>
+      <div><b>{{ stats.buyers }}</b><span>buyers</span></div>
+      {% if stats.week %}<div><b>{{ stats.week }}</b><span>closing in 7 days</span></div>{% endif %}
     </div>
-    {% if stats.latest %}
-    <div class="feed" aria-label="Newest tenders">
-      <div class="feed-head"><span class="live" aria-hidden="true"></span><span>Just added</span><span>{{ today | long_date }}</span></div>
-      {% for t in stats.latest %}
-      <a class="item{{ ' x4' if loop.index == 4 }}" href="/t/{{ t.id }}">{{ leaf(t, today) }}<span><small>{{ t.buyer }}</small><b>{{ t.title }}</b><small style="margin-top:4px">{{ left_text(t, today) }}</small></span></a>
-      {% endfor %}
-      <div class="feed-foot">Bid security, fees and the full notice open with your free trial.</div>
-    </div>
-    {% endif %}
   </div>
+  {% if stats.latest %}
+  <div class="card flush" aria-label="Newest tenders">
+    <div class="card-h"><h2>Just added</h2><span class="small muted">{{ today | long_date }}</span></div>
+    <div class="lines">{% for t in stats.latest %}<div class="line"><div><a class="t" href="/t/{{ t.id }}">{{ t.title }}</a><span class="sub">{{ t.buyer }}</span></div><span class="small muted nowrap">{{ days_text(t.closes, today) }}</span></div>{% endfor %}</div>
+    <div class="card-f muted">Bid security, fees and the full notice open with your free trial.</div>
+  </div>
+  {% endif %}
 </section>
 {% endif %}
 
-<main{% if hero %} class="flush"{% endif %} id="tenders"><div class="wrap"{% if hero %} style="padding-top:56px"{% endif %}>
-  <div class="list-head">
-    {% if hero %}<h2>Open tenders</h2>{% else %}<h1 style="margin:0">Open tenders in Ethiopia</h1>{% endif %}
-    <span class="count">{% if pg.pages > 1 %}{{ pg.first }} to {{ pg.last }} of {% endif %}{{ total }} open tender{{ "s" if total != 1 }}{% if filtered %} match{% endif %}</span>
-  </div>
-  <form method="get" action="/#tenders" role="search">
-    <div class="filters">
-      <div class="search"><label class="sr" for="q" style="position:absolute;left:-9999px">Search tenders</label>
-        <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 14l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input id="q" name="q" value="{{ f.q }}" placeholder="Search: laptops, bridge, cleaning, a buyer's name"></div>
-      <div><label for="region" style="position:absolute;left:-9999px">Region</label><select id="region" name="region"><option value="">All regions</option>
-        {% for r in REGIONS %}<option {{ "selected" if f.region == r }}>{{ r }}</option>{% endfor %}</select></div>
-      <button class="btn" type="submit">Search</button>
-    </div>
-    {% if f.category %}<input type="hidden" name="category" value="{{ f.category }}">{% endif %}
-    {% if f.type %}<input type="hidden" name="type" value="{{ f.type }}">{% endif %}
-  </form>
-  <nav class="chips scroll" aria-label="Categories">
-    <a class="chip" href="/?region={{ f.region|urlencode }}&q={{ f.q|urlencode }}#tenders" {% if not f.category %}aria-current="true"{% endif %}>All</a>
-    {% for k, v in CATEGORIES.items() %}<a class="chip" href="/?category={{ k }}&region={{ f.region|urlencode }}&q={{ f.q|urlencode }}#tenders" {% if f.category == k %}aria-current="true"{% endif %}>{{ v }}</a>{% endfor %}
-  </nav>
-  <div class="list">
-  {% for t in rows %}{{ row(t, today) }}
-  {% else %}
-    <div class="empty"><h3>No open tenders match these filters</h3><p>Try another category or region, or clear the search.</p><a class="btn ghost" href="/#tenders">Show all open tenders</a></div>
-  {% endfor %}
-  </div>
-  {{ pager(pg, "/", qs) }}
-</div></main>
+{% if me %}
+{% call page_header("Recommended for " ~ me.company.name if f.match and me.company else "Open tenders",
+  "Tenders that match your categories, words and regions." if f.match else "Every open tender we have collected and checked, soonest closing first.") %}
+  {% if f.match %}<a class="btn ghost" href="/account#interests">{{ icon("sliders") }}Change interests</a>{% endif %}
+{% endcall %}
+{% else %}
+<h2 id="tenders" style="font-size:16px;margin:{{ '8px' if intro else '0' }} 0 12px">Open tenders</h2>
+{% endif %}
 
-{% if hero %}
-<section class="band tint" id="how">
-  <div class="wrap">
-    <div class="section-head"><h2>From the morning paper to a winning bid.</h2>
-      <p>Most bids are lost long before the price is read: a tender seen too late, a paper missing, a deadline misread. We work on the whole path.</p></div>
-    <ol class="steps">
-      <li><h3>We find them</h3><p>Our collectors photograph the notices in the papers and on buyers' boards. Our software reads buyers' websites and donor feeds. Every tender is checked by a person before it goes up.</p></li>
-      <li><h3>You get the ones that fit</h3><p>Pick what you bid on and where. Each morning, the new matches arrive in Telegram and wait for you on the site, with the full notice, bid security and fee.</p></li>
-      <li><h3>You bid without the panic</h3><p>Bid Room turns the tender's requirements into a checklist, drafts your letter and company section from your profile, and prints a bid ready to stamp.</p></li>
-    </ol>
+<section class="card flush" aria-label="Tenders">
+  <form class="filterbar" method="get" action="/" role="search" data-autosubmit>
+    <div class="search">{{ icon("search") }}<label class="sr" for="q">Search tenders</label>
+      <input id="q" name="q" value="{{ f.q }}" placeholder="Search title, buyer, place or reference" type="search"></div>
+    <label class="sr" for="category">Category</label>
+    <select id="category" name="category"><option value="">All categories</option>{% for k, v in CATEGORIES.items() %}<option value="{{ k }}" {{ "selected" if f.category == k }}>{{ v }}</option>{% endfor %}</select>
+    <label class="sr" for="region">Region</label>
+    <select id="region" name="region"><option value="">All regions</option>{% for r in REGIONS %}<option {{ "selected" if f.region == r }}>{{ r }}</option>{% endfor %}</select>
+    <label class="sr" for="type">Buyer type</label>
+    <select id="type" name="type"><option value="">All buyer types</option>{% for k, v in TYPES.items() %}<option value="{{ k }}" {{ "selected" if f.type == k }}>{{ v }}</option>{% endfor %}</select>
+    <label class="sr" for="within">Closing</label>
+    <select id="within" name="within"><option value="">Any closing date</option>{% for k, v in WITHIN.items() %}<option value="{{ k }}" {{ "selected" if f.within == k }}>{{ v }}</option>{% endfor %}</select>
+    <label class="sr" for="buyer">Buyer</label><input class="buyer" id="buyer" name="buyer" value="{{ f.buyer }}" placeholder="Buyer name">
+    <label class="sr" for="sort">Sort</label>
+    <select id="sort" name="sort">{% for k, v in SORTS.items() %}<option value="{{ k }}" {{ "selected" if (f.sort or "closes") == k }}>{{ v }}</option>{% endfor %}</select>
+    {% if f.match %}<input type="hidden" name="match" value="1">{% endif %}
+    <button class="btn ghost" type="submit">Search</button>
+  </form>
+  {% set labels = {"q": "Search", "category": "Category", "region": "Region", "type": "Buyer type", "within": "Closing", "buyer": "Buyer", "match": "Recommended"} %}
+  {% set active = [] %}{% for k in ["q", "category", "region", "type", "within", "buyer", "match"] if f[k] %}{% do active.append(k) %}{% endfor %}
+  {% if active %}
+  <div class="active-filters"><span class="muted">Filtered by</span>
+    {% for k in active %}{% set rest = {} %}{% for kk, vv in f.items() if vv and kk != k %}{% do rest.update({kk: vv}) %}{% endfor %}
+      <a class="x" href="/?{{ rest|urlencode }}" title="Remove this filter">{{ labels[k] }}: {{ CATEGORIES.get(f[k], f[k]) if k == "category" else TYPES.get(f[k], f[k]) if k == "type" else WITHIN.get(f[k], f[k]) if k == "within" else "on" if k == "match" else f[k] }} {{ icon("x", "s") }}</a>{% endfor %}
+    <a href="{{ '/?match=1' if f.match else '/' }}" style="margin-left:4px">Clear all</a></div>
+  {% endif %}
+
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="dt stack-sm">
+    <thead><tr>{% if member %}<th style="width:36px"><span class="sr">Saved</span></th>{% endif %}<th style="width:120px">Closes</th><th>Tender</th><th class="hide-sm">Category</th><th class="hide-sm">Region</th>{% if member %}<th style="width:110px">Fit</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        {% if member %}<td class="c-act">{{ save_button(t, saved, csrf, request.url.path ~ ("?" ~ request.url.query if request.url.query else "")) }}</td>{% endif %}
+        <td class="inline-sm">{{ deadline(t.closes, t.time, today) }}</td>
+        <td class="tcell"><a class="t clamp" href="/t/{{ t.id }}">{{ t.title }}</a><span class="sub">{{ t.buyer }}{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}{% if t.grade %} · {{ t.grade }} and above{% endif %}</span></td>
+        <td class="hide-sm small">{{ cats(t) }}</td>
+        <td class="hide-sm small">{{ t.region or t.place or "–" }}{% if t.place and t.region and t.place != t.region %}<span class="sub">{{ t.place }}</span>{% endif %}</td>
+        {% if member %}<td class="inline-sm">{{ fit(fits.get(t.id)) }}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% elif f.match and not has_interests %}
+    <div class="empty"><h3>Set your interests to see recommendations</h3><p>Pick the categories, words and regions you bid on. Matching tenders show here and in your morning alerts.</p><a class="btn" href="/account#interests">Set your interests</a></div>
+  {% else %}
+    <div class="empty"><h3>No open tenders match these filters</h3><p>Try another category or region, or clear the search.</p><a class="btn ghost" href="{{ '/?match=1' if f.match else '/' }}">Clear filters</a></div>
+  {% endif %}
+  <div class="table-foot">
+    <span>{% if pg.pages > 1 %}{{ pg.first }} to {{ pg.last }} of {% endif %}{{ total }} open tender{{ "s" if total != 1 }}{% if filtered %} match{% endif %}</span>
+    {{ pager(pg, "/", qs) }}
   </div>
 </section>
-<section class="band" id="pricing">
-  <div class="wrap">
-    <div class="section-head"><h2>Free for {{ TRIAL }} days. Then ETB {{ prices.month }} a month.</h2>
-      <p>Pay with Telebirr, CBE Birr, a bank account or a card. Firms abroad can pay in US dollars. <a href="/pricing">Full pricing and questions</a></p></div>
-    <div class="plans">
-      <div class="plan">
-        <h3>Monthly</h3>
-        <p class="price">ETB {{ prices.month }}<small> / month</small></p>
-        <ul><li>{{ check() }}Every open tender, with the full notice</li><li>{{ check() }}Matched to what you do and where</li><li>{{ check() }}Morning alerts in Telegram</li></ul>
-        <a class="btn ghost big" href="/signup">Start free trial</a>
-      </div>
-      <div class="plan dark">
-        <h3>Yearly</h3>
-        <p class="price">ETB {{ "{:,}".format(prices.year) }}<small> / year</small></p>
-        <p class="muted" style="margin:0">Saves ETB {{ "{:,}".format(prices.month * 12 - prices.year) }} compared with paying monthly.</p>
-        <ul><li>{{ check() }}Everything in monthly</li><li>{{ check() }}One payment, no renewals to remember</li><li>{{ check() }}Same price all year</li></ul>
-        <a class="btn mint big" href="/signup">Start free trial</a>
-      </div>
-    </div>
+
+{% if intro %}
+<section class="how" aria-label="How it works">
+  <div class="card"><span class="n">1</span><h3>We find them</h3><p>Collectors photograph notices in the papers and on buyers' boards; software reads buyers' websites and donor feeds. A person checks every tender before it goes up.</p></div>
+  <div class="card"><span class="n">2</span><h3>You get the ones that fit</h3><p>Pick what you bid on and where. Each morning the new matches arrive in Telegram and wait for you here, with the full notice, bid security and fee.</p></div>
+  <div class="card"><span class="n">3</span><h3>You bid without the panic</h3><p>Bid Room turns the tender's requirements into a checklist, checks your papers, drafts your letter and company section, and prints a bid ready to stamp.</p></div>
+</section>
+<section style="margin-top:32px" aria-labelledby="pr-h">
+  <h2 id="pr-h" style="font-size:16px">Free for {{ TRIAL }} days. Then ETB {{ prices.month }} a month.</h2>
+  <p class="muted">Pay with Telebirr, CBE Birr, a bank account or a card. Firms abroad can pay in US dollars. <a href="/pricing">Full pricing and questions</a></p>
+  <div class="plans">
+    <div class="plan"><h3>Watch</h3><p class="price">ETB {{ prices.month }}<small> / month</small></p>
+      <ul><li>{{ check() }}Every open tender, with the full notice</li><li>{{ check() }}Matched to what you do and where</li><li>{{ check() }}Morning alerts in Telegram</li></ul>
+      <a class="btn ghost" href="/signup">Start free trial</a></div>
+    <div class="plan featured"><h3>Win <span class="pill brand">Bid Room</span></h3><p class="price">ETB {{ "{:,}".format(prices.win_month) }}<small> / month</small></p>
+      <ul><li>{{ check() }}Everything in Watch</li><li>{{ check() }}Bid Room: checklist, drafted bid, print-ready export</li><li>{{ check() }}Document vault with expiry tracking</li></ul>
+      <a class="btn" href="/signup">Start free trial</a></div>
   </div>
 </section>
 {% endif %}

@@ -897,3 +897,53 @@ def test_bid_desk_company_file_and_envelope(env, tmp_path):
     assert "two papers short" in c.get("/my").text
     assert c.post(f"/bids/{bid_id}/have", data={"csrf": tok, "key": "technical", "on": "1"}).status_code == 400
     assert other.post(f"/bids/{bid_id}/have", data={"csrf": csrf(other, "/profile"), "key": "security", "on": "1"}).status_code == 404
+
+
+def test_explorer_filters_saved_and_reports(env, monkeypatch):
+    app, _, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-1", "buyer": "Awash Bank", "title": "Monitoring platform", "closes": "2026-11-09", "category": "it",
+         "type": "company", "region": "Addis Ababa"},
+        {"id": "wb-2", "buyer": "ERA", "title": "Road maintenance", "closes": "2026-12-20", "category": "construction",
+         "type": "gov", "region": "Amhara"},
+        {"id": "wb-3", "buyer": "Awash Bank", "title": "Branch furniture", "closes": "2026-11-30", "category": "goods",
+         "type": "company", "region": "Oromia"}]}))
+    c = TestClient(app)
+    # filters: closing window, buyer, buyer type, sort
+    assert "Road maintenance" not in c.get("/?within=7").text and "Monitoring platform" in c.get("/?within=7").text
+    page = c.get("/?buyer=awash").text
+    assert "Branch furniture" in page and "Road maintenance" not in page
+    assert "Road maintenance" in c.get("/?type=gov").text and "Branch furniture" not in c.get("/?type=gov").text
+    by_buyer = c.get("/?sort=buyer").text
+    assert by_buyer.index("Branch furniture") < by_buyer.index("Road maintenance")
+    assert "Branch furniture" in c.get("/?within=99&sort=nonsense").text  # bad values are ignored
+    # visitors can't save, see recommendations or reports
+    assert c.post("/t/wb-1/save", data={"csrf": "x"}, follow_redirects=False).status_code in (303, 307)
+    assert c.get("/reports", follow_redirects=False).status_code in (303, 307)
+    c.post("/signup", data={"company": "Sonador", "name": "R", "phone": "0955000020", "password": "longenough1"})
+    tok = csrf(c, "/account")
+    # recommended needs interests; then shows only matches with a fit
+    assert "Set your interests to see recommendations" in c.get("/?match=1").text
+    c.post("/account/interests", data={"csrf": tok, "categories": ["it"]})
+    rec = c.get("/?match=1").text
+    assert "Monitoring platform" in rec and "Road maintenance" not in rec and "Good" in rec
+    # save and unsave; the back link stays on the site
+    assert c.post("/t/wb-2/save", data={"csrf": "bad"}).status_code == 400
+    r = c.post("/t/wb-2/save", data={"csrf": tok, "back": "https://evil.example/"}, follow_redirects=False)
+    assert r.headers["location"] == "/t/wb-2"
+    assert "Road maintenance" in c.get("/saved").text and 'aria-pressed="true"' in c.get("/t/wb-2").text
+    other = TestClient(app)
+    other.post("/signup", data={"company": "Other", "name": "O", "phone": "0955000021", "password": "longenough1"})
+    assert "Road maintenance" not in other.get("/saved").text  # each company has its own list
+    c.post("/t/wb-2/save", data={"csrf": tok, "back": "/saved"})
+    assert "Nothing saved yet" in c.get("/saved").text
+    assert c.post("/t/nope/save", data={"csrf": tok}).status_code == 404
+    # reports count open tenders only
+    rep = c.get("/reports").text
+    assert "Awash Bank" in rep and "Your bid record" in rep and ">2<" in rep
+    assert client(app, "0911000002").get("/reports").status_code == 403  # collectors
+    # the bell: a paper expiring soon and a bid closing in 3 days
+    c.post("/file", data={"csrf": tok, "kind": "tax_clearance", "expires": "2026-11-20"})
+    c.post("/t/wb-1/bid", data={"csrf": tok})
+    bell = c.get("/my").text
+    assert "Tax clearance certificate expires 20 Nov" in bell and "Monitoring platform closes in 2 days" in bell

@@ -1,11 +1,10 @@
-{% extends "base.html" %}{% from "_due.html" import check %}
+{% extends "base.html" %}{% from "ui/_ui.html" import check, icon %}
 {% block title %}Pricing | Tender Watcher{% endblock %}
+{% block crumbs %}<span class="here">Pricing</span>{% endblock %}
 {% block body %}
 {% set sym = cur %}
-<div class="section-head" style="margin-top:12px">
-  <h1>Find every tender. Win more of them.</h1>
-  <p>Free for {{ trial_days }} days with everything, Bid Room included. No card needed to start.</p>
-</div>
+<div class="page-header"><div class="ph-t"><h1>Find every tender. Win more of them.</h1>
+  <p class="ph-sub">Free for {{ trial_days }} days with everything, Bid Room included. No card needed to start.</p></div></div>
 
 <nav class="cur-switch" aria-label="Currency">
   <a href="/pricing" {% if cur == "ETB" %}aria-current="true"{% endif %}>Ethiopian birr</a>
@@ -20,22 +19,22 @@
     <p class="price">{{ sym }} {{ "{:,}".format(prices.month) }}<small> / month</small></p>
     <table class="terms"><tbody>{% for k in ["m3", "m6", "year"] %}{% set a = prices["" ~ k] %}{% set mo = prices["month"] %}<tr><td>{{ TERMS[k][2] }}</td><td class="num">{{ sym }} {{ "{:,}".format(a) }}</td><td class="num">{{ sym }} {{ "{:,}".format((a / TERMS[k][0]) | round | int) }} a month</td><td class="num off">{{ ((1 - a / (mo * TERMS[k][0])) * 100) | round | int }}% off</td></tr>{% endfor %}</tbody></table>
     <ul><li>{{ check() }}Every open tender, with the full notice</li><li>{{ check() }}Bid security, document fee and where to buy</li><li>{{ check() }}Tenders matched to what you bid on</li><li>{{ check() }}Your matches each morning in Telegram</li></ul>
-    <a class="btn ghost big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') + '#plans' if me else '/signup' }}">{{ "Choose Watch" if me else "Start free trial" }}</a>
+    <a class="btn ghost" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') + '#plans' if me else '/signup' }}">{{ "Choose Watch" if me else "Start free trial" }}</a>
   </div>
-  <div class="plan dark">
-    <h3>Win <span class="tag" style="margin-left:6px">Bid Room</span></h3>
+  <div class="plan featured">
+    <h3>Win <span class="pill brand">Bid Room</span></h3>
     <p class="muted" style="margin:0">Everything in Watch, and Bid Room to build every bid.</p>
     <p class="price">{{ sym }} {{ "{:,}".format(prices.win_month) }}<small> / month</small></p>
     <table class="terms"><tbody>{% for k in ["m3", "m6", "year"] %}{% set a = prices["win_" ~ k] %}{% set mo = prices["win_month"] %}<tr><td>{{ TERMS[k][2] }}</td><td class="num">{{ sym }} {{ "{:,}".format(a) }}</td><td class="num">{{ sym }} {{ "{:,}".format((a / TERMS[k][0]) | round | int) }} a month</td><td class="num off">{{ ((1 - a / (mo * TERMS[k][0])) * 100) | round | int }}% off</td></tr>{% endfor %}</tbody></table>
     <ul><li>{{ check() }}Everything in Watch</li><li>{{ check() }}Start a bid from any tender</li><li>{{ check() }}Every requirement as a checklist, checked against your profile</li>
       <li>{{ check() }}Cover letter, company section and technical offer drafted for you</li><li>{{ check() }}Print-ready bid with your letterhead, signatory and stamp space</li></ul>
-    <a class="btn mint big" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') + '#plans' if me else '/signup' }}">{{ "Choose Win" if me else "Start free trial" }}</a>
+    <a class="btn" href="{{ '/account' + ('?cur=USD' if cur == 'USD' else '') + '#plans' if me else '/signup' }}">{{ "Choose Win" if me else "Start free trial" }}</a>
   </div>
 </div>
 
-<section style="margin-top:64px" aria-labelledby="cmp-h">
-  <h2 id="cmp-h">What's free and what's paid</h2>
-  <table class="compare">
+<section style="margin-top:32px" aria-labelledby="cmp-h">
+  <h2 id="cmp-h" style="margin-bottom:8px">What's free and what's paid</h2>
+  <div class="table-wrap"><table class="compare">
     <thead><tr><th>Feature</th><th>No account</th><th>Watch</th><th>Win and free trial</th></tr></thead>
     <tbody>
       <tr><td>Every open tender: buyer, subject, region, closing date</td><td>{{ check() }}</td><td>{{ check() }}</td><td>{{ check() }}</td></tr>
@@ -44,10 +43,10 @@
       <tr><td>Morning alerts in Telegram</td><td>–</td><td>{{ check() }}</td><td>{{ check() }}</td></tr>
       <tr><td>Bid Room: checklist, drafted bid, print-ready export</td><td>–</td><td>–</td><td>{{ check() }}</td></tr>
     </tbody>
-  </table>
+  </table></div>
 </section>
 
-<section class="faq" style="margin-top:64px" aria-labelledby="faq-h">
+<section class="faq card" style="margin-top:32px" aria-labelledby="faq-h">
   <h2 id="faq-h">Questions</h2>
   <details><summary>Do I need a card for the free trial?</summary><p>No. Sign up with your phone number and you get {{ trial_days }} days of everything. We only ask for payment when you choose to subscribe.</p></details>
   <details><summary>How can I pay?</summary><p>In Ethiopia: Telebirr, CBE Birr, a bank account or a card on Chapa's secure page, or a Telebirr or bank transfer to Sonador Systems that we record for you. From abroad: an international card in US dollars on Chapa, or a USD or EUR bank transfer.</p></details>

@@ -10,7 +10,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 
 from . import bids
-from .db import Bid, Tender
+from .db import Bid, Paper, Tender
+from . import desk as desk_mod
 
 MEMBERS = ("member",)
 
@@ -67,7 +68,21 @@ def register(app, h):
         u = member(request, session)
         rows = session.scalars(select(Bid).where(Bid.company_id == u.company_id).order_by(Bid.updated_at.desc())).all()
         prog = {b.id: progress(bids.load(b)) for b in rows}
-        return page(request, "bids.html", u, rows=rows, prog=prog)
+        papers = session.scalars(select(Paper).where(Paper.company_id == u.company_id)).all()
+        envs = {b.id: desk_mod.envelope(b.tender, papers, today(), bids.load(b)) for b in rows}
+        view = request.query_params.get("view", "")
+        t0 = today()
+        def bucket(b):
+            if b.state == "submitted":
+                return "submitted"
+            if b.tender.closes and b.tender.closes < t0:
+                return "closed"
+            return "open"
+        counts = {k: sum(1 for b in rows if bucket(b) == k) for k in ("open", "submitted", "closed")}
+        shown = [b for b in rows if view not in counts or bucket(b) == view]
+        shown.sort(key=lambda b: b.tender.closes or "9999")
+        return page(request, "bids.html", u, rows=shown, all_rows=rows, prog=prog, envs=envs, counts=counts,
+                    view=view if view in counts else "", bucket=bucket)
 
     def progress(d):
         items = d.get("checklist", [])
@@ -96,9 +111,15 @@ def register(app, h):
         prof = bids.load_profile(u.company)
         pct, missing = bids.completeness(prof)
         projects = {f"p{i + 1}": x for i, x in enumerate(prof.get("projects", []))}
+        papers = session.scalars(select(Paper).where(Paper.company_id == u.company_id)).all()
+        env = desk_mod.envelope(b.tender, papers, today(), d)
+        activity = [("Bid started", b.created_at)]
+        if d.get("drafted_at"):
+            activity.append(("Drafted by Bid Room", d["drafted_at"]))
+        activity.append(("Submitted" if b.state == "submitted" else "Last saved", b.updated_at))
         return page(request, "bid.html", u, b=b, t=b.tender, d=d, prog=progress(d), pct=pct, missing=missing,
                     confirm=bids.to_confirm(d), total=bids.total(d), projects=projects, STATUS=bids.STATUS_LABEL,
-                    drafting=b.state == "drafting")
+                    drafting=b.state == "drafting", env=env, activity=activity)
 
     @app.post("/bids/{bid_id}/save")
     async def autosave(request: Request, bid_id: int, session=Depends(db)):

@@ -19,8 +19,10 @@ from . import notices
 from . import auth
 from .auth import check_password, hash_password, norm_phone
 from .config import Settings
-from .db import AlertSent, AuditLog, Bid, Company, LoginFailure, Payment, Price, Setting, Tender, User, make_session, now
+from .db import (AlertSent, AuditLog, Bid, Company, LoginFailure, Paper, Payment, Price, SavedTender, Setting, Tender,
+                 User, make_session, now)
 from .sync import BoardSync
+from . import bids as bids_mod, desk as desk_mod
 
 TZ = ZoneInfo("Africa/Addis_Ababa")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -216,6 +218,7 @@ def create_app(settings=None, claude=None):
             h.setdefault("Cache-Control", "no-store")
         return r
     tpl = Jinja2Templates(directory=os.path.join(HERE, "templates"))
+    tpl.env.add_extension("jinja2.ext.do")
     tpl.env.globals.update(CATEGORIES=notices.CATEGORIES, TYPES=notices.TYPES, REGIONS=notices.REGIONS)
     tpl.env.filters.update(days_from=days_from, short_date=short_date, long_date=long_date, host=host,
                            safe_url=safe_url)
@@ -263,7 +266,38 @@ def create_app(settings=None, claude=None):
             with Session() as ss:
                 ctx["side"] = side_counts(ss)
         ctx.update(request=request, me=u, csrf=csrf_token(u) if u else "", today=today(), PRICES=prices(), TRIAL=trial_days())
+        if u and u.role == "member" and u.company_id and "shell" not in ctx:
+            ctx["shell"] = shell_info(u)
         return tpl.TemplateResponse(request, name, ctx, status_code=status)
+
+    def shell_info(u):
+        """What the member shell shows on every page: plan state and the notification list.
+        Notifications are worked out from the bids and the company file each time; nothing is stored."""
+        t0 = today()
+        c = u.company
+        info = {"access": has_access(u), "win": has_bidroom(u), "bell": [],
+                "plan": ("Win" if (c.win_until or "") >= t0 else "Watch" if (c.paid_until or "") >= t0
+                         else "Trial" if (c.trial_until or "") >= t0 else "Ended")}
+        if not info["win"]:
+            return info
+        soon = (dt.date.fromisoformat(t0) + dt.timedelta(days=30)).isoformat()
+        with Session() as ss:
+            for p in ss.scalars(select(Paper).where(Paper.company_id == c.id, Paper.expires != "",
+                                                    Paper.expires <= soon).order_by(Paper.expires)):
+                lab = p.name or desk_mod.KINDS.get(p.kind, desk_mod.KINDS["other"])[0]
+                if p.expires < t0:
+                    info["bell"].append({"level": "bad", "text": f"{lab} expired on {short_date(p.expires)}", "href": "/file"})
+                else:
+                    info["bell"].append({"level": "warn", "text": f"{lab} expires {short_date(p.expires)}", "href": "/file"})
+            for b in ss.scalars(select(Bid).where(Bid.company_id == c.id, Bid.state != "submitted")):
+                d = days_from(b.tender.closes, t0) if b.tender.closes else 999
+                if 0 <= d <= 3:
+                    when = "today" if d == 0 else "tomorrow" if d == 1 else f"in {d} days"
+                    info["bell"].append({"level": "bad" if d <= 1 else "warn", "href": f"/bids/{b.id}",
+                                         "text": f"{b.tender.title[:70]} closes {when}"})
+                if b.draft_error:
+                    info["bell"].append({"level": "bad", "href": f"/bids/{b.id}", "text": "A draft didn't finish. Try again."})
+        return info
 
     with Session() as _s:  # tenders saved before multi-category get theirs once
         for _t in _s.scalars(select(Tender).where(or_(Tender.categories == "", Tender.reviewer_id.is_(None)))):
@@ -384,9 +418,33 @@ def create_app(settings=None, claude=None):
         return page(request, "pricing.html", u, cur=cur, prices=prices()[cur], all_prices=prices(),
                     trial_days=trial_days(), chapa_on=bool(app.state.chapa))
 
+    SORTS = {"closes": "Closing soonest", "new": "Newest first", "buyer": "Buyer A to Z"}
+    WITHIN = {"3": "Closing in 3 days", "7": "Closing in 7 days", "14": "Closing in 14 days", "30": "Closing in 30 days"}
+
+    def fit(t, i):
+        """How well a tender fits the company's interests: 0 none, 1 fair, 2 good, 3 strong, with the reasons."""
+        if not i or not (i["categories"] or i["keywords"]):
+            return None
+        why = []
+        if set(notices.cats(t)) & set(i["categories"]):
+            why.append("your category")
+        if i["keywords"] and notices.eb.keyword_hit(i["keywords"], f"{t.title} {t.buyer}".lower()):
+            why.append("your words")
+        if i["regions"] and t.region in i["regions"]:
+            why.append("your region")
+        if i["regions"] and t.region and t.region not in i["regions"] and t.region != "Several regions":
+            return {"n": 0, "why": ["outside your regions"]}
+        n = min(3, len(why) + (1 if why and not i["regions"] else 0))
+        return {"n": n, "why": why}
+
+    def saved_ids(session, u):
+        if not (u and u.role == "member" and u.company_id):
+            return set()
+        return set(session.scalars(select(SavedTender.tender_id).where(SavedTender.company_id == u.company_id)))
+
     @app.get("/", response_class=HTMLResponse)
-    def home(request: Request, category: str = "", region: str = "", type: str = "", q: str = "",
-             p: int = 1, session=Depends(db)):
+    def home(request: Request, category: str = "", region: str = "", type: str = "", q: str = "", buyer: str = "",
+             within: str = "", sort: str = "", match: str = "", p: int = 1, session=Depends(db)):
         u = user_from(request, session)
         sync(session)
         query = select(Tender).where(Tender.status == "published",
@@ -397,21 +455,109 @@ def create_app(settings=None, claude=None):
             query = query.where(Tender.region == region)
         if type in notices.TYPES:
             query = query.where(Tender.type == type)
+        if buyer.strip():
+            query = query.where(Tender.buyer.ilike(f"%{buyer.strip()}%"))
+        if within in WITHIN:
+            until = (dt.date.fromisoformat(today()) + dt.timedelta(days=int(within))).isoformat()
+            query = query.where(Tender.closes != "", Tender.closes <= until)
         if q.strip():
             like = f"%{q.strip()}%"
-            query = query.where(or_(Tender.title.ilike(like), Tender.buyer.ilike(like), Tender.place.ilike(like)))
-        rows = session.scalars(query.order_by(Tender.closes == "", Tender.closes, Tender.time)).all()
-        filtered = bool(category or region or type or q.strip())
+            query = query.where(or_(Tender.title.ilike(like), Tender.buyer.ilike(like), Tender.place.ilike(like),
+                                    Tender.reference.ilike(like)))
+        sort = sort if sort in SORTS else "closes"
+        order = {"closes": (Tender.closes == "", Tender.closes, Tender.time),
+                 "new": (Tender.published_at.desc(), Tender.created_at.desc()),
+                 "buyer": (Tender.buyer, Tender.closes)}[sort]
+        rows = session.scalars(query.order_by(*order)).all()
+        member = bool(u and u.role == "member" and u.company_id)
+        i = interests(u.company) if member else None
+        match_on = bool(match and member)
+        if match_on:
+            rows = [t for t in rows if interest_match(t, i)] if (i["categories"] or i["keywords"]) else []
+        filtered = bool(category or region or type or q.strip() or buyer.strip() or within in WITHIN or match_on)
         stats = None
         pg = paginate(rows, p)
-        if not filtered and pg["page"] == 1:
+        if not filtered and pg["page"] == 1 and not u:
             week = (dt.date.fromisoformat(today()) + dt.timedelta(days=7)).isoformat()
             stats = dict(open=len(rows), buyers=len({r.buyer for r in rows}),
                          week=sum(1 for r in rows if r.closes and r.closes <= week),
                          latest=sorted(rows, key=lambda r: (r.published_at or r.created_at).replace(tzinfo=None), reverse=True)[:4])
-        f = dict(category=category, region=region, type=type, q=q)
+        f = dict(category=category, region=region, type=type, q=q, buyer=buyer, within=within if within in WITHIN else "",
+                 sort=sort if sort != "closes" else "", match="1" if match_on else "")
+        fits = {t.id: fit(t, i) for t in pg["rows"]} if member else {}
         return page(request, "list.html", u, rows=pg["rows"], total=len(rows), pg=pg, stats=stats, filtered=filtered,
-                    prices=prices()["ETB"], f=f, qs=urlencode({k: v for k, v in f.items() if v}))
+                    prices=prices()["ETB"], f=f, qs=urlencode({k: v for k, v in f.items() if v}), SORTS=SORTS,
+                    WITHIN=WITHIN, fits=fits, saved=saved_ids(session, u), member=member,
+                    has_interests=bool(i and (i["categories"] or i["keywords"])))
+
+    def interest_match(t, i):
+        return match(t, i)
+
+    @app.post("/t/{tid}/save")
+    def save_tender(request: Request, tid: str, csrf: str = Form(""), back: str = Form(""), session=Depends(db)):
+        u = need(request, session, ("member",))
+        check_csrf(u, csrf)
+        if not u.company_id:
+            raise HTTPException(403, "This is for company accounts.")
+        t = session.get(Tender, tid)
+        if not t or t.status != "published":
+            raise HTTPException(404, "This tender isn't listed any more.")
+        row = session.get(SavedTender, (u.company_id, tid))
+        if row:
+            session.delete(row)
+        else:
+            session.add(SavedTender(company_id=u.company_id, tender_id=tid, saved_by=u.id))
+        session.commit()
+        back = back if back.startswith("/") and not back.startswith("//") else f"/t/{tid}"
+        return RedirectResponse(back, 303)
+
+    @app.get("/saved", response_class=HTMLResponse)
+    def saved_page(request: Request, session=Depends(db)):
+        u = need(request, session, ("member",))
+        if not u.company_id:
+            raise HTTPException(403, "This is for company accounts.")
+        ids = saved_ids(session, u)
+        rows = session.scalars(select(Tender).where(Tender.id.in_(ids)).order_by(Tender.closes == "", Tender.closes)).all() if ids else []
+        i = interests(u.company)
+        open_rows = [t for t in rows if t.status == "published" and (not t.closes or t.closes >= today())]
+        closed = [t for t in rows if t not in open_rows]
+        bids = {b.tender_id: b for b in session.scalars(select(Bid).where(Bid.company_id == u.company_id))}
+        return page(request, "saved.html", u, rows=open_rows, closed=closed, fits={t.id: fit(t, i) for t in rows},
+                    saved=ids, bids=bids)
+
+    @app.get("/reports", response_class=HTMLResponse)
+    def reports(request: Request, session=Depends(db)):
+        u = need(request, session, ("member",))
+        sync(session)
+        t0 = today()
+        rows = session.scalars(select(Tender).where(Tender.status == "published",
+                                                    or_(Tender.closes == "", Tender.closes >= t0))).all()
+        by_cat, by_region, by_type, by_buyer = {}, {}, {}, {}
+        for t in rows:
+            for c in notices.cats(t) or [t.category]:
+                by_cat[c] = by_cat.get(c, 0) + 1
+            by_region[t.region or "Not stated"] = by_region.get(t.region or "Not stated", 0) + 1
+            by_type[t.type] = by_type.get(t.type, 0) + 1
+            by_buyer[t.buyer] = by_buyer.get(t.buyer, 0) + 1
+        start = dt.date.fromisoformat(t0)
+        weeks = []
+        for w in range(6):
+            a, b = start + dt.timedelta(days=7 * w), start + dt.timedelta(days=7 * w + 6)
+            weeks.append({"label": f"{short_date(a.isoformat())} to {short_date(b.isoformat())}",
+                          "n": sum(1 for t in rows if t.closes and a.isoformat() <= t.closes <= b.isoformat())})
+        mine = None
+        if u.role == "member" and u.company_id:
+            bl = session.scalars(select(Bid).where(Bid.company_id == u.company_id)).all()
+            i = interests(u.company)
+            mine = {"started": len(bl), "submitted": sum(1 for b in bl if b.state == "submitted"),
+                    "open": sum(1 for b in bl if b.state != "submitted" and (not b.tender.closes or b.tender.closes >= t0)),
+                    "missed": sum(1 for b in bl if b.state != "submitted" and b.tender.closes and b.tender.closes < t0),
+                    "matches": sum(1 for t in rows if (i["categories"] or i["keywords"]) and match(t, i)),
+                    "saved": len(saved_ids(session, u))}
+        top = lambda d, n=10: sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[:n]
+        return page(request, "reports.html", u, total=len(rows), cats=top(by_cat, 20), regions=top(by_region, 20),
+                    types=top(by_type), buyers=top(by_buyer, 12), weeks=weeks, mine=mine,
+                    buyers_n=len(by_buyer))
 
     @app.get("/t/{tid}", response_class=HTMLResponse)
     def tender_page(request: Request, tid: str, session=Depends(db)):
@@ -427,7 +573,16 @@ def create_app(settings=None, claude=None):
         env = None
         if u and u.role == "member" and u.company_id and has_bidroom(u):
             env = desk_h.envelope(t, desk_h.papers_of(session, u.company_id), today(), bids_mod.load(bid) if bid else None)
-        return page(request, "tender.html", u, t=t, full=has_access(u), win=has_bidroom(u), bid=bid, env=env)
+        member = bool(u and u.role == "member" and u.company_id)
+        i = interests(u.company) if member else None
+        cats_ = notices.cats(t) or [t.category]
+        related = [r for r in session.scalars(
+            select(Tender).where(Tender.status == "published", Tender.id != t.id, Tender.closes >= today(),
+                                 or_(*[or_(Tender.category == c, Tender.categories.like(f"%,{c},%")) for c in cats_]))
+            .order_by(Tender.closes).limit(6))]
+        return page(request, "tender.html", u, t=t, full=has_access(u), win=has_bidroom(u), bid=bid, env=env,
+                    fitness=fit(t, i) if member else None, is_saved=t.id in saved_ids(session, u), member=member,
+                    related=related)
 
     @app.get("/notices/{name}")
     def photo(request: Request, name: str, session=Depends(db)):
@@ -608,7 +763,8 @@ def create_app(settings=None, claude=None):
                     prices=prices()[cur], cur=cur,
                     days_left=days_from(max(c.trial_until or "", c.paid_until or ""), today()), tg_link=link,
                     pays=pays, methods=PAY_METHODS, chapa_on=bool(app.state.chapa),
-                    payment=request.query_params.get("payment", ""))
+                    payment=request.query_params.get("payment", ""),
+                    team=session.scalars(select(User).where(User.company_id == c.id).order_by(User.id)).all())
 
     # -- payments
     app.state.chapa = notices.eb.Chapa(s.chapa_key) if s.chapa_key else None
@@ -1038,11 +1194,17 @@ def create_app(settings=None, claude=None):
         rows = []
         if i["categories"] or i["keywords"]:
             q = select(Tender).where(Tender.status == "published", or_(Tender.closes == "", Tender.closes >= today()))
-            rows = [t for t in session.scalars(q.order_by(Tender.published_at.desc())) if match(t, i)]
+            rows = [t for t in session.scalars(q.order_by(Tender.closes == "", Tender.closes, Tender.time)) if match(t, i)]
         pg = paginate(rows, p)
         desk = desk_h.desk(session, u, rows) if u.company_id and has_bidroom(u) else None
+        pct, _missing = bids_mod.completeness(bids_mod.load_profile(u.company)) if u.company_id else (0, [])
+        recent = []
+        if u.company_id:
+            recent = session.scalars(select(Bid).where(Bid.company_id == u.company_id)
+                                     .order_by(Bid.updated_at.desc()).limit(5)).all()
         return page(request, "my.html", u, rows=pg["rows"], total=len(rows), pg=pg, qs="", i=i, access=has_access(u),
-                    desk=desk, greg=dt.date.fromisoformat(today()))
+                    desk=desk, greg=dt.date.fromisoformat(today()), prof_pct=pct, recent=recent,
+                    fits={t.id: fit(t, i) for t in pg["rows"]}, saved=saved_ids(session, u))
 
     # -- collectors
     @app.get("/collect", response_class=HTMLResponse)
@@ -1279,7 +1441,6 @@ def create_app(settings=None, claude=None):
     bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
                                           TZ=TZ, has_access=has_bidroom, get_claude=get_claude, Session=Session,
                                           sync_drafts=False))
-    from . import bids as bids_mod, desk as desk_mod
     desk_h = SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
                              has_access=has_bidroom, data_dir=s.data_dir)
     desk_mod.register(app, desk_h)

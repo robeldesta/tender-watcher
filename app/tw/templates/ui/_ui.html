@@ -1,0 +1,83 @@
+{# Shared components. Every module renders the same thing with the same macro. #}
+
+{% macro icon(name, cls="") -%}<svg class="ico {{ cls }}" aria-hidden="true"><use href="#i-{{ name }}"/></svg>{%- endmacro %}
+
+{# Page header: title, optional subtitle and meta pills; actions go in caller() #}
+{% macro page_header(title, sub="", meta=None) -%}
+<div class="page-header">
+  <div class="ph-t"><h1>{{ title }}</h1>{% if sub %}<p class="ph-sub">{{ sub }}</p>{% endif %}
+    {% if meta %}<div class="ph-meta">{{ meta }}</div>{% endif %}</div>
+  {% if caller %}<div class="ph-act">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Deadline: date on top, days left below, coloured by urgency #}
+{% macro deadline(closes, time, today) -%}
+{%- if not closes -%}<span class="due none"><b>Not stated</b><span>check notice</span></span>
+{%- else -%}{%- set d = closes | days_from(today) -%}
+<span class="due {{ 'hot' if d <= 3 else 'soon' if d <= 7 }}"><b>{{ closes | short_date }}{% if time %} <span class="faint" style="display:inline;font-weight:400;font-size:12px">{{ time }}</span>{% endif %}</b>
+<span>{% if d < 0 %}Closed{% elif d == 0 %}Closes today{% elif d == 1 %}1 day left{% else %}{{ d }} days left{% endif %}</span></span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro days_text(closes, today) -%}
+{%- if not closes %}Date to check{% else %}{% set d = closes | days_from(today) %}{% if d < 0 %}Closed{% elif d == 0 %}Closes today{% elif d == 1 %}1 day left{% else %}{{ d }} days left{% endif %}{% endif -%}
+{%- endmacro %}
+
+{# Fit: how well a tender matches the company's interests (0 to 3) #}
+{% macro fit(f) -%}
+{%- if f is none -%}<span class="faint">–</span>
+{%- elif f.n == 0 -%}<span class="faint fit-none" title="{{ (f.why|join(', ') or 'Outside your interests')|capitalize }}">–</span>
+{%- else -%}<span class="fit f{{ f.n }}" title="{{ ('Matches ' ~ f.why|join(', ')) if f.n else (f.why|join(', ') or 'Outside your interests')|capitalize }}"><i><b></b><b></b><b></b></i>{{ ["No match", "Fair", "Good", "Strong"][f.n] }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro progress(done, total, cls="") -%}
+<span class="prog-row"><span class="prog {{ cls }}"><i style="width:{{ (done * 100 // total) if total else 0 }}%"></i></span><span class="nowrap">{{ done }} of {{ total }}</span></span>
+{%- endmacro %}
+
+{% macro ready_ring(done, total, title, sub="") -%}
+{%- set pct = (done * 100 // total) if total else 0 -%}
+<div class="ready {{ 'ok' if pct == 100 else 'warn' if pct >= 50 else 'bad' }}"><span class="ring" style="--p:{{ pct }}"><span>{{ pct }}%</span></span>
+  <div><b>{{ title }}</b>{% if sub %}<small>{{ sub }}</small>{% endif %}</div></div>
+{%- endmacro %}
+
+{% macro bid_state(state) -%}
+{%- if state == "submitted" %}<span class="pill ok">Submitted</span>{% elif state == "drafting" %}<span class="pill info">Drafting</span>{% else %}<span class="pill brand">In progress</span>{% endif -%}
+{%- endmacro %}
+
+{% macro empty(title, text="", href="", label="") -%}
+<div class="empty"><h3>{{ title }}</h3>{% if text %}<p>{{ text }}</p>{% endif %}{% if href %}<a class="btn ghost" href="{{ href }}">{{ label }}</a>{% endif %}</div>
+{%- endmacro %}
+
+{% macro save_button(t, saved, csrf, back) -%}
+<form method="post" action="/t/{{ t.id }}/save"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+<button class="iconbtn{{ ' on' if t.id in saved }}" type="submit" title="{{ 'Remove from saved' if t.id in saved else 'Save this tender' }}" aria-label="{{ 'Remove from saved' if t.id in saved else 'Save this tender' }}" aria-pressed="{{ 'true' if t.id in saved else 'false' }}">{{ icon("star") }}</button></form>
+{%- endmacro %}
+
+{% macro cats(t) -%}
+{%- for c in (t.categories or "," ~ t.category ~ ",").strip(",").split(",") if c %}{{ CATEGORIES.get(c, c) }}{{ ", " if not loop.last }}{% endfor -%}
+{%- endmacro %}
+
+{% macro check() -%}<svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 9.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{%- endmacro %}
+
+{# Envelope item state as a check mark #}
+{% macro mark(state) -%}
+{%- if state == "in" %}<span class="ck ok">{{ icon("check") }}</span>{% elif state in ("missing", "late") %}<span class="ck bad">{{ icon("x") }}</span>{% else %}<span class="ck"></span>{% endif -%}
+{%- endmacro %}
+
+{% macro env_state(r) -%}
+{%- if r.state == "in" %}<span class="ind ok">In</span>{% elif r.state == "missing" %}<span class="ind bad">Missing from file</span>{% elif r.state == "late" %}<span class="ind bad">Expires too soon</span>{% elif r["from"] == "bidroom" %}<span class="ind info">Write in Bid Room</span>{% else %}<span class="ind">Still to bring</span>{% endif -%}
+{%- endmacro %}
+
+{# Pager: Previous 1 … 4 5 6 … 12 Next #}
+{% macro pager(pg, base, qs, anchor="") -%}
+{%- if pg.pages > 1 -%}
+{%- set sep = "&" if qs else "" -%}
+<nav class="pager" aria-label="Pages">
+  {% if pg.page > 1 %}<a class="pg" href="{{ base }}?{{ qs }}{{ sep }}p={{ pg.page - 1 }}{{ anchor }}" rel="prev">Previous</a>{% else %}<span class="pg off">Previous</span>{% endif %}
+  <span class="nums">{% for n in pg.shown %}{% if n is none %}<span class="gap">…</span>{% elif n == pg.page %}<span class="pg on" aria-current="page">{{ n }}</span>{% else %}<a class="pg" href="{{ base }}?{{ qs }}{{ sep }}p={{ n }}{{ anchor }}">{{ n }}</a>{% endif %}{% endfor %}</span>
+  {% if pg.page < pg.pages %}<a class="pg" href="{{ base }}?{{ qs }}{{ sep }}p={{ pg.page + 1 }}{{ anchor }}" rel="next">Next</a>{% else %}<span class="pg off">Next</span>{% endif %}
+</nav>
+{%- endif -%}
+{%- endmacro %}
