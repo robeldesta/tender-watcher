@@ -9,7 +9,7 @@
 <script type="application/json" id="bid-values">{{ x["values"] | tojson }}</script>
 <div class="page-header">
   <div class="ph-t">
-    <p class="ph-sub" style="margin:0 0 4px"><a href="/t/{{ t.id }}">{{ t.buyer }}</a>{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}</p>
+    <p class="ph-sub" style="margin:0 0 4px">{% if private %}<span class="pill">Your own tender</span> {{ t.buyer }}{% else %}<a href="/t/{{ t.id }}">{{ t.buyer }}</a>{% endif %}{% if t.reference %} · <span class="mono">{{ t.reference }}</span>{% endif %}</p>
     <h1>{{ t.title }}</h1>
     <div class="ph-meta">{{ bid_state(b.state) }}
       {% set dd = (t.closes | days_from(today)) if t.closes else none %}
@@ -36,7 +36,8 @@
       {% if past %}<label class="check small" style="margin-top:4px"><input type="checkbox" name="use_past" value="1" checked> Reuse wording from my {{ past|length }} past bid{{ "s" if past|length != 1 }}</label>{% endif %}</form>
   </div>
 </div>
-{% if drafting %}<div class="alert info" id="drafting-note" role="status"><div class="grow"><p>Reading the tender and your profile, building the checklist and writing the letter. This takes about a minute; the page updates by itself.</p><span class="skel" style="width:60%;margin-top:8px"></span></div></div>{% endif %}
+{% if b.state == "reading" %}<div class="alert info" id="drafting-note" role="status"><div class="grow"><p>Reading your bidding document: the buyer, closing date, bid security, required papers and forms, and the bill of quantities. A long document takes two or three minutes; the page updates by itself.</p><span class="skel" style="width:60%;margin-top:8px"></span></div></div>
+{% elif drafting %}<div class="alert info" id="drafting-note" role="status"><div class="grow"><p>Reading the tender and your profile, building the checklist and writing the letter. This takes about a minute; the page updates by itself.</p><span class="skel" style="width:60%;margin-top:8px"></span></div></div>{% endif %}
 {% if b.draft_error %}<div class="alert bad" role="alert"><div class="grow"><p>{{ b.draft_error }}</p></div></div>{% endif %}
 {% set reused = request.query_params.get("reused") %}{% if reused %}<div class="toast" role="status">{{ icon("check") }}Copied from your past bid. Edit it to fit this tender.</div>{% endif %}
 {% if request.query_params.get("profile") %}<div class="toast" role="status">{{ icon("check") }}Profile saved. Draft again to use it in this bid.</div>{% endif %}
@@ -71,9 +72,22 @@
     </div>
 
     <div class="room-panel" id="tab-document" role="tabpanel">
-      <section class="card editor" aria-labelledby="doc-h">
-        <div class="card-h"><div><h2 id="doc-h">The bidding document</h2><p class="small muted">Newspaper notices are short. Paste the bidding document's instructions and qualification criteria (ITB, Section III, data sheet) for a complete checklist, then press Draft again.</p></div></div>
-        <textarea name="doc_text" form="draft-form" data-field="doc_text" rows="14" aria-label="Bidding document text" placeholder="Paste the bidding document text here">{{ d.doc_text }}</textarea>
+      <section class="card" aria-labelledby="up-h">
+        <div class="card-h"><div><h2 id="up-h">The buyer's bidding document</h2><p class="small muted">Upload the document you bought or downloaded: a PDF, or photos of its pages. Bid Room reads the closing date, bid security, required papers and forms, and copies the bill of quantities into your bid with the rates left for you. It stays private to your company.</p></div></div>
+        {% if d.doc_files %}<ul class="small" style="margin:0 0 10px">{% for n in d.doc_files %}<li><a href="/bids/{{ b.id }}/document/{{ loop.index0 }}" target="_blank" rel="noopener">{{ "Document" if n.endswith(".pdf") else "Page photo " ~ loop.index }}</a></li>{% endfor %}</ul>{% endif %}
+        {% if d.read %}<div class="alert ok" style="margin-bottom:10px"><div class="grow"><p><b>Read on {{ d.read.at | long_date }}.</b> {{ d.read.summary }}</p>
+          {% if d.read.lots %}<p class="small" style="margin-top:6px">Lots: {{ d.read.lots | join("; ") }}</p>{% endif %}
+          {% if d.read.opening %}<p class="small" style="margin-top:4px">Bid opening: {{ d.read.opening }}</p>{% endif %}
+          {% if d.read["items"] %}<p class="small" style="margin-top:4px">{{ d.read["items"] }} lines copied into the {{ "bill of quantities" if d.kind == "works" else "price schedule" }}.</p>{% endif %}</div></div>{% endif %}
+        <form method="post" action="/bids/{{ b.id }}/document" enctype="multipart/form-data" class="row-flex" style="gap:8px;flex-wrap:wrap">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="file" name="doc" accept="application/pdf,image/jpeg,image/png" multiple required aria-label="Bidding document">
+          <button class="btn sm" type="submit" {{ "disabled" if drafting }}>{{ "Read it again" if d.read else "Read the document" }}</button></form>
+        <p class="hint" style="margin-top:6px">One PDF up to 20 MB, or up to 20 page photos. Your own prices and text are kept.</p>
+      </section>
+      <section class="card editor" aria-labelledby="doc-h" style="margin-top:12px">
+        <div class="card-h"><div><h2 id="doc-h">Text for drafting</h2><p class="small muted">Bid Room drafts from this text. It fills in from a PDF; for photos, or to add a part, paste the instructions and qualification criteria (ITB, Section III, data sheet), then press Draft again.</p></div></div>
+        <textarea name="doc_text" form="draft-form" data-field="doc_text" rows="12" aria-label="Bidding document text" placeholder="Paste the bidding document text here">{{ d.doc_text }}</textarea>
       </section>
     </div>
   </div>

@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon %}
+{% block title %}Bid on your own document | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/bids">Bid Room</a>{{ icon("chev-r") }}<span class="here">Bid on your own document</span>{% endblock %}
+{% block body %}
+<div class="page-header"><div class="ph-t"><h1>Bid on your own document</h1>
+  <p class="ph-sub">A tender that isn't on our list: one you bought at the buyer's office, got by email or downloaded. Upload its bidding document and Bid Room opens a bid on the right forms.</p></div></div>
+{% if error %}<div class="alert bad" role="alert"><div class="grow"><p>{{ error }}</p></div></div>{% endif %}
+<div class="new-bid">
+  <section class="card" aria-labelledby="nb-up">
+    <h2 id="nb-up" style="margin-bottom:6px">Upload the bidding document</h2>
+    <p class="small muted" style="margin:0 0 12px">Bid Room reads the buyer, closing date and time, bid security, validity, envelopes, the papers and forms it asks for, and copies the bill of quantities or list of goods into your bid with the prices left for you. It takes a minute or two.</p>
+    <form method="post" action="/bids/new" enctype="multipart/form-data" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field"><label for="nb-doc">The document</label>
+        <input id="nb-doc" type="file" name="doc" accept="application/pdf,image/jpeg,image/png" multiple required>
+        <p class="hint">One PDF up to 20 MB, or photos of the pages (up to 20). For a long document, the instructions, data sheet, forms and bill of quantities are enough.</p></div>
+      <div><button class="btn" type="submit">{{ icon("spark") }}Read it and start the bid</button></div>
+    </form>
+  </section>
+  <section class="card" aria-labelledby="nb-hand">
+    <h2 id="nb-hand" style="margin-bottom:6px">No document yet?</h2>
+    <p class="small muted" style="margin:0 0 12px">Start with the basics and add the document later from the bid's "Bidding document" tab.</p>
+    <form method="post" action="/bids/new" enctype="multipart/form-data" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field"><label for="nb-title">Tender title</label><input id="nb-title" name="title" required></div>
+      <div class="field"><label for="nb-buyer">Buyer</label><input id="nb-buyer" name="buyer"></div>
+      <div class="field"><label for="nb-closes">Closing date</label><input id="nb-closes" name="closes" type="date"></div>
+      <div><button class="btn ghost" type="submit">Start the bid</button></div>
+    </form>
+  </section>
+</div>
+<p class="hint" style="margin-top:12px">{{ icon("lock", "s") }} Private to your company. Tenders you add here are never listed or shown to anyone else.</p>
+{% endblock %}

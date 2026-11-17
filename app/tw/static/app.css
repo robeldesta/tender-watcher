@@ -649,3 +649,5 @@ table.kv td{padding:6px 8px;border-bottom:1px solid var(--line)}
 table#fin input[data-col=item]{min-width:240px;width:100%}
 table#fin input[data-col=no]{width:56px}
 table#fin input[data-col=unit]{width:60px}
+.new-bid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:var(--s4);align-items:start}
+@media (max-width:900px){.new-bid{grid-template-columns:1fr}}

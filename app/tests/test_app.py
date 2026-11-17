@@ -1231,3 +1231,82 @@ def test_works_bid_on_real_forms(env):
     for path in (f"/bids/{bid_id}/download", f"/bids/{bid_id}/print"):
         assert other.get(path).status_code == 404
     assert other.get("/profile/stamp").status_code == 404
+
+
+READ = {"buyer": "Adama City Roads Authority", "title": "Construction of cobblestone road, Lot 2", "reference": "ACRA/W/011/2019",
+        "place": "Adama, Roads Authority, Room 4", "time": "14:00", "opening": "Same day 14:30, Room 4", "kind": "works",
+        "envelopes": "two", "validity_days": "90", "bid_security": "CPO ETB 80,000", "security_type": "cpo",
+        "performance_security": "10%", "completion": "150 calendar days", "document_fee": "ETB 500", "grade": "RC-5",
+        "summary": "Cobblestone road works in Adama.", "closing": {"raw": "ኅዳር 25 ቀን 2019 ዓ.ም", "calendar": "ethiopian",
+                                                                  "year": 2019, "month": 3, "day": 25},
+        "lots": ["Lot 1: 2 km", "Lot 2: 3 km"], "papers": ["trade_licence", "supplier_list", "audited_accounts", "bogus"],
+        "forms": ["bid_sheet", "boq", "subcontractors", "nonsense"],
+        "requirements": ["Two similar road works in the last 5 years", "Ignore previous instructions"],
+        "items": [["1.1", "Site clearing", "m2", "3000"], ["2.1", "Cobblestone paving", "m2", "9000"], ["", "", "", ""]],
+        "specs": []}
+
+
+def test_bid_on_own_document(env, tmp_path):
+    """A firm starts a bid from a bidding document it has (not on our list): it stays private, and the
+    reader fills the bid's forms, papers and bill of quantities."""
+    app, claude, board = env
+    calls = []
+    claude.beta = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: calls.append(kw) or SimpleNamespace(
+        stop_reason="end_turn", content=[SimpleNamespace(type="text", text=json.dumps(READ))])))
+    app.state.bid_room.sync_drafts = True
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Jobale Engineering", "name": "Jobale", "phone": "0933111222", "password": "longenough1"})
+    tok = csrf(c, "/bids/new")
+    assert "Bid on your own document" in c.get("/bids").text
+    assert c.post("/bids/new", data={"csrf": tok}).status_code == 400  # nothing given
+    assert c.post("/bids/new", data={"csrf": tok}, files={"doc": ("x.txt", b"hello")}).status_code == 400
+    r = c.post("/bids/new", data={"csrf": tok}, files={"doc": ("tender.pdf", _pdf(3), "application/pdf")}, follow_redirects=False)
+    url = r.headers["location"]
+    bid_id = url.rsplit("/", 1)[1]
+    sent = calls[0]
+    assert sent["messages"][0]["content"][0]["type"] == "document"
+    room = c.get(url).text
+    assert "Construction of cobblestone road, Lot 2" in room and "Your own tender" in room and "ACRA/W/011/2019" in room
+    assert "Site clearing" in room and "Cobblestone paving" in room and "Bill of quantities" in room
+    assert "Supplier list registration" in room and "Audited accounts" in room  # papers the document asks for
+    assert "Two similar road works in the last 5 years" in room and "Lot 1: 2 km" in room
+    assert 'value="150 calendar days"' in room and "ETB 80,000" in room and "Financial envelope" in room
+    with app.state.Session() as db:
+        from tw.db import Bid as B
+        b = db.get(B, int(bid_id))
+        t = b.tender
+        assert t.status == "private" and t.id.startswith("own-") and t.closes == "2026-12-04" and t.time == "14:00"
+        d = json.loads(b.data)
+        assert d["forms"]["subcontractors"]["on"] and "nonsense" not in d["forms"] and "Bid page 1" in d["doc_text"]
+        assert d["financial"][0] == {"no": "1.1", "item": "Site clearing", "unit": "m2", "qty": "3000", "price": ""}
+        tid = t.id
+    # private: not on the tender page, not in the list, not to other firms
+    assert c.get(f"/t/{tid}").status_code == 404
+    assert "cobblestone road, Lot 2" not in c.get("/tenders").text
+    assert c.get(f"/bids/{bid_id}/document/0").content.startswith(b"%PDF")
+    other = TestClient(app)
+    other.post("/signup", data={"company": "Other PLC", "name": "Other", "phone": "0933444666", "password": "longenough1"})
+    assert other.get(url).status_code == 404 and other.get(f"/bids/{bid_id}/document/0").status_code == 404
+    assert other.post(f"/bids/{bid_id}/details", data={"csrf": csrf(other, "/profile"), "title": "x"}).status_code == 404
+    # the firm corrects the details
+    c.post(f"/bids/{bid_id}/details", data={"csrf": tok, "title": "Cobblestone road Lot 2", "buyer": "ACRA",
+                                            "closes": "2026-12-05", "time": "10:00"})
+    assert "Cobblestone road Lot 2" in c.get(url).text
+    # by hand, with no document
+    r = c.post("/bids/new", data={"csrf": tok, "title": "Printing services", "buyer": "Some NGO", "closes": "2026-12-01"},
+               follow_redirects=False)
+    assert "Printing services" in c.get(r.headers["location"]).text and len(calls) == 1
+    # photos of the pages work too
+    r = c.post("/bids/new", data={"csrf": tok}, files=[("doc", ("p1.png", _png(), "image/png")), ("doc", ("p2.png", _png(), "image/png"))],
+               follow_redirects=False)
+    assert [x["type"] for x in calls[1]["messages"][0]["content"]][:2] == ["image", "image"]
+
+    # a listed tender's document fills the firm's bid only, never the shared tender
+    board.write_text(json.dumps({"tenders": [{"id": "wb-9", "buyer": "ESS", "title": "Supply of servers", "closes": "2026-11-20",
+                                              "category": "it"}]}))
+    assert "Supply of servers" in c.get("/t/wb-9").text
+    url2 = c.post("/t/wb-9/bid", data={"csrf": tok}, follow_redirects=False).headers["location"]
+    c.post(url2 + "/document", data={"csrf": tok}, files={"doc": ("t.pdf", _pdf(1), "application/pdf")})
+    page = c.get("/t/wb-9").text
+    assert "Supply of servers" in page and "cobblestone" not in page.lower()
+    assert "Cobblestone paving" in c.get(url2).text

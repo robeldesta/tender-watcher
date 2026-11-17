@@ -3,8 +3,8 @@
 {% block title %}Bid Room | Tender Watcher{% endblock %}
 {% block crumbs %}<span class="here">Bid Room</span>{% endblock %}
 {% block body %}
-{% call page_header("Bid Room", "Every bid you are building, soonest deadline first. Start one from any tender with \"Start this bid\".") %}
-  <a class="btn ghost" href="/profile">{{ icon("building") }}Company profile</a><a class="btn" href="/?match=1">{{ icon("search") }}Find a tender</a>
+{% call page_header("Bid Room", "Every bid you are building, soonest deadline first. Start one from any tender with \"Start this bid\", or from a bidding document you have.") %}
+  <a class="btn ghost" href="/bids/new">{{ icon("plus") }}Bid on your own document</a><a class="btn ghost" href="/profile">{{ icon("building") }}Company profile</a><a class="btn" href="/?match=1">{{ icon("search") }}Find a tender</a>
 {% endcall %}
 <section class="card flush">
   <div class="filterbar">

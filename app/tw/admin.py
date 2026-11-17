@@ -87,7 +87,7 @@ def register(app, h):
         by = {"open": [Tender.status == "published", or_(Tender.closes == "", Tender.closes >= t)],
               "closed": [Tender.status == "published", Tender.closes != "", Tender.closes < t],
               "pending": [Tender.status == "pending"], "unlisted": [Tender.status == "unlisted"],
-              "rejected": [Tender.status == "rejected"], "all": []}
+              "rejected": [Tender.status == "rejected"], "all": [Tender.status != "private"]}  # firms' own uploads stay theirs
         counts = {k: session.scalar(select(func.count()).select_from(select(Tender.id).where(*v).subquery()))
                   for k, v in by.items()}
         query = base.where(*by[status])
