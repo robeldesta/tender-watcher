@@ -947,3 +947,135 @@ def test_explorer_filters_saved_and_reports(env, monkeypatch):
     c.post("/t/wb-1/bid", data={"csrf": tok})
     bell = c.get("/my").text
     assert "Tax clearance certificate expires 20 Nov" in bell and "Monitoring platform closes in 2 days" in bell
+
+
+PAST = {"about": {"title": "Supply of servers to Awash Bank", "buyer": "Awash Bank", "reference": "AB/IT/07/2025", "year": "2025"},
+        "company": {"legal_name": "Sonador Systems PLC", "grade": "", "address": "Bole, Woreda 03", "phone": "0911223344",
+                    "email": "", "tin": "0088565182", "vat_number": "", "signatory_name": "Robel Desta",
+                    "signatory_title": "General Manager", "year_established": "2015", "staff_count": "", "regions": "",
+                    "work_types": "", "equipment": "", "notes": "Dell authorised partner http://evil.example"},
+        "licences": [{"name": "Data centre licence", "number": "85124", "issuer": "MInT", "expires": "2027-07-07"}],
+        "projects": [{"name": "Bank data centre", "client": "CBE", "value_etb": "4500000", "year_completed": "2025",
+                      "region": "", "role": "", "scope": ""},
+                     {"name": "Branch network refresh", "client": "Awash Bank", "value_etb": "2100000",
+                      "year_completed": "2024", "region": "Addis Ababa", "role": "Main contractor", "scope": "120 switches"}],
+        "key_personnel": [{"role": "Project manager", "name": "Hana T", "qualification": "MSc CS", "years_experience": "9"}],
+        "turnover": [{"year": "2024", "amount_etb": "12500000"}, {"year": "n/a", "amount_etb": "1"}],
+        "methodology": [{"heading": "Delivery and installation", "paragraphs": ["We stage every server in our Bole lab before delivery."]},
+                        {"heading": "Warranty", "paragraphs": ["Three years on site, next business day."]}],
+        "cover_letter": ["We are pleased to submit our bid."], "company_section": ["Sonador builds data centres."],
+        "price_lines": [{"item": "Rack server", "unit": "pcs", "qty": "4", "price": "850000"}],
+        "price_notes": "ETB, VAT included, valid 90 days"}
+
+
+def test_past_bids_import_profile_and_reuse(env, tmp_path):
+    app, claude, board = env
+    board.write_text(json.dumps({"tenders": [
+        {"id": "wb-1", "buyer": "ESS", "title": "Supply of rack servers", "closes": "2026-11-20", "category": "it",
+         "notice": "Full text here"}]}))
+    calls = []
+    state = {"out": PAST}
+
+    def create(**kw):
+        calls.append(kw)
+        out = DRAFT if "own_bids" in kw["system"] else state["out"]
+        if out is None:
+            raise RuntimeError("API down")
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=json.dumps(out))])
+    claude.beta = SimpleNamespace(messages=SimpleNamespace(create=create))
+    app.state.library.sync = True
+    app.state.bid_room.sync_drafts = True
+    c = TestClient(app)
+    c.post("/signup", data={"company": "Sonador Systems", "name": "Robel D", "phone": "0933444555",
+                            "password": "longenough1", "tin": "0088565182"})
+    tok = csrf(c, "/profile")
+    assert 'href="/past-bids"' in c.get("/bids").text and "No past bids yet" in c.get("/past-bids").text
+
+    # only PDFs, csrf checked
+    r = c.post("/past-bids", data={"csrf": tok}, files={"pdf": ("bid.docx", b"PK\x03\x04", "application/pdf")}, follow_redirects=False)
+    assert "error=" in r.headers["location"] and not calls
+    assert c.post("/past-bids", data={"csrf": "bad"}, files={"pdf": ("b.pdf", b"%PDF-1.4", "application/pdf")}).status_code == 400
+
+    # a failed read can be retried
+    state["out"] = None
+    r = c.post("/past-bids", data={"csrf": tok}, files={"pdf": ("awash-bid.pdf", b"%PDF-1.4 the bid", "application/pdf")},
+               follow_redirects=False)
+    url = r.headers["location"]
+    pid = int(url.rsplit("/", 1)[1])
+    assert "Read it again" in c.get(url).text and c.get(url + "/state").json()["state"] == "failed"
+    state["out"] = PAST
+    c.post(url + "/retry", data={"csrf": tok})
+    assert c.get(url + "/state").json() == {"state": "ready", "error": ""}
+    sent = calls[-1]
+    doc = sent["messages"][0]["content"][0]
+    assert doc["type"] == "document" and doc["source"]["media_type"] == "application/pdf"
+    assert sent["output_config"]["format"]["type"] == "json_schema"
+
+    page = c.get(url).text
+    assert "Supply of servers to Awash Bank" in page and "We stage every server in our Bole lab" in page
+    assert "Hana T" in page and "Rack server" in page and "evil.example" not in page
+    assert "4 methods" not in page and "Only your company" in page
+    lst = c.get("/past-bids").text
+    assert "2 method sections" in lst and "2 projects" in lst and "new for your profile" in lst
+
+    # add facts to the profile: ticked ones only, rows not doubled
+    r = c.post(url + "/profile", data={"csrf": tok, "f": ["legal_name", "signatory_name"],
+                                       "r": ["projects:0", "projects:1", "key_personnel:0", "turnover:0", "turnover:1"]},
+               follow_redirects=False)
+    assert r.headers["location"] == f"/past-bids/{pid}?merged=6"
+    prof = c.get("/profile").text
+    assert "Sonador Systems PLC" in prof and "Robel Desta" in prof and "Branch network refresh" in prof and "Hana T" in prof
+    assert "2024: 12500000" in prof and 'value="85124"' not in prof and 'value="General Manager"' not in prof
+    c.post(url + "/profile", data={"csrf": tok, "r": ["projects:0"]})
+    with app.state.Session() as s:
+        from tw.db import Company
+        p = json.loads(s.query(Company).filter_by(name="Sonador Systems").one().profile)
+        assert len(p["projects"]) == 2
+
+    # Bid Room: drafting reuses the firm's own wording; parts can be copied in
+    assert "Start this bid" in c.get("/t/wb-1").text
+    c.post("/t/wb-1/bid", data={"csrf": tok}, follow_redirects=False)
+    with app.state.Session() as s:
+        from tw.db import Bid
+        bid_id = s.query(Bid).one().id
+    room = c.get(f"/bids/{bid_id}").text
+    assert "Reuse wording from my 1 past bid" in room and "Copy from past bid" in room
+    c.post(f"/bids/{bid_id}/draft", data={"csrf": tok, "use_past": "1"})
+    content = calls[-1]["messages"][0]["content"]
+    assert "<own_bids>" in content and "We stage every server in our Bole lab" in content.split("<tender>")[0]
+    c.post(f"/bids/{bid_id}/draft", data={"csrf": tok})
+    assert "<own_bids>" not in calls[-1]["messages"][0]["content"]
+    r = c.post(f"/bids/{bid_id}/reuse", data={"csrf": tok, "past": pid, "part": "technical"}, follow_redirects=False)
+    assert r.headers["location"].endswith("#technical")
+    c.post(f"/past-bids/{pid}/use", data={"csrf": tok, "bid": bid_id, "part": "financial"})
+    room = c.get(f"/bids/{bid_id}").text
+    assert "Delivery and installation" in room and "We will deliver and install the servers" in room
+    assert 'value="Rack server"' in room and 'value="850000"' not in room
+
+    # strict isolation: another company sees nothing and can't use it
+    other = TestClient(app)
+    other.post("/signup", data={"company": "Other PLC", "name": "Other", "phone": "0933444666", "password": "longenough1"})
+    otok = csrf(other, "/profile")
+    for path in (url, url + "/state", url + "/file"):
+        assert other.get(path).status_code == 404
+    assert "Supply of servers to Awash Bank" not in other.get("/past-bids").text
+    for path, data in ((url + "/profile", {"csrf": otok, "r": ["projects:0"]}), (url + "/retry", {"csrf": otok}),
+                       (url + "/delete", {"csrf": otok})):
+        assert other.post(path, data=data).status_code == 404
+    r = other.post("/t/wb-1/bid", data={"csrf": otok}, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with app.state.Session() as s:
+        obid = s.query(Bid).filter(Bid.id != bid_id).one().id
+    assert other.post(f"/bids/{obid}/reuse", data={"csrf": otok, "past": pid, "part": "technical"}).status_code == 404
+    assert other.post(f"/past-bids/{pid}/use", data={"csrf": otok, "bid": obid, "part": "technical"}).status_code == 404
+    assert c.post(f"/bids/{obid}/reuse", data={"csrf": tok, "past": pid, "part": "technical"}).status_code == 404
+    assert client(app, "0911000002").get("/past-bids").status_code == 403
+    assert TestClient(app).get("/past-bids", follow_redirects=False).status_code in (302, 303, 307)
+
+    # the owner can open the PDF and remove it; the file goes too
+    f = c.get(url + "/file")
+    assert f.status_code == 200 and f.content.startswith(b"%PDF") and f.headers["cache-control"] == "private, no-store"
+    stored = list((tmp_path / "appdata" / "past_bids").rglob("*.pdf"))
+    assert len(stored) == 1  # the .docx was refused; a retried read keeps its one file
+    c.post(url + "/delete", data={"csrf": tok})
+    assert c.get(url).status_code == 404 and not list((tmp_path / "appdata" / "past_bids").rglob("*.pdf"))

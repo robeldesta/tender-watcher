@@ -157,6 +157,24 @@ class Paper(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
+class PastBid(Base):
+    """A bid the company submitted before, uploaded as a PDF. Private to the company: the file sits
+    under DATA_DIR/past_bids/<company>/ and every query filters by company_id. Claude reads it once
+    and keeps the reusable parts (company facts, method, experience, staff, price layout) in data."""
+    __tablename__ = "past_bids"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(160), default="")  # the uploaded file's name, or the firm's own
+    file: Mapped[str] = mapped_column(String(60), default="")  # <32 hex>.pdf
+    size: Mapped[int] = mapped_column(default=0)
+    state: Mapped[str] = mapped_column(String(10), default="reading")  # reading, ready, failed
+    error: Mapped[str] = mapped_column(String(300), default="")
+    data: Mapped[str] = mapped_column(Text, default="")  # JSON, see library.blank()
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
 class SavedTender(Base):
     """A tender a company keeps on its shortlist."""
     __tablename__ = "saved_tenders"

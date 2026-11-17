@@ -196,6 +196,12 @@
       headers: { "content-type": "application/json", "x-csrf": csrf }, body: JSON.stringify(collect()) });
   }
   window.addEventListener("pagehide", function () { if (timer) flush(); });
+  room.querySelectorAll("form[data-reuse]").forEach(function (f) {
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      flush().catch(function () {}).then(function () { f.submit(); });
+    });
+  });
   var form = document.getElementById("draft-form");
   if (form) form.addEventListener("submit", function (e) {
     e.preventDefault();
@@ -219,4 +225,14 @@
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-open-add]")) { var d = document.getElementById("add"); if (d) d.open = true; }
   });
+})();
+(function () {  // a page waiting on a background read reloads when it is done
+  var el = document.querySelector("[data-poll-state]");
+  if (!el) return;
+  var url = el.getAttribute("data-poll-state"), tries = 0;
+  (function poll() {
+    fetch(url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.state !== "reading" || ++tries > 150) location.reload(); else setTimeout(poll, 4000);
+    }).catch(function () { setTimeout(poll, 8000); });
+  })();
 })();

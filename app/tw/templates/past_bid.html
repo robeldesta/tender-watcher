@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon %}
+{% block title %}{{ pb.name }} | Past bids | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/bids">Bid Room</a>{{ icon("chev-r") }}<a href="/past-bids">Past bids</a>{{ icon("chev-r") }}<span class="here">{{ pb.name }}</span>{% endblock %}
+{% block body %}
+{% set heads = {"name": "Name", "number": "Number", "issuer": "Issued by", "expires": "Valid until", "client": "Client", "value_etb": "Value, ETB", "year_completed": "Year", "region": "Region", "role": "Role", "scope": "What you did", "qualification": "Qualification", "years_experience": "Years"} %}
+{% set labels = {"legal_name": "Legal name", "grade": "Grade", "address": "Address", "phone": "Phone", "email": "Email", "tin": "TIN", "vat_number": "VAT number", "signatory_name": "Signs bids: name", "signatory_title": "Signs bids: title", "year_established": "Established", "staff_count": "Permanent staff", "regions": "Regions", "work_types": "Work and goods", "equipment": "Equipment", "notes": "Other notes"} %}
+<div {% if state == "reading" %}data-poll-state="/past-bids/{{ pb.id }}/state"{% endif %}>
+<div class="page-header">
+  <div class="ph-t">{% if d.about.buyer %}<p class="ph-sub" style="margin:0 0 4px">{{ d.about.buyer }}{% if d.about.reference %} · <span class="mono">{{ d.about.reference }}</span>{% endif %}{% if d.about.year %} · {{ d.about.year }}{% endif %}</p>{% endif %}
+    <h1>{{ pb.name }}</h1>
+    <div class="ph-meta"><span class="pill">{{ icon("lock", "s") }}Only your company</span>{% if state == "ready" %}<span class="pill ok">Read</span>{% elif state == "reading" %}<span class="pill info">Reading</span>{% else %}<span class="pill bad">Couldn't read it</span>{% endif %}</div></div>
+  <div class="ph-act"><a class="btn ghost" href="/past-bids/{{ pb.id }}/file" target="_blank" rel="noopener">{{ icon("file") }}Open the PDF</a>
+    <form method="post" action="/past-bids/{{ pb.id }}/delete" data-ask="Remove {{ pb.name }}? Its PDF and what Bid Room read from it are deleted." data-ask-label="Remove"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost" type="submit">{{ icon("trash") }}Remove</button></form></div>
+</div>
+{% if merged %}<div class="toast" role="status">{{ icon("check") }}{{ merged }} item{{ "s" if merged != "1" }} added to your company profile. Every bid uses {{ "it" if merged == "1" else "them" }} from now on.</div>{% endif %}
+
+{% if state == "reading" %}
+<div class="alert info" role="status"><div class="grow"><p>Reading your bid: company details, experience, staff, method statement and price schedule. This takes about a minute; the page updates by itself.</p><span class="skel" style="width:60%;margin-top:8px"></span></div></div>
+{% elif state == "failed" %}
+<div class="alert bad" role="alert"><div class="grow"><p>{{ pb.error or "Bid Room couldn't finish reading this PDF." }}</p></div>
+  <form method="post" action="/past-bids/{{ pb.id }}/retry"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit">Read it again</button></form></div>
+{% else %}
+
+<div class="layout-side">
+<div style="min-width:0" class="stack">
+  {% if o.count %}
+  <form method="post" action="/past-bids/{{ pb.id }}/profile" class="card flush">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="card-h"><div><h2>Add to your company profile</h2><p class="small muted">Found in this bid and not yet in your profile. New items are ticked; where your profile says something else, it stays unless you tick it.</p></div></div>
+    <ul class="checklist">
+    {% for f in o.fields %}<li><label class="check grow"><input type="checkbox" name="f" value="{{ f.key }}" {{ "checked" if f.new }}> <span><b>{{ labels.get(f.key, f.key) }}:</b> {{ f.value }}{% if f.have %}<span class="sub muted"> Your profile says: {{ f.have }}</span>{% endif %}</span></label></li>{% endfor %}
+    {% for kind, title in [("licences", "Licence"), ("projects", "Project"), ("key_personnel", "Key staff")] %}{% for x in o.rows[kind] %}
+      <li><label class="check grow"><input type="checkbox" name="r" value="{{ kind }}:{{ x.i }}" checked> <span><b>{{ title }}:</b> {% for c in ROWS[kind] if x.row[c] %}{{ x.row[c] }}{{ " · " if not loop.last }}{% endfor %}</span></label></li>{% endfor %}{% endfor %}
+    {% for x in o.turnover %}<li><label class="check grow"><input type="checkbox" name="r" value="turnover:{{ x.i }}" checked> <span><b>Turnover {{ x.row.year }}:</b> {{ x.row.amount_etb }} ETB</span></label></li>{% endfor %}
+    </ul>
+    <div class="actions" style="padding:12px 16px"><button class="btn" type="submit">{{ icon("plus") }}Add ticked items to the profile</button><a class="btn ghost" href="/profile">See the profile</a></div>
+  </form>
+  {% else %}
+  <div class="alert ok"><div class="grow"><p>Your company profile already holds every fact found in this bid.</p></div></div>
+  {% endif %}
+
+  {% if method %}<section class="card"><h2 style="margin-bottom:8px">Method and technical offer</h2>
+    {% for m in d.methodology %}{% if m.heading %}<h3 style="margin:12px 0 4px">{{ m.heading }}</h3>{% endif %}{% for p in m.paragraphs %}<p>{{ p }}</p>{% endfor %}{% endfor %}</section>{% endif %}
+  {% if d.cover_letter %}<section class="card"><h2 style="margin-bottom:8px">Cover letter</h2>{% for p in d.cover_letter %}<p>{{ p }}</p>{% endfor %}</section>{% endif %}
+  {% if d.company_section %}<section class="card"><h2 style="margin-bottom:8px">Company write-up</h2>{% for p in d.company_section %}<p>{{ p }}</p>{% endfor %}</section>{% endif %}
+  {% if d.price_lines %}<section class="card flush"><div class="card-h"><h2>Price schedule</h2>{% if d.price_notes %}<span class="small muted">{{ d.price_notes }}</span>{% endif %}</div>
+    <div class="table-wrap"><table class="dt"><thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit price</th></tr></thead>
+    <tbody>{% for r in d.price_lines %}<tr><td>{{ r.item }}</td><td>{{ r.unit }}</td><td class="num">{{ r.qty }}</td><td class="num">{{ r.price }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+  {% for kind, title in [("projects", "Experience in this bid"), ("key_personnel", "Staff in this bid"), ("licences", "Licences in this bid")] if d[kind] %}
+  <section class="card flush"><div class="card-h"><h2>{{ title }}</h2></div><div class="table-wrap"><table class="dt"><thead><tr>{% for c in ROWS[kind] %}<th>{{ heads[c] }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in d[kind] %}<tr>{% for c in ROWS[kind] %}<td class="small">{{ r[c] or "–" }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></section>
+  {% endfor %}
+</div>
+<aside>
+  <section class="card"><p class="section-title">Use it in Bid Room</p>
+    <p class="small muted">When you press <b>Draft this bid</b>, Bid Room reuses your wording from past bids like this one. You can also copy a part straight into a bid you are building.</p>
+    {% if open_bids %}
+    <form method="post" action="/past-bids/{{ pb.id }}/use" class="stack" style="margin-top:8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field"><label for="rb">Bid</label><select id="rb" name="bid">{% for b in open_bids %}<option value="{{ b.id }}">{{ b.tender.title[:70] }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="rp">Part</label><select id="rp" name="part">{% for k, v in PARTS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <label class="check"><input type="checkbox" name="prices" value="1"> Keep the old unit prices</label>
+      <button class="btn" type="submit">Copy into the bid</button>
+    </form>
+    {% else %}<p class="small" style="margin-top:8px">Start a bid from any tender with <b>Start this bid</b>, then copy parts of this one into it.</p>{% endif %}
+  </section>
+</aside>
+</div>
+{% endif %}
+</div>
+{% endblock %}
