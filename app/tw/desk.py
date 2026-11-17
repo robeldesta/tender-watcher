@@ -99,7 +99,12 @@ def envelope(t, papers, today, bid_data=None):
     missing (not in the company file), todo (written in Bid Room or brought by the firm)."""
     have = set((bid_data or {}).get("have") or [])
     items = []
-    for r in requirements(t):
+    reqs = requirements(t)
+    known = {r["key"] for r in reqs}
+    extra = [k for k in (bid_data or {}).get("papers_asked") or [] if k in KINDS and k not in known]
+    reqs = [r for r in reqs if r["from"] == "file"] + [{"key": k, "label": KINDS[k][0], "from": "file"} for k in extra] + \
+        [r for r in reqs if r["from"] != "file"]  # papers the bidding document asks for, read by Bid Room
+    for r in reqs:
         r = dict(r)
         if r["from"] == "file":
             p = best(papers, r["key"], today)

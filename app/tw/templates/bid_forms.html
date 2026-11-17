@@ -25,6 +25,19 @@
     <div class="pane-body">
 
     {% if f.type == "details" %}
+      {% if private %}<form method="post" action="/bids/{{ b.id }}/details" class="own-facts">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <p class="small muted" style="margin:0 0 8px">Your own tender: check what Bid Room read from the document, or fill it in.</p>
+        <div class="form-grid">
+          <div class="field span2"><label for="o-title">Tender title</label><input id="o-title" name="title" value="{{ t.title }}" required></div>
+          <div class="field"><label for="o-buyer">Buyer</label><input id="o-buyer" name="buyer" value="{{ t.buyer }}"></div>
+          <div class="field"><label for="o-ref">Reference</label><input id="o-ref" name="reference" value="{{ t.reference }}" class="mono"></div>
+          <div class="field"><label for="o-closes">Closing date</label><input id="o-closes" name="closes" type="date" value="{{ t.closes }}"></div>
+          <div class="field"><label for="o-time">Closing time</label><input id="o-time" name="time" type="time" value="{{ t.time }}"></div>
+          <div class="field span2"><label for="o-place">Where to submit</label><input id="o-place" name="place" value="{{ t.place }}"></div>
+        </div>
+        <div class="pane-actions"><button class="btn sm" type="submit">Save tender details</button></div>
+      </form><hr>{% endif %}
       <div class="form-grid">
         <div class="field"><label for="kind">Type of procurement</label>
           <select id="kind" data-kind-select>{% for k, v in F.KINDS.items() %}<option value="{{ k }}" {{ "selected" if d.kind == k }}>{{ v }}</option>{% endfor %}</select>

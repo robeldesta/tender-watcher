@@ -1260,7 +1260,7 @@ def create_app(settings=None, claude=None):
     def duplicate_of(session, row):
         if not row.closes:
             return None
-        for t in session.scalars(select(Tender).where(Tender.closes == row.closes, Tender.status != "rejected",
+        for t in session.scalars(select(Tender).where(Tender.closes == row.closes, Tender.status.not_in(("rejected", "private")),
                                                       Tender.id != row.id)):
             if notices.norm(t.buyer) != notices.norm(row.buyer):
                 continue
@@ -1437,7 +1437,10 @@ def create_app(settings=None, claude=None):
     admin_console.register(app, SimpleNamespace(db=db, need=need, page=page, audit=audit, today=today, now=now,
                                                 paginate=paginate, check_csrf=check_csrf, TZ=TZ, sync=sync,
                                                 board_json=s.board_json, site_url=s.site_url, photos=photos))
-    from . import bidroom
+    from . import bidroom, owntender
+    owntender.register(app, SimpleNamespace(db=db, need=need, page=page, now=now, check_csrf=check_csrf,
+                                            data_dir=s.data_dir, has_access=has_bidroom, get_claude=get_claude,
+                                            Session=Session))  # before bidroom: /bids/new before /bids/{id}
     bidroom.register(app, SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf, data_dir=s.data_dir,
                                           TZ=TZ, has_access=has_bidroom, get_claude=get_claude, Session=Session,
                                           sync_drafts=False))
