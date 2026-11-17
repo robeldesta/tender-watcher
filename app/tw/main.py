@@ -1447,5 +1447,9 @@ def create_app(settings=None, claude=None):
     desk_h = SimpleNamespace(db=db, need=need, page=page, today=today, now=now, check_csrf=check_csrf,
                              has_access=has_bidroom, data_dir=s.data_dir)
     desk_mod.register(app, desk_h)
+    from . import library
+    library.register(app, SimpleNamespace(db=db, need=need, page=page, now=now, check_csrf=check_csrf,
+                                          has_access=has_bidroom, get_claude=get_claude, Session=Session,
+                                          data_dir=s.data_dir, sync=False))
     app.state.Session = Session
     return app

@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, empty %}
+{% block title %}Past bids | Tender Watcher{% endblock %}
+{% block crumbs %}<a href="/bids">Bid Room</a>{{ icon("chev-r") }}<span class="here">Past bids</span>{% endblock %}
+{% block body %}
+{% if saved == "removed" %}<div class="toast" role="status">{{ icon("check") }}Removed, with its PDF.</div>{% endif %}
+{% if error %}<div class="alert warn" role="alert"><div class="grow"><p>{{ error }}</p></div></div>{% endif %}
+{% call page_header("Past bids", "Bids you submitted before, as PDFs. Bid Room reads each one and reuses your own method, letter, experience, staff and price layout in new bids. Only your company can see them.") %}
+  <a class="btn" href="#add" data-open-add>{{ icon("upload") }}Import a past bid</a>
+{% endcall %}
+
+<section class="card flush" aria-label="Past bids">
+  {% if rows %}
+  <div class="table-wrap"><table class="dt stack-sm">
+    <thead><tr><th>Bid</th><th class="hide-sm" style="width:200px">Buyer</th><th style="width:220px">What Bid Room found</th><th class="num hide-sm" style="width:110px">Imported</th><th class="num" style="width:90px"><span class="sr">Actions</span></th></tr></thead>
+    <tbody>
+    {% for pb in rows %}{% set x = info[pb.id] %}{% set d = x.d %}<tr>
+      <td class="tcell"><a href="/past-bids/{{ pb.id }}"><b>{{ pb.name }}</b></a>{% if d.about.reference or d.about.year %}<span class="sub">{{ d.about.reference }}{% if d.about.reference and d.about.year %} · {% endif %}{{ d.about.year }}</span>{% endif %}</td>
+      <td class="hide-sm small">{{ d.about.buyer or "–" }}</td>
+      <td class="inline-sm small">
+        {% if x.state == "reading" %}<span class="ind info">Reading…</span>
+        {% elif x.state == "failed" %}<span class="ind bad">Couldn't read it</span>
+        {% else %}{% set bits = [] %}
+          {% if d.methodology %}{% do bits.append(d.methodology|length ~ " method section" ~ ("s" if d.methodology|length != 1)) %}{% endif %}
+          {% if d.projects %}{% do bits.append(d.projects|length ~ " project" ~ ("s" if d.projects|length != 1)) %}{% endif %}
+          {% if d.key_personnel %}{% do bits.append(d.key_personnel|length ~ " staff") %}{% endif %}
+          {% if d.price_lines %}{% do bits.append(d.price_lines|length ~ " price line" ~ ("s" if d.price_lines|length != 1)) %}{% endif %}
+          {{ bits|join(", ") or "Little to reuse" }}{% if x.offer %}<span class="sub" style="color:var(--warn)">{{ x.offer }} new for your profile</span>{% endif %}
+        {% endif %}</td>
+      <td class="num hide-sm small">{{ pb.created_at.strftime("%d %b %Y") }}</td>
+      <td class="c-act"><div class="row-act"><a class="iconbtn" href="/past-bids/{{ pb.id }}" title="Open" aria-label="Open {{ pb.name }}">{{ icon("eye") }}</a>
+        <form method="post" action="/past-bids/{{ pb.id }}/delete" data-ask="Remove {{ pb.name }}? Its PDF and what Bid Room read from it are deleted. Your profile and bids keep anything already copied." data-ask-label="Remove"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="iconbtn" type="submit" title="Remove" aria-label="Remove {{ pb.name }}">{{ icon("trash") }}</button></form></div></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}
+    {{ empty("No past bids yet", "Import a bid you submitted before. Bid Room keeps your method statement, cover letter, experience, key staff and price layout, and offers them in every new bid.", "#add", "Import a past bid") }}
+  {% endif %}
+</section>
+
+<details class="drawer" id="add" style="margin-top:16px" {{ "open" if error or not rows }}>
+  <summary>{{ icon("upload") }}Import a past bid {{ icon("chev-d", "chev") }}</summary>
+  <div class="drawer-b">
+  <form method="post" action="/past-bids" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="form-grid">
+    <div class="field"><label for="pdf">The bid, as a PDF</label><input id="pdf" name="pdf" type="file" accept=".pdf,application/pdf" required><span class="hint">Up to 20 MB. Scanned bids are fine. Kept private to your company.</span></div>
+    <div class="field"><label for="name">Name it</label><input id="name" name="name" maxlength="160" placeholder="For example: CBE data centre bid, 2025"><span class="hint">Leave empty to use the tender title Bid Room finds.</span></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">{{ icon("upload") }}Import and read</button><span class="hint">Reading takes about a minute.</span></div>
+  </form>
+  </div>
+</details>
+{% endblock %}

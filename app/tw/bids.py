@@ -219,11 +219,12 @@ def total(d):
     return t
 
 
-def run_draft(client, t, profile_dict, d, today=None):
+def run_draft(client, t, profile_dict, d, today=None, own_wording=""):
     """One Claude call through the bid-pack engine. Returns the bid data with the draft merged in;
-    the firm's own edits to sections they already wrote are kept."""
+    the firm's own edits to sections they already wrote are kept. own_wording: text from the
+    firm's past bids (library.own_wording) for the draft to reuse."""
     pack = bid_draft.draft(engine_tender(t), engine_profile(profile_dict), client,
-                           extra_text=d.get("doc_text", ""), today=today)
+                           extra_text=d.get("doc_text", ""), today=today, own_wording=own_wording)
     out = dict(d)
     old_done = {x["requirement"]: x.get("done") for x in d.get("checklist", [])}
     out["checklist"] = [{"requirement": r.requirement, "category": r.category, "notice_says": r.notice_says,
@@ -237,6 +238,7 @@ def run_draft(client, t, profile_dict, d, today=None):
     out["warnings"] = pack.warnings
     out["projects"] = [x.id for x in pack.relevant_projects]
     out["drafted_at"] = (today or dt.date.today()).isoformat()
+    out["used_past"] = bool(own_wording.strip())
     return out
 
 

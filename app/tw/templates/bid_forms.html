@@ -1,4 +1,5 @@
 {% from "ui/_ui.html" import icon, mark, env_state %}
+{% from "_reuse.html" import reuse_form with context %}
 {# The bid's forms, the way the bidding document lays them out. Included in bid.html. #}
 {% set det = d.details %}{% set two = det.envelopes == "two" %}
 {% macro paras(text) %}{% for para in (text or "").split("\n\n") if para.strip() %}<p>{% for bit in para.strip().split("[TO CONFIRM") %}{% if loop.first %}{{ bit }}{% else %}{% set parts = bit.split("]", 1) %}<mark class="tc">[TO CONFIRM{{ parts[0] }}]</mark>{{ parts[1] if parts|length > 1 }}{% endif %}{% endfor %}</p>{% endfor %}{% endmacro %}
@@ -80,6 +81,7 @@
     {% elif f.type == "text" %}
       <textarea data-field="{{ f.field }}" {% if not f.field %}data-text="{{ f.key }}"{% endif %} rows="18" aria-labelledby="fh-{{ f.key }}" {% if f.outline_text %}data-outline="{{ f.outline_text }}"{% endif %}>{{ f.text }}</textarea>
       {% if f.outline_text %}<div class="pane-actions"><button class="btn sm ghost" type="button" data-use-outline>Start from an outline</button><span class="hint">Headings the evaluators look for. Write under each, or press Draft this bid.</span></div>{% endif %}
+      {% if f.field in ("technical", "cover_letter", "profile_section") %}<div class="pane-actions">{{ reuse_form(f.field, f.key) }}</div>{% endif %}
 
     {% elif f.type == "price" %}
       {% set goods = d.kind == "goods" %}
@@ -96,6 +98,7 @@
       </table></div>
       <div class="pane-actions"><button class="btn sm ghost" type="button" id="add-line">{{ icon("plus") }}Add a line</button>
         <button class="btn sm ghost" type="button" data-paste-open>Paste from Excel</button></div>
+      <div class="pane-actions">{{ reuse_form("financial", f.key) }}</div>
       <div class="paste-box" data-paste-box hidden>
         <label class="small muted" for="paste-{{ f.key }}">Copy the rows from Excel or the buyer's Word table and paste here. Columns: {{ "No., " }}Description, Unit, Qty{{ ", Rate" if d.kind == "works" else ", Unit price" }} (rate is optional).</label>
         <textarea id="paste-{{ f.key }}" data-paste rows="6"></textarea>

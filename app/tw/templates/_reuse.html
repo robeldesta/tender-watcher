@@ -1,0 +1,10 @@
+{# "Copy from past bid": puts wording or price lines from one of the firm's past bids into this bid. #}
+{% from "ui/_ui.html" import icon %}
+{% macro reuse_form(part, pane) -%}
+{%- if past and not drafting %}<form method="post" action="/bids/{{ b.id }}/reuse" class="row-flex reuse" data-reuse>
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part" value="{{ part }}"><input type="hidden" name="pane" value="{{ pane }}">
+  <label class="sr" for="past-{{ pane }}">Past bid to copy from</label>
+  <select id="past-{{ pane }}" name="past" class="sm" style="max-width:220px">{% for pb in past %}<option value="{{ pb.id }}">{{ pb.name[:50] }}</option>{% endfor %}</select>
+  <button class="btn sm ghost" type="submit">{{ icon("file") }}{{ "Add its price lines" if part == "financial" else "Copy from past bid" }}</button></form>
+{%- endif %}
+{%- endmacro %}

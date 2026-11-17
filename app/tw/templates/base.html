@@ -36,6 +36,7 @@
     </div>
     <div class="side-group"><h6>Bids</h6>
       {{ nav("/bids", "Bid Room", "briefcase", path.startswith("/bids"), lock=not win) }}
+      {{ nav("/past-bids", "Past bids", "file", path.startswith("/past-bids"), lock=not win) }}
     </div>
     <div class="side-group"><h6>Documents</h6>
       {{ nav("/file", "Document vault", "folder", path.startswith("/file"), lock=not win) }}

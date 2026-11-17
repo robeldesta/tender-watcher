@@ -14,8 +14,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from sqlalchemy import select
 
 from . import bidforms, bids, export, stamping
-from .db import Bid, Paper, Tender
+from .db import Bid, PastBid, Paper, Tender
 from . import desk as desk_mod
+from . import library
 
 MEMBERS = ("member",)
 MAX_STAMP = 3_000_000
@@ -262,7 +263,9 @@ def register(app, h):
         if d.get("drafted_at"):
             activity.append(("Drafted by Bid Room", d["drafted_at"]))
         activity.append(("Submitted" if b.state == "submitted" else "Last saved", b.updated_at))
-        return page(request, "bid.html", u, b=b, t=b.tender, d=d, prog=progress(d), pct=pct, missing=missing,
+        past = [pb for pb, _ in library.ranked(session.scalars(select(PastBid).where(
+            PastBid.company_id == u.company_id, PastBid.state == "ready")).all(), b.tender)]
+        return page(request, "bid.html", u, b=b, t=b.tender, d=d, prog=progress(d), pct=pct, missing=missing, past=past,
                     confirm=x["confirm"], total=x["total"], projects=projects, STATUS=bids.STATUS_LABEL,
                     drafting=b.state in ("drafting", "reading"), env=env, activity=activity, x=x, F=bidforms,
                     label=desk_mod.label, private=b.tender.status == "private")
@@ -291,12 +294,13 @@ def register(app, h):
                 "forms": {f["key"]: f["done"] for f in x["forms"]}, "forms_done": x["forms_done"],
                 "forms_total": x["forms_total"], "vat": x["vat"], "security_until": x["security_until"]}
 
-    def drafting_job(bid_id, profile_dict):
+    def drafting_job(bid_id, profile_dict, use_past=False):
         with h.Session() as session:
             b = session.get(Bid, bid_id)
             try:
+                own = library.own_wording(session, b.company_id, b.tender) if use_past else ""
                 d = bids.run_draft(h.get_claude(), b.tender, profile_dict, bids.load(b),
-                                   today=dt.date.fromisoformat(today()))
+                                   today=dt.date.fromisoformat(today()), own_wording=own)
                 b.data, b.draft_error = json.dumps(d, ensure_ascii=False), ""
             except Exception as e:  # shown to the firm as a retry message; the detail stays in the log
                 print(f"bid draft {bid_id} failed: {e!r}", flush=True)
@@ -305,7 +309,8 @@ def register(app, h):
             session.commit()
 
     @app.post("/bids/{bid_id}/draft")
-    def draft(request: Request, bid_id: int, csrf: str = Form(""), doc_text: str = Form(""), session=Depends(db)):
+    def draft(request: Request, bid_id: int, csrf: str = Form(""), doc_text: str = Form(""), use_past: str = Form(""),
+              session=Depends(db)):
         u = member(request, session)
         h.check_csrf(u, csrf)
         b = own_bid(session, u, bid_id)
@@ -318,9 +323,9 @@ def register(app, h):
         session.commit()
         prof = bids.load_profile(u.company)
         if h.sync_drafts:  # tests: run in the request
-            drafting_job(b.id, prof)
+            drafting_job(b.id, prof, bool(use_past))
         else:
-            threading.Thread(target=drafting_job, args=(b.id, prof), daemon=True).start()
+            threading.Thread(target=drafting_job, args=(b.id, prof, bool(use_past)), daemon=True).start()
         return RedirectResponse(f"/bids/{b.id}", 303)
 
     @app.get("/bids/{bid_id}/state")
