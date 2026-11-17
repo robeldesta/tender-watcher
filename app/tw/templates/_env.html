@@ -1,0 +1,27 @@
+{# The envelope: the papers a tender asks for, as sheets. A stamp means the paper is in. #}
+{% macro stamp(turn=0, label="In the envelope", size=56) -%}
+<svg class="stamp" viewBox="0 0 60 60" width="{{ size }}" height="{{ size }}" role="img" aria-label="{{ label }}" style="transform:rotate({{ turn }}deg)"><circle cx="30" cy="30" r="27" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="30" cy="30" r="20" fill="none" stroke="currentColor" stroke-width="1"/><path d="M21 31l6.5 6.5L40 23" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- endmacro %}
+
+{% set TURNS = [-14, 8, -5, 17, -9, 4, -18, 11, -3, 15, -11, 6] %}
+
+{% macro sheets(env) -%}
+<div class="sheets">
+{% for r in env["items"] %}
+  {% if r.state == "in" %}<div class="sheet"><span class="sheet-n">{{ r.label }}</span>{{ stamp(TURNS[loop.index0 % 12]) }}</div>
+  {% else %}<div class="sheet gap"><span class="sheet-n">{{ r.label }}{% if r.key == "security" and r.note %}, {{ r.note }}{% endif %}</span>
+    <span class="sheet-s">{% if r.state == "missing" %}Missing{% elif r.state == "late" %}Expires too soon{% elif r["from"] == "bidroom" %}Write in Bid Room{% else %}Still to bring{% endif %}</span></div>{% endif %}
+{% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro minis(env) -%}
+<span class="minis" role="img" aria-label="{{ env.done }} of {{ env.total }} papers in the envelope">{% for r in env["items"]|sort(attribute="state") %}<i{% if r.state != "in" %} class="gap"{% endif %}></i>{% endfor %}</span>
+{%- endmacro %}
+
+{% macro count(d) -%}
+{% if d is none %}<span class="dleft"><b>?</b><span>no closing<br>date given</span></span>
+{% else %}<span class="dleft{{ ' hot' if d <= 3 }}"><b>{{ d }}</b><span>{{ "day" if d == 1 else "days" }} left</span></span>{% endif %}
+{%- endmacro %}
+
+{% macro words(n) -%}{{ ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"][n] if n <= 12 else n }}{%- endmacro %}

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tender Watcher Board</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a site notice board. Filter bar on top, then one row per tender ordered by closing date, deadline in a left column. */
+:root{
+  --paper:#fbfaf7; --panel:#f1efe8; --ink:#1d2328; --muted:#5b636b; --rule:#d9d5ca;
+  --accent:#b8740f; --accent-ink:#8a5306; --accent-soft:#f6e8cf;
+  --ok:#2f7a4a; --warn:#a4570a; --bad:#b03a2e; --ok-soft:#e3f1e7; --warn-soft:#fbecd8; --bad-soft:#f7e1de;
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#15191c; --panel:#1e2327; --ink:#e7e4dc; --muted:#a2a8ad; --rule:#343a3f;
+  --accent:#e2a24a; --accent-ink:#f0bd72; --accent-soft:#3a2d18;
+  --ok:#6cc08a; --warn:#eaa458; --bad:#ec8576; --ok-soft:#1c3324; --warn-soft:#3a2a15; --bad-soft:#3d1f1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#15191c; --panel:#1e2327; --ink:#e7e4dc; --muted:#a2a8ad; --rule:#343a3f;
+  --accent:#e2a24a; --accent-ink:#f0bd72; --accent-soft:#3a2d18;
+  --ok:#6cc08a; --warn:#eaa458; --bad:#ec8576; --ok-soft:#1c3324; --warn-soft:#3a2a15; --bad-soft:#3d1f1b; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
+h1,h2{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(26px,5.5vw,36px);font-weight:800}
+h2{font-size:20px;font-weight:700}
+p{margin:0}
+a{color:var(--accent-ink);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)} .small{font-size:15px}
+header{display:flex;flex-direction:column;gap:10px}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;background:var(--panel);border-radius:6px;padding:14px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+label{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+select,input{font:inherit;font-size:16px;padding:9px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%}
+.count{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.list{display:flex;flex-direction:column;border-top:2px solid var(--ink)}
+.row{display:grid;grid-template-columns:104px 1fr;gap:4px 16px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.due{font-family:var(--mono);font-size:12.5px;line-height:1.35;color:var(--muted)}
+.due b{display:block;font-family:var(--display);font-size:21px;font-weight:800;color:var(--ink)}
+.body{min-width:0;display:flex;flex-direction:column;gap:5px}
+.buyer{font-weight:700}
+.meta{display:flex;flex-wrap:wrap;gap:6px}
+.tag{display:inline-block;font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:3px;background:var(--panel);color:var(--muted);white-space:nowrap}
+.tag.grade{background:var(--accent-soft);color:var(--accent-ink)}
+.tag.new{background:var(--ok-soft);color:var(--ok)}
+.detail{border-top:2px solid var(--ink);padding:18px 0;display:flex;flex-direction:column;gap:14px}
+.detail h2{font-size:26px}
+.detail dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:0}
+.detail dt{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+.detail dd{margin:0;overflow-wrap:anywhere}
+.detail h3{font-family:var(--display);font-size:18px;margin:6px 0 0}
+.notice-text{white-space:pre-wrap;background:var(--panel);border-radius:6px;padding:14px;font-size:16px;max-height:none}
+.detail .notice img{max-width:100%;border:1px solid var(--rule);border-radius:4px}
+.row .body a.title{color:var(--ink);text-decoration:none}
+.row .body a.title:hover{text-decoration:underline}
+@media (max-width:560px){.detail dl{grid-template-columns:1fr}.detail dd{margin-bottom:6px}}
+.tag.soon{background:var(--bad-soft);color:var(--bad)}
+.tag.week{background:var(--warn-soft);color:var(--warn)}
+.empty{padding:28px 0;color:var(--muted)}
+.cta{background:var(--ink);color:var(--paper);border-radius:6px;padding:20px clamp(16px,4vw,24px);display:flex;flex-direction:column;gap:10px}
+.cta h2{color:var(--paper)} .cta a{color:var(--paper)}
+footer{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+@media (max-width:520px){
+  .row{grid-template-columns:1fr}
+  .due{display:flex;gap:8px;align-items:baseline}
+  .due b{display:inline;font-size:17px}
+}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+<header>
+  <nav style="display:flex;gap:16px;font-size:15px"><b>Open tenders</b><a href="buyers.html">Buyers</a></nav>
+  <span class="eyebrow">Tender Watcher · open tenders in Ethiopia</span>
+  <h1>Open tenders, updated every morning</h1>
+  <p class="muted">Government, NGO, donor and company tenders, sorted by closing date. Pick a category and region to see the tenders that fit your business. <span id="updated"></span></p>
+</header>
+
+<form class="filters" id="filters" onsubmit="event.preventDefault()">
+  <div class="field">
+    <label for="f-cat">Category</label>
+    <select id="f-cat">
+      <option value="">All categories</option>
+      <option value="construction">Construction and works</option>
+      <option value="goods">Goods and supplies</option>
+      <option value="services">Services</option>
+      <option value="consultancy">Consultancy</option>
+      <option value="vehicles">Vehicles and machinery</option>
+      <option value="it">IT and telecom</option>
+      <option value="electrical">Electrical and power</option>
+      <option value="medical">Medical and pharma</option>
+      <option value="sale">Sales and auctions</option>
+      <option value="rental">Rent and lease</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-grade">Contractor grade (construction)</label>
+    <select id="f-grade">
+      <option value="">Any grade</option>
+      <option value="1">Grade 1</option><option value="2">Grade 2</option><option value="3">Grade 3</option>
+      <option value="4">Grade 4</option><option value="5">Grade 5</option><option value="6">Grade 6</option>
+      <option value="7">Grade 7</option><option value="8">Grade 8</option><option value="9">Grade 9</option><option value="10">Grade 10</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-region">Region</label>
+    <select id="f-region"><option value="">All regions</option></select>
+  </div>
+  <div class="field">
+    <label for="f-buyer">Buyer type</label>
+    <select id="f-buyer">
+      <option value="">All buyers</option>
+      <option value="gov">Government</option>
+      <option value="ngo">NGO / UN</option>
+      <option value="donor">Donor funded</option>
+      <option value="company">Company / bank</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-q">Search</label>
+    <input id="f-q" type="search" placeholder="e.g. laptops, bridge, cleaning">
+  </div>
+</form>
+
+<p class="count" id="count" aria-live="polite"></p>
+<div class="list" id="list"></div>
+
+<section class="cta">
+  <span class="eyebrow" style="color:inherit;opacity:.75">Free pilot · 10 Nov to 6 Dec 2026</span>
+  <h2>Want the bid documents drafted too?</h2>
+  <p>Pilot firms get the tenders that fit their business sent to them, plus up to two full bid packs drafted from their own licences, projects and staff. See an example: <a href="https://claude.ai/artifact/8dt2V5ajkMDL8ubWBHBcRS">sample bid pack</a>.</p>
+  <p>To join, reply to the message this link came in.</p>
+</section>
+
+<footer>
+  <p>Collected by our own team from newspapers, notice boards, buyer websites and official feeds such as the World Bank. Grades and deadlines are as published; field-collected notices are checked by our team before they go up. Always confirm with the buyer before you prepare a bid. Tenders disappear from this list once they close.</p>
+</footer>
+</div>
+
+<script type="application/json" id="tender-data">
+{"updated":"","tenders":[]}
+</script>
+
+<script>
+function boot(data){
+  var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var TYPES={gov:'Government',ngo:'NGO / UN',donor:'Donor funded',company:'Company / bank'};
+  var CATS={construction:'Construction',goods:'Goods',services:'Services',consultancy:'Consultancy',vehicles:'Vehicles and machinery',it:'IT and telecom',electrical:'Electrical and power',medical:'Medical',sale:'Sale / auction',rental:'Rent / lease',other:'Other'};
+  function cat(t){ return t.category||'construction'; }
+  function parse(d){ var p=d.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
+  var now=new Date(); var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  function daysTo(d){ return Math.round((parse(d)-today)/86400000); }
+  function gradeNum(g){ var m=/(\d+)/.exec(g||''); return m?+m[1]:null; }
+  function el(tag,cls,text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+
+  var open = data.tenders.filter(function(t){ return !t.closes || daysTo(t.closes) >= 0; });
+  open.sort(function(a,b){
+    if(a.closes && b.closes) return parse(a.closes)-parse(b.closes);
+    if(a.closes) return -1; if(b.closes) return 1; return a.buyer.localeCompare(b.buyer);
+  });
+
+  if(data.updated){ var u=parse(data.updated); document.getElementById('updated').textContent='Last updated '+u.getDate()+' '+MONTHS[u.getMonth()]+' '+u.getFullYear()+'.'; }
+
+  var regionSel=document.getElementById('f-region');
+  Array.from(new Set(open.map(function(t){return t.region;}))).sort().forEach(function(r){ var o=el('option',null,r); o.value=r; regionSel.appendChild(o); });
+
+  var ids=['f-cat','f-grade','f-region','f-buyer','f-q'];
+  try{ var saved=JSON.parse(localStorage.getItem('tw-filters')||'{}'); ids.forEach(function(id){ if(saved[id]!=null) document.getElementById(id).value=saved[id]; }); }catch(e){}
+
+  function render(){
+    var c=document.getElementById('f-cat').value, g=document.getElementById('f-grade').value, r=regionSel.value, b=document.getElementById('f-buyer').value, q=document.getElementById('f-q').value.trim().toLowerCase();
+    try{ var s={}; ids.forEach(function(id){ s[id]=document.getElementById(id).value; }); localStorage.setItem('tw-filters',JSON.stringify(s)); }catch(e){}
+    var rows=open.filter(function(t){
+      if(c && cat(t)!==c) return false;
+      if(g && cat(t)==='construction'){ var n=gradeNum(t.grade); if(n!==null && n < +g) return false; }
+      if(r && t.region!==r) return false;
+      if(b && t.type!==b) return false;
+      if(q && (t.buyer+' '+t.title+' '+t.place).toLowerCase().indexOf(q)<0) return false;
+      return true;
+    });
+    var list=document.getElementById('list'); list.textContent='';
+    document.getElementById('count').textContent=rows.length+' open tender'+(rows.length===1?'':'s')+(g?' you can bid on with grade '+g:'');
+    if(!rows.length){ list.appendChild(el('p','empty','No open tenders match these filters. Try another category or region.')); return; }
+    rows.forEach(function(t){
+      var row=el('article','row');
+      var due=el('div','due');
+      if(t.closes){ var d=parse(t.closes); due.appendChild(document.createTextNode('Closes')); due.appendChild(el('b',null,d.getDate()+' '+MONTHS[d.getMonth()])); if(t.time) due.appendChild(document.createTextNode(t.time)); }
+      else { due.appendChild(document.createTextNode('Deadline')); due.appendChild(el('b',null,'Check')); }
+      row.appendChild(due);
+      var body=el('div','body');
+      body.appendChild(el('span','buyer',t.buyer));
+      var tp=el('p'); var ta=el('a','title',t.title); ta.href='#t/'+encodeURIComponent(t.id); tp.appendChild(ta); body.appendChild(tp);
+      var meta=el('div','meta');
+      if(t.closes){ var n=daysTo(t.closes); if(n<=3) meta.appendChild(el('span','tag soon',n===0?'Closes today':n===1?'1 day left':n+' days left')); else if(n<=7) meta.appendChild(el('span','tag week',n+' days left')); }
+      if(t.check) meta.appendChild(el('span','tag soon','Date to confirm'));
+      if(t.firstSeen && daysTo(t.firstSeen) >= -1) meta.appendChild(el('span','tag new','New'));
+      meta.appendChild(el('span','tag',CATS[cat(t)]||cat(t)));
+      if(cat(t)==='construction') meta.appendChild(el('span','tag grade',t.grade?t.grade+' and above':'Grade not stated'));
+      meta.appendChild(el('span','tag',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:'')));
+      meta.appendChild(el('span','tag',TYPES[t.type]||t.type));
+      body.appendChild(meta);
+      row.appendChild(body); list.appendChild(row);
+    });
+  }
+  function fmt(d){ var x=parse(d); return x.getDate()+' '+MONTHS[x.getMonth()]+' '+x.getFullYear(); }
+  function detail(t){
+    var list=document.getElementById('list'); list.textContent='';
+    document.getElementById('filters').style.display='none';
+    document.getElementById('count').textContent='';
+    var box=el('article','detail');
+    var back=el('a','small','← All open tenders'); back.href='#'; box.appendChild(back);
+    box.appendChild(el('span','buyer',t.buyer));
+    box.appendChild(el('h2',null,t.title));
+    var dl=el('dl');
+    function row(k,v){ if(!v) return; dl.appendChild(el('dt',null,k)); dl.appendChild(el('dd',null,v)); }
+    var closes=t.closes?fmt(t.closes)+(t.time?', '+t.time:''):'Not stated. Check the notice.';
+    if(t.closes){ var n=daysTo(t.closes); closes+=n<0?' (closed)':n===0?' (today)':' ('+n+' day'+(n===1?'':'s')+' left)'; }
+    if(t.check) closes+='. To be confirmed: '+(t.check_why||'this date or time looks unusual')+'.';
+    var hm=/^(\d\d):(\d\d)$/.exec(t.time||''); if(hm && +hm[1]>=1 && +hm[1]<=5){ var h=+hm[1]+6; closes+=' '+t.time+' may be Ethiopian clock time, which is '+(h<10?'0':'')+h+':'+hm[2]+' international time. Check the notice.'; }
+    row('Closes',closes);
+    row('Category',CATS[cat(t)]||cat(t));
+    if(cat(t)==='construction') row('Grade',t.grade?t.grade+' and above':'Not stated');
+    row('Where',t.place+(t.region && t.place.indexOf(t.region)<0?', '+t.region:''));
+    row('Buyer type',TYPES[t.type]||t.type);
+    row('Bid security',t.bid_security); row('Document fee',t.document_fee);
+    row('Reference',t.reference); row('Project',t.project); row('Method',t.method); row('Contact',t.contact);
+    if(t.firstSeen) row('On Tender Watcher since',fmt(t.firstSeen));
+    box.appendChild(dl);
+    if(t.url && t.url.indexOf('/notices/')===0){
+      var nb=el('div','notice'); var img=el('img'); img.src=t.url; img.alt='Photo of the original notice'; img.loading='lazy'; nb.appendChild(img); box.appendChild(nb);
+    }
+    if(t.notice){ box.appendChild(el('h3',null,'Full notice')); var nt=el('div','notice-text',t.notice); box.appendChild(nt); }
+    var cta=el('p',null,'Get tenders like this every morning in Telegram: ');
+    var tg=el('a',null,'start a 14-day free trial'); tg.href='https://t.me/tender_watcher_entry_bot'; cta.appendChild(tg); box.appendChild(cta);
+    if(t.source){
+      var src=el('p','small muted','First published by '+t.source+'. ');
+      if(t.url && t.url.indexOf('/notices/')!==0){ var a=el('a',null,'Original listing'); a.href=t.url; a.target='_blank'; a.rel='noopener nofollow'; src.appendChild(a); }
+      box.appendChild(src);
+    }
+    list.appendChild(box);
+    document.title=t.title+' | Tender Watcher';
+    window.scrollTo(0,0);
+  }
+  var TITLE=document.title;
+  function route(){
+    var m=/^#t\/(.+)$/.exec(location.hash);
+    if(m){ var id=decodeURIComponent(m[1]); var t=data.tenders.filter(function(x){ return x.id===id; })[0];
+      if(t){ detail(t); return; }
+      var list=document.getElementById('list'); list.textContent='';
+      document.getElementById('filters').style.display='none'; document.getElementById('count').textContent='';
+      var gone=el('article','detail'); gone.appendChild(el('h2',null,'This tender has closed or is no longer listed'));
+      var p=el('p',null,'Tenders leave the board after their closing date. '); var a=el('a',null,'See all open tenders'); a.href='#'; p.appendChild(a); gone.appendChild(p);
+      list.appendChild(gone); window.scrollTo(0,0); return; }
+    document.getElementById('filters').style.display=''; document.title=TITLE; render();
+  }
+  ids.forEach(function(id){ var e=document.getElementById(id); e.addEventListener('input',render); e.addEventListener('change',render); });
+  window.addEventListener('hashchange',route);
+  route();
+}
+(function(){
+  var embedded; try{ embedded = JSON.parse(document.getElementById('tender-data').textContent); }catch(e){ embedded = {updated:'',tenders:[]}; }
+  if(!window.fetch || location.protocol==='file:'){ boot(embedded); return; }
+  fetch('tenders.json',{cache:'no-cache'}).then(function(r){ if(!r.ok) throw r; return r.json(); })
+    .then(function(d){ boot(d && d.tenders ? d : embedded); })
+    .catch(function(){ boot(embedded); });
+})();
+</script>
+
+</body>
+</html>

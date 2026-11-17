@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, deadline, progress, bid_state, empty %}
+{% from "_env.html" import minis %}
+{% block title %}Bid Room | Tender Watcher{% endblock %}
+{% block crumbs %}<span class="here">Bid Room</span>{% endblock %}
+{% block body %}
+{% call page_header("Bid Room", "Every bid you are building, soonest deadline first. Start one from any tender with \"Start this bid\", or from a bidding document you have.") %}
+  <a class="btn ghost" href="/bids/new">{{ icon("plus") }}Bid on your own document</a><a class="btn ghost" href="/profile">{{ icon("building") }}Company profile</a><a class="btn" href="/?match=1">{{ icon("search") }}Find a tender</a>
+{% endcall %}
+<section class="card flush">
+  <div class="filterbar">
+    <nav class="seg" aria-label="Show">
+      <a href="/bids" {% if not view %}aria-current="true"{% endif %}>All <em>{{ all_rows|length }}</em></a>
+      <a href="/bids?view=open" {% if view == "open" %}aria-current="true"{% endif %}>In progress <em>{{ counts.open }}</em></a>
+      <a href="/bids?view=submitted" {% if view == "submitted" %}aria-current="true"{% endif %}>Submitted <em>{{ counts.submitted }}</em></a>
+      <a href="/bids?view=closed" {% if view == "closed" %}aria-current="true"{% endif %}>Closed, not submitted <em>{{ counts.closed }}</em></a>
+    </nav>
+  </div>
+  {% if rows %}
+  <div class="table-wrap"><table class="dt stack-sm">
+    <thead><tr><th style="width:120px">Deadline</th><th>Tender</th><th style="width:170px">Checklist</th><th style="width:130px" class="hide-sm">Envelope</th><th style="width:110px">State</th><th class="num hide-sm" style="width:110px">Last saved</th></tr></thead>
+    <tbody>
+    {% for b in rows %}{% set pr = prog[b.id] %}{% set e = envs[b.id] %}<tr>
+      <td class="inline-sm">{{ deadline(b.tender.closes, b.tender.time, today) }}</td>
+      <td class="tcell"><a class="t clamp" href="/bids/{{ b.id }}">{{ b.tender.title }}</a><span class="sub">{{ b.tender.buyer }}</span></td>
+      <td class="inline-sm">{% if pr.total %}<span class="small">{{ pr.done }} of {{ pr.total }} done</span>{% if pr.gaps %} <span class="pill bad">{{ pr.gaps }} gap{{ "s" if pr.gaps != 1 }}</span>{% endif %}<span class="prog" style="margin-top:4px"><i style="width:{{ pr.done * 100 // pr.total }}%"></i></span>{% else %}<span class="muted small">Not drafted yet</span>{% endif %}</td>
+      <td class="hide-sm">{{ minis(e) }} <span class="small {{ 'muted' if not e.blockers }}" {% if e.blockers %}style="color:var(--bad)"{% endif %}>{{ e.done }}/{{ e.total }}</span></td>
+      <td class="inline-sm">{{ bid_state(b.state) }}</td>
+      <td class="num small muted hide-sm">{{ b.updated_at.strftime("%d %b %H:%M") }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% elif all_rows %}
+    {{ empty("Nothing here", "No bids in this view.", "/bids", "Show all bids") }}
+  {% else %}
+    {{ empty("No bids yet", "Open a tender and press \"Start this bid\": Bid Room reads the notice, builds the checklist and drafts the letter from your company profile.", "/?match=1", "Find a tender") }}
+  {% endif %}
+</section>
+{% endblock %}

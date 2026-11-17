@@ -1,0 +1,16 @@
+[Unit]
+Description=Tender Watcher web app (collectors, review, public pages)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tenders/app
+EnvironmentFile=/opt/tenders/app.env
+ExecStart=/opt/tenders/venv/bin/uvicorn tw.main:create_app --factory --host 127.0.0.1 --port 8700 --proxy-headers --workers 2
+Restart=on-failure
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon %}{% block title %}{{ title }} | Tender Watcher{% endblock %}
+{% block crumbs %}<span class="here">{{ title }}</span>{% endblock %}
+{% block body %}<section class="card narrow" style="margin:24px auto;padding:24px">
+  <h1 style="margin-bottom:8px">{{ title }}</h1><p class="muted">{{ text }}</p>
+  {% if link %}<div class="btn-group"><a class="btn" href="{{ link[0] }}">{{ link[1] }}</a>{% if me %}<a class="btn ghost" href="{{ '/my' if me.role == 'member' else '/' }}">Go to your overview</a>{% endif %}</div>{% endif %}
+</section>{% endblock %}

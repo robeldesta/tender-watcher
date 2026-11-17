@@ -1,0 +1,10 @@
+{% extends layout %}{% block title %}Review | Tender Watcher{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Waiting for review</h1><p class="sub">Collector photos and website finds. Open one, fix anything wrong, then approve or reject.</p></div></div>
+{% if rows %}<p class="muted">{{ rows|length }} entr{{ "ies" if rows|length != 1 else "y" }}. Open one, fix anything wrong, then approve or reject. The next one opens automatically.</p>
+<table><thead><tr><th>Tender</th><th>Closes</th><th>From</th></tr></thead><tbody>
+{% for t in rows %}<tr><td><a href="/entry/{{ t.id }}">{{ t.title or "(no title)" }}</a><div class="small muted">{{ t.buyer }}</div>
+{% if t.doubts %}<span class="tag warn">Check</span>{% endif %}</td><td>{{ t.closes or "?" }}</td><td class="small">{{ t.collector.name if t.collector else "Website watcher: " ~ t.source.replace(" website", "") }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="empty">Nothing to review. New entries from collectors show up here.</p>{% endif %}
+{% endblock %}

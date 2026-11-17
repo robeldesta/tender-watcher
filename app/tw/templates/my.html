@@ -1,0 +1,139 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, deadline, fit, pager, save_button, mark, env_state, days_text, bid_state %}
+{% from "_env.html" import minis, words %}
+{% block title %}Overview | Tender Watcher{% endblock %}
+{% block crumbs %}<span class="here">Overview</span>{% endblock %}
+{% block body %}
+{% if request.query_params.get("saved") %}<div class="toast" role="status">{{ icon("check") }}Saved.</div>{% endif %}
+{% if not desk %}
+  {# Watch plan or ended trial: the matched list, and what Win adds #}
+  {% call page_header(total ~ " open tender" ~ ("s" if total != 1 else "") ~ " for " ~ me.company.name, "Matched to your interests. Bid Room, the document vault and deadline alerts come with Win.") %}
+    <a class="btn ghost" href="/account#interests">{{ icon("sliders") }}Change interests</a><a class="btn" href="/account#plans">Choose Win</a>
+  {% endcall %}
+  <div class="alert info"><div class="grow"><p>The bid desk checks every tender against your company papers and builds the envelope with you. It is in the Win plan. <a href="/account#plans">Choose Win</a></p></div></div>
+  <section class="card flush">
+  {% if rows %}
+    <div class="table-wrap"><table class="dt stack-sm">
+      <thead><tr><th style="width:36px"><span class="sr">Saved</span></th><th style="width:120px">Closes</th><th>Tender</th><th class="hide-sm">Region</th><th style="width:110px">Fit</th></tr></thead>
+      <tbody>{% for t in rows %}<tr><td class="c-act">{{ save_button(t, saved, csrf, "/my") }}</td><td class="inline-sm">{{ deadline(t.closes, t.time, today) }}</td>
+        <td class="tcell"><a class="t clamp" href="/t/{{ t.id }}">{{ t.title }}</a><span class="sub">{{ t.buyer }}</span></td><td class="hide-sm small">{{ t.region or "–" }}</td><td class="inline-sm">{{ fit(fits.get(t.id)) }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <div class="table-foot"><span>{{ total }} matching</span>{{ pager(pg, "/my", qs) }}</div>
+  {% else %}<div class="empty"><h3>Nothing open matches yet</h3><p>New tenders are added every day.</p><a class="btn ghost" href="/account#interests">Set your interests</a></div>{% endif %}
+  </section>
+{% else %}
+{% set first = desk.bids[0] if desk.bids else none %}
+{% set g = desk.g %}
+{% call page_header("Overview", me.company.name ~ " · " ~ (today | long_date)) %}
+  <a class="btn ghost" href="/?match=1">{{ icon("target") }}Recommended tenders</a>
+  <a class="btn ghost hide-sm" href="/file#add">{{ icon("upload") }}Add a paper</a>
+{% endcall %}
+
+{% set lead_cls = "bad" if (first and first.env.blockers) or (not first and g.missing) else "warn" if first and first.env.short else "ok" if first else "" %}
+<div class="desk-lead {{ lead_cls }}" role="status">
+  <p>{%- if first and first.env.short %}{{ first.t.buyer }} closes {% if first.days is none %}soon{% elif first.days == 0 %}today{% elif first.days == 1 %}tomorrow{% else %}in {{ first.days }} days{% endif %}. Your envelope is {{ words(first.env.short|length)|lower }} paper{{ "s" if first.env.short|length != 1 }} short.
+  {%- elif first %}Your envelope for {{ first.t.buyer }} is complete. Print it, stamp it and take it in.
+  {%- elif g.missing %}{{ words(g.missing|length) }} missing paper{{ "s" if g.missing|length != 1 }} would get any bid of yours thrown out today.
+  {%- elif desk.fresh %}{{ words([desk.fresh|length, 12]|min) if desk.fresh|length <= 12 else desk.fresh|length }} open tender{{ "s" if desk.fresh|length != 1 }} fit {{ me.company.name }}. No envelope is started yet.
+  {%- else %}Your desk is clear. Tell us what you bid on and tenders will land here.{% endif %}</p>
+  <div class="btn-group">{% if first %}<a class="btn sm" href="/bids/{{ first.bid.id }}">Open your bid</a>{% elif g.missing %}<a class="btn sm" href="/file?add={{ g.missing[0].kind }}#add">Add the {{ g.missing[0].label|lower }}</a>{% endif %}</div>
+</div>
+
+<div class="ws-grid">
+  <div class="ws-col">
+    {% if desk.bids %}
+    <section class="card flush" aria-labelledby="ab-h">
+      <div class="card-h"><h2 id="ab-h">Active bids</h2><a class="small" href="/bids">All bids</a></div>
+      {% set x = first %}
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--line)">
+        <div class="grow"><a class="t" style="font-weight:600;color:var(--text)" href="/t/{{ x.t.id }}">{{ x.t.title }}</a>
+          <span class="sub small muted" style="display:block">{{ x.t.buyer }}{% if x.t.place %}, {{ x.t.place }}{% endif %} · {{ x.env.done }} of {{ x.env.total }} in the envelope</span></div>
+        {{ deadline(x.t.closes, x.t.time, today) }}
+      </div>
+      <ul class="checklist">
+        {% for r in x.env["items"] %}<li>{{ mark(r.state) }}<div class="body"><b>{{ r.label }}{% if r.key == "security" and r.note %}, {{ r.note }}{% endif %}</b></div>
+          <div class="end">{% if r.state == "in" %}<span class="ind ok">In</span>{% elif r.state == "missing" %}<span class="ind bad">Missing</span>{% elif r.state == "late" %}<span class="ind bad">Expires too soon</span>{% elif r["from"] == "bidroom" %}<span class="ind info">Write in Bid Room</span>{% else %}<span class="ind">Still to bring</span>{% endif %}</div></li>{% endfor %}
+      </ul>
+      <div class="card-f btn-group">
+        {% set miss = x.env.blockers %}
+        {% if miss %}<a class="btn sm" href="/file?add={{ miss[0].key }}#add">Add your {{ miss[0].label|lower }}</a>{% endif %}
+        {% for r in x.env["items"] if r.key == "security" %}
+          <form method="post" action="/bids/{{ x.bid.id }}/have"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="key" value="security">{% if r.state != "in" %}<input type="hidden" name="on" value="1"><button class="btn sm ghost" type="submit">I have the bid security</button>{% else %}<button class="btn sm quiet" type="submit">Bid security not ready after all</button>{% endif %}</form>
+        {% endfor %}
+        <a class="btn sm {{ 'ghost' if (miss or x.env.short) }}" href="/bids/{{ x.bid.id }}">Open your bid</a>
+      </div>
+      {% if desk.bids|length > 1 %}
+      <div class="table-wrap"><table class="dt"><tbody>
+        {% for x in desk.bids[1:] %}<tr><td class="tcell"><a class="t" href="/bids/{{ x.bid.id }}">{{ x.t.title }}</a><span class="sub">{{ x.t.buyer }}. {{ words(x.env.done) }} of {{ words(x.env.total)|lower }} papers are in.</span></td>
+          <td class="hide-sm">{{ minis(x.env) }}</td><td style="width:120px">{{ deadline(x.t.closes, x.t.time, today) }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="card flush" aria-labelledby="rec-h">
+    {% if not (i.categories or i.keywords) %}
+      <div class="card-h"><h2 id="rec-h">Recommended opportunities</h2></div>
+      <div class="empty"><h3>Tell us what you bid on</h3><p>Pick your categories and regions, and every matching tender lands here, already checked against your papers.</p><a class="btn" href="/account#interests">Set your interests</a></div>
+    {% else %}
+      {% set pass = desk.fresh|selectattr("lack", "equalto", [])|list %}
+      <div class="card-h"><h2 id="rec-h">{% if pass %}{{ words(pass|length) if pass|length <= 12 else pass|length }} open tender{{ "s" if pass|length != 1 }} your papers already pass{% elif desk.fresh %}{{ desk.fresh|length }} open tender{{ "s" if desk.fresh|length != 1 }} that fit, each short of a paper{% else %}Nothing new matches today{% endif %}</h2>
+        <a class="small" href="/?match=1">See all</a></div>
+      <p class="small muted" style="margin:0;padding:8px 16px;border-bottom:1px solid var(--line)">{{ desk.fresh|length }} match{{ "es" if desk.fresh|length != 1 }} your interests. Those your company file already covers come first. <a href="/account#interests">Change interests</a></p>
+      {% if desk.fresh %}
+      <div class="table-wrap"><table class="dt stack-sm">
+        <thead><tr><th style="width:120px">Closes</th><th>Tender</th><th style="width:140px">Papers</th></tr></thead>
+        <tbody>{% for x in desk.fresh[:12] %}<tr>
+          <td class="inline-sm">{{ deadline(x.t.closes, x.t.time, today) }}</td>
+          <td class="tcell"><a class="t clamp" href="/t/{{ x.t.id }}">{{ x.t.title }}</a><span class="sub">{{ x.t.buyer }}{% if x.lack %}. Short of: {{ x.lack|map(attribute="label")|join(", ")|lower }}.{% endif %}</span></td>
+          <td class="inline-sm">{% if x.lack %}<span class="ind warn">{{ words(x.lack|length) }} paper{{ "s" if x.lack|length != 1 }} short</span>{% else %}<span class="ind ok">Papers pass</span>{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% if desk.fresh|length > 12 %}<div class="table-foot"><span>The twelve closest fits are shown.</span><a href="/?match=1">See all recommended</a></div>{% endif %}
+      {% else %}<div class="empty"><p>New tenders are added every day. <a href="/">See all open tenders</a></p></div>{% endif %}
+    {% endif %}
+    </section>
+  </div>
+
+  <div class="ws-col">
+    <section class="card" aria-labelledby="qa-h">
+      <h2 id="qa-h" class="section-title">Quick actions</h2>
+      <div class="qa">
+        <a href="/?match=1">{{ icon("target") }}Recommended</a>
+        <a href="/?within=7">{{ icon("clock") }}Closing this week</a>
+        <a href="/file#add">{{ icon("upload") }}Add a paper</a>
+        <a href="/profile">{{ icon("building") }}Company profile</a>
+      </div>
+    </section>
+
+    <section class="card flush" aria-labelledby="att-h">
+      <div class="card-h"><h2 id="att-h">Needs attention</h2>{% if shell and shell.bell %}<span class="pill bad">{{ shell.bell|length }}</span>{% endif %}</div>
+      <div class="lines">{% for n in (shell.bell if shell else []) %}<div class="line"><a href="{{ n.href }}"><span class="ind {{ n.level }}">{{ n.text }}</span></a></div>
+        {% else %}<div class="line"><span class="muted small">Nothing urgent. Expiring papers and bids closing within 3 days show here.</span></div>{% endfor %}</div>
+    </section>
+
+    <section class="card flush" aria-labelledby="cf-h">
+      <div class="card-h"><h2 id="cf-h"><a href="/file" style="color:inherit">Document vault</a></h2><span class="small muted">{% if g.total %}{{ words(g.valid) if g.valid <= 12 else g.valid }} of {{ words(g.total)|lower if g.total <= 12 else g.total }} papers are valid today.{% else %}No papers yet.{% endif %}</span></div>
+      <div class="lines">
+        {% for m in g.missing %}<div class="line"><a href="/file?add={{ m.kind }}#add">{{ m.label }}</a><span class="ind bad">Missing</span></div>{% endfor %}
+        {% for p in g.expired %}<div class="line"><a href="/file">{{ desk.label(p) }}</a><span class="ind bad">Expired</span></div>{% endfor %}
+        {% for p in g.soon %}<div class="line"><span>{{ desk.label(p) }}</span><span class="ind warn">Valid until {{ p.expires | long_date }}</span></div>{% endfor %}
+        {% if g.ok %}<div class="line"><span class="muted">{{ g.ok|length }} other paper{{ "s" if g.ok|length != 1 }}</span><span class="ind ok">Valid</span></div>{% endif %}
+      </div>
+      <div class="card-f"><a href="/file">{{ "Open the document vault" if g.total else "Start your document vault" }}</a></div>
+    </section>
+
+    <section class="card" aria-labelledby="pp-h">
+      <div class="panel-h"><h2 id="pp-h">Company profile</h2><a class="small" href="/profile">Edit</a></div>
+      <span class="prog-row"><span class="prog {{ 'ok' if prof_pct >= 80 else 'warn' }}"><i style="width:{{ prof_pct }}%"></i></span>{{ prof_pct }}% ready</span>
+      <p class="small muted" style="margin:6px 0 0">Bid Room drafts letters and tables from it. Anything missing is marked [TO CONFIRM].</p>
+    </section>
+
+    {% if recent %}
+    <section class="card" aria-labelledby="ra-h">
+      <h2 id="ra-h" class="section-title">Recent activity</h2>
+      <ul class="timeline">{% for b in recent %}<li class="{{ 'ok' if b.state == 'submitted' }}"><b><a href="/bids/{{ b.id }}" style="color:inherit">{{ b.tender.title|truncate(60) }}</a></b>{{ "Submitted" if b.state == "submitted" else "Bid saved" }} {{ b.updated_at.strftime("%d %b, %H:%M") }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

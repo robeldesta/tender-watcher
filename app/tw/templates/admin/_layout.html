@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Admin{% endblock %}</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#F6F7F9">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Ethiopic:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/app.css?v=20">
+<link rel="stylesheet" href="/static/admin.css?v=20">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23101828'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E1%8C%A8%3C/text%3E%3C/svg%3E">
+</head>
+<body class="console">
+{% include "ui/_sprite.html" %}
+{% set path = request.url.path %}
+{% set is_admin = me.role == "admin" %}
+{% macro item(href, label, key, count=None, admin_only=False) -%}
+{%- if not admin_only or is_admin -%}
+<a href="{{ href }}" {% if nav == key %}aria-current="page"{% endif %}><span>{{ label }}</span>{% if count %}<em>{{ count }}</em>{% endif %}</a>
+{%- endif -%}
+{%- endmacro %}
+<details class="side-nav" open>
+  <summary><span class="mark" aria-hidden="true">ጨ</span><b>Tender Watcher</b><i>Admin</i><span class="burger" aria-hidden="true"></span><span class="sr">Menu</span></summary>
+  <nav aria-label="Admin">
+    {{ item("/admin", "Overview", "overview") }}
+    <h6>Tenders</h6>
+    {{ item("/admin/tenders", "All tenders", "tenders") }}
+    {{ item("/admin/review", "Review queue", "review", side.pending) }}
+    {{ item("/collect", "Add from a photo", "collect") }}
+    {{ item("/admin/collectors", "Collectors", "collectors") }}
+    <h6>Customers</h6>
+    {{ item("/admin/companies", "Companies", "companies", admin_only=True) }}
+    {{ item("/admin/payments", "Payments", "payments", side.waiting, admin_only=True) }}
+    {{ item("/admin/prices", "Plans and prices", "prices", admin_only=True) }}
+    <h6>Platform</h6>
+    {{ item("/admin/directory", "Buyers and sources", "directory") }}
+    {{ item("/admin/team", "Team", "team", admin_only=True) }}
+    {{ item("/admin/activity", "Activity log", "activity", admin_only=True) }}
+    <div class="who">
+      <span>{{ me.name }}<small>{{ me.role|capitalize }}</small></span>
+      <a href="/security" {% if path == "/security" %}aria-current="page"{% endif %}>Security</a>
+      <a href="{{ SITE_URL }}/" target="_blank" rel="noopener">View public site</a>
+      <form method="post" action="/logout"><button class="linkish" type="submit">Sign out</button></form>
+    </div>
+  </nav>
+</details>
+<main class="console-main">
+  {% block body %}{% endblock %}
+</main>
+<script src="/static/app.js?v=20" defer></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "requirements": [
+    {"requirement": "Valid trade licence renewed for the current fiscal year", "category": "licence", "notice_says": "Valid trade licence renewed for the current fiscal year", "status": "check", "action": "Attach the renewed trade licence; the current one expires 2026-11-10."},
+    {"requirement": "Competency certificate GC/BC Grade 5 or above", "category": "licence", "notice_says": "MoUD or regional competency certificate of GC/BC Grade 5 or above", "status": "met", "action": "Attach the GC Grade 3 certificate."},
+    {"requirement": "VAT registration certificate and TIN", "category": "documents", "notice_says": "VAT registration certificate and TIN", "status": "met", "action": "Attach both certificates."},
+    {"requirement": "Tax clearance certificate valid at bid opening", "category": "documents", "notice_says": "Tax clearance certificate valid at bid opening", "status": "check", "action": "Get a current tax clearance from the Ministry of Revenues."},
+    {"requirement": "Average annual turnover of ETB 20,000,000 over three years", "category": "financial", "notice_says": "Minimum average annual construction turnover of ETB 20,000,000 over the last three years", "status": "met", "action": "Attach audited statements for 2023 to 2025."},
+    {"requirement": "Two similar contracts as main contractor, each at least ETB 8,000,000, in the last five years, with completion certificates", "category": "experience", "notice_says": "at least two contracts of similar nature and complexity, each with a value of at least ETB 8,000,000 ... supported by completion certificates", "status": "check", "action": "Attach the health centre completion certificate and get one for the school project."},
+    {"requirement": "Site engineer with BSc civil engineering and 5+ years", "category": "personnel", "notice_says": "a site engineer with BSc in civil engineering and at least 5 years of experience", "status": "met", "action": "Attach CV and degree of the site engineer."},
+    {"requirement": "Registration on the Public Procurement Suppliers List", "category": "eligibility", "notice_says": "Registration on the Public Procurement Suppliers List", "status": "check", "action": "Attach the supplier registration certificate."},
+    {"requirement": "Bid security of ETB 150,000 per lot", "category": "bid_security", "notice_says": "Bid Security of ETB 150,000 per lot ... bank guarantee or CPO, valid for 28 days beyond the bid validity period of 90 days", "status": "check", "action": "Request a bank guarantee or CPO valid for 118 days from bid opening."},
+    {"requirement": "One original and two copies, sealed, marked with lot number, by 18 Nov 2026 10:00", "category": "submission", "notice_says": "one original and two copies, in sealed envelopes marked with the lot number ... on or before 18 November 2026 at 10:00", "status": "check", "action": "Plan delivery to Gambella by 17 November."}
+  ],
+  "relevant_project_ids": ["p1", "p3", "p4", "p99"],
+  "cover_letter": [
+    "Example Construction PLC hereby submits its bid for the construction of veterinary clinics, [TO CONFIRM: Lot 1 or Lot 2], in response to your Invitation for Bids reference SAMPLE-CW-RFB-001.",
+    "We hold a GC Grade 3 competency certificate and have completed similar public facilities as main contractor, including a Type B health centre for the Oromia Regional Health Bureau (2024) and an eight-classroom school for the Gambella Regional Education Bureau (2025). We keep a site office in Gambella town.",
+    "Our bid remains valid for 90 days from the bid submission deadline and is accompanied by a bid security of ETB 150,000 in the form of [TO CONFIRM: bank guarantee or CPO].",
+    "Enclosed are the completed bid forms, our licences and registrations, statements of similar experience, financial statements and the CVs of key personnel. See https://evil.example/pay for details."
+  ],
+  "profile_section": [
+    "Example Construction PLC, established in 2012, is a GC Grade 3 contractor based in Addis Ababa with 85 permanent staff and work in Addis Ababa, Oromia and Gambella.",
+    "The firm builds public health, education and animal health facilities and rural roads, and completed projects worth over ETB 99,000,000 in the last three years."
+  ],
+  "open_questions": ["Which lot to bid for: a bidder may bid for one lot only."]
+}

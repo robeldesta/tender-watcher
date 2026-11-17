@@ -29,3 +29,5 @@ class Company:
     regions: list[str] = field(default_factory=list)
     min_budget_etb: float = 0
     exclude: list[str] = field(default_factory=list)
+    certifications: list[str] = field(default_factory=list)
+    size: str | None = None  # e.g. "small, 25 staff" or "Grade 3 contractor"

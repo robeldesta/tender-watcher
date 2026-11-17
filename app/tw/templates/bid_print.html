@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bid: {{ t.title }} | {{ p.legal_name }}</title>
+{% if not word %}<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+Ethiopic:wght@400;600&display=swap">{% endif %}
+{% set det = d.details %}{% set two = det.envelopes == "two" %}{% set stamp_url = "/profile/stamp?v=" ~ (p.stamp_v or "") if p.stamp_v and not word else "" %}
+<style>
+  :root{--ink:#101828;--muted:#5D6B82;--rule:#9AA4B2;--navy:#0B2F65;--warn:#8A5300;--warn-bg:#FFF2D2}
+  *{box-sizing:border-box}
+  body{margin:0;background:#EEF1F5;color:var(--ink);font:13.5px/1.55 "IBM Plex Sans","Noto Sans Ethiopic",Arial,sans-serif}
+  .bar{position:sticky;top:0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--navy);color:#fff;font-size:13px;z-index:3}
+  .bar a{color:#fff}.bar .grow{flex:1}.bar label{display:inline-flex;gap:6px;align-items:center}
+  .bar select{font:inherit;padding:4px}
+  .bar button{font:500 14px inherit;font-family:inherit;min-height:34px;padding:0 14px;border-radius:6px;border:1px solid #00B8EC;background:#00B8EC;color:var(--navy);cursor:pointer}
+  .confirm{max-width:210mm;margin:12px auto 0;padding:10px 14px;border-radius:8px;background:var(--warn-bg);color:var(--warn);font-size:13px}
+  .sheet{max-width:210mm;margin:12px auto 24px;background:#fff;padding:16mm 18mm 18mm;box-shadow:0 1px 3px rgba(16,24,40,.12);position:relative}
+  .letterhead{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid var(--navy);padding-bottom:8px;margin-bottom:14px}
+  .letterhead .name{font-size:17px;font-weight:600;color:var(--navy);line-height:1.2}
+  .letterhead .meta{font-size:11.5px;color:var(--muted);text-align:right;line-height:1.5}
+  .formhead{display:flex;justify-content:space-between;gap:16px;font-size:12px;color:var(--muted);margin-bottom:6px}
+  h1{font-size:15.5px;margin:0 0 10px;line-height:1.25;text-align:center;text-transform:uppercase;letter-spacing:.02em}
+  h2{font-size:13px;margin:16px 0 6px;color:var(--navy)}
+  p{margin:0 0 .7em}
+  .to{margin:6px 0 12px}.to b{display:block}
+  table{width:100%;border-collapse:collapse;margin:6px 0 4px;font-size:12px}
+  th,td{border:1px solid var(--rule);padding:4px 7px;text-align:left;vertical-align:top}
+  th{background:#F3F5F8;font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tfoot td{font-weight:600}
+  thead{display:table-header-group}
+  tr{page-break-inside:avoid}
+  .sign{display:grid;grid-template-columns:1fr 40mm;gap:20px;margin-top:22px;page-break-inside:avoid;align-items:end}
+  .sign dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin:0;font-size:12.5px}
+  .sign dt{color:var(--muted)}.sign dd{margin:0;border-bottom:1px dotted var(--rule);min-height:18px}
+  .stampbox{border:1px dashed var(--rule);border-radius:50%;width:36mm;height:36mm;display:grid;place-items:center;color:var(--muted);font-size:11px;text-align:center}
+  .stampbox img{width:36mm;height:36mm;object-fit:contain}
+  .page-break{page-break-before:always;break-before:page}
+  .muted{color:var(--muted)}
+  .tc{background:var(--warn-bg)}
+  .label{border:3px double var(--ink);padding:18mm 14mm;text-align:center;margin-top:20mm}
+  .label .big{font-size:26px;font-weight:600;letter-spacing:.06em;margin:6mm 0}
+  .label p{font-size:15px}
+  .every-stamp{display:none}
+  {% if not word %}
+  @page{size:A4;margin:14mm 14mm 18mm;
+    @bottom-left{content:"{{ (p.legal_name or '')|replace('"', '') }}{% if t.reference %} · {{ t.reference|replace('"', '') }}{% endif %}";font:9px Arial,sans-serif;color:#5D6B82}
+    @bottom-right{content:"Page " counter(page) " of " counter(pages);font:9px Arial,sans-serif;color:#5D6B82}}
+  @media print{
+    body{background:#fff}
+    .bar,.confirm,.screen-only{display:none!important}
+    .sheet{box-shadow:none;margin:0;padding:0;max-width:none}
+    .tc{background:none}
+    body.stamp-all .every-stamp{display:block;position:fixed;right:0;bottom:-2mm;width:26mm;height:26mm;opacity:.92}
+    body.stamp-all .every-stamp img{width:100%;height:100%;object-fit:contain}
+  }
+  {% endif %}
+</style>
+</head>
+<body class="{{ 'stamp-all' if stamp_url }}">
+{% if not word %}
+<div class="bar"><a href="/bids/{{ b.id }}">← Back to the bid</a><span class="grow"></span>
+  {% if two %}<label>Print <select data-part onchange="location.search = this.value ? '?part=' + this.value : ''"><option value="">Both envelopes</option><option value="T" {{ "selected" if only == "T" }}>Technical envelope</option><option value="F" {{ "selected" if only == "F" }}>Financial envelope</option></select></label>{% endif %}
+  {% if stamp_url %}<label><input type="checkbox" checked onchange="document.body.classList.toggle('stamp-all', this.checked)"> Stamp every page</label>{% else %}<a href="/profile?back=/bids/{{ b.id }}/print#stamp">Add your stamp to put it on every page</a>{% endif %}
+  <span>Pages are numbered "Page 1 of N". Choose "Save as PDF" to keep a copy.</span><button type="button" data-print>Print</button></div>
+{% if confirm %}<div class="confirm"><b>{{ confirm|length }} fact{{ "s" if confirm|length != 1 }} still marked [TO CONFIRM]:</b> {{ confirm|join("; ") }}. Fill them in Bid Room before you print the final copy.</div>{% endif %}
+{% if stamp_url %}<div class="every-stamp" aria-hidden="true"><img src="{{ stamp_url }}" alt=""></div>{% endif %}
+{% endif %}
+
+{% macro letterhead() %}
+<div class="letterhead">
+  <div><div class="name">{{ p.legal_name }}</div>{% if p.work_types %}<div class="muted" style="font-size:11.5px">{{ p.work_types }}</div>{% endif %}</div>
+  <div class="meta">{% if p.address %}{{ p.address }}<br>{% endif %}{% if p.po_box %}P.O. Box {{ p.po_box }}<br>{% endif %}{% if p.phone %}Tel. {{ p.phone }}{% endif %}{% if p.phone and p.email %} · {% endif %}{{ p.email }}<br>{% if p.tin %}TIN {{ p.tin }}{% endif %}{% if p.vat_number %} · VAT reg. no. {{ p.vat_number }}{% endif %}</div>
+</div>
+{% endmacro %}
+{% macro head(f, to=True) %}
+<div class="formhead"><span>Place and date: {{ det.sign_place or "Addis Ababa" }}, {{ today | long_date }}</span><span>{% if t.reference %}Procurement reference: {{ t.reference }}{% endif %}</span></div>
+<h1>{{ f.title }}</h1>
+{% if to %}<div class="to"><span class="muted">To:</span><b>{{ t.buyer }}</b>{% if t.place %}{{ t.place }}{% endif %}</div>{% endif %}
+{% endmacro %}
+{% macro paras(text) %}{% for para in (text or "").split("\n\n") if para.strip() %}<p{% if "[TO CONFIRM" in para %} class="tc"{% endif %}>{{ para.strip() | replace("\n", " ") }}</p>{% endfor %}{% endmacro %}
+{% macro lines(text) %}{% for para in (text or "").split("\n\n") if para.strip() %}<p{% if "[TO CONFIRM" in para %} class="tc"{% endif %}>{% for l in para.strip().split("\n") %}{% if loop.first and (l[:2].strip()|length and l[0] in "0123456789") %}<b>{{ l }}</b>{% else %}{{ l }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>{% endfor %}{% endmacro %}
+{% macro signature() %}
+<div class="sign">
+  <dl><dt>Name</dt><dd>{{ p.signatory_name }}</dd><dt>In the capacity of</dt><dd>{{ p.signatory_title }}</dd><dt>Signed</dt><dd></dd>
+    <dt>Duly authorised to sign the bid for and on behalf of</dt><dd>{{ p.legal_name }}</dd><dt>Date</dt><dd></dd></dl>
+  <div class="stampbox">{% if stamp_url %}<img src="{{ stamp_url }}" alt="Company stamp">{% else %}Company stamp{% endif %}</div>
+</div>
+{% endmacro %}
+{% macro money(v) %}{{ "{:,.2f}".format(v) }}{% endmacro %}
+
+{% set live = x.forms | selectattr("on") | rejectattr("type", "equalto", "details") | list %}
+{% set parts = [("T", "TECHNICAL BID"), ("F", "FINANCIAL BID")] if two else [("", "")] %}
+{% set first = namespace(v=True) %}
+{% for part, part_name in parts if not only or only == part %}
+  {% if two %}
+  <div class="sheet {{ 'page-break' if not first.v }}">{% set first.v = False %}
+    <div class="label">
+      <p>To: <b>{{ t.buyer }}</b>{% if t.place %}<br>{{ t.place }}{% endif %}</p>
+      <div class="big">{{ part_name }}</div>
+      <p>{{ t.title }}{% if t.reference %}<br>Procurement reference: <b>{{ t.reference }}</b>{% endif %}</p>
+      <p>ORIGINAL / COPY ____</p>
+      <p style="font-weight:600">Do not open before {{ x["values"].closing or "the bid opening time" }}</p>
+      <p class="muted" style="font-size:13px">From: {{ p.legal_name }}{% if p.address %}, {{ p.address }}{% endif %}{% if p.phone %}, Tel. {{ p.phone }}{% endif %}</p>
+    </div>
+    <p class="muted" style="font-size:11px;margin-top:10mm">Envelope label. Cut out and stick on the {{ "technical" if part == "T" else "financial" }} envelope. Inner envelopes are marked ORIGINAL and COPY; the outer envelope carries the same details.</p>
+  </div>
+  {% endif %}
+  {% for f in live if not two or f.part == part %}
+  <div class="sheet {{ 'page-break' if not first.v }}">{% set first.v = False %}
+    {% if f.key != "manufacturer" %}{{ letterhead() }}{% endif %}
+    {% if f.type == "letter" %}
+      {{ head(f) }}
+      {{ paras(f.filled) }}
+      {% if f.sign %}{{ signature() }}{% endif %}
+    {% elif f.type == "text" %}
+      {{ head(f, False) }}
+      <p class="muted">For: {{ t.title }}</p>
+      {{ lines(f.text) if (f.text or "").strip() else '<p class="tc">[TO CONFIRM: write this section in Bid Room]</p>' | safe }}
+      {% if f.sign %}{{ signature() }}{% endif %}
+    {% elif f.type == "table" %}
+      {{ head(f, False) }}
+      <table><thead><tr><th style="width:30px">No.</th>{% for c in f.cols if c != "no" %}<th{% if c in ('value_etb', 'remaining_etb', 'amount_etb') %} class="num"{% endif %}>{{ F.COL[c] }}</th>{% endfor %}</tr></thead><tbody>
+      {% for r in f.rows %}<tr><td class="num">{{ r.no or loop.index }}</td>{% for c in f.cols if c != "no" %}{% set v = r[c] %}<td{% if c in ('value_etb', 'remaining_etb', 'amount_etb') %} class="num"{% endif %}>{% if c in ('value_etb', 'remaining_etb', 'amount_etb') and num(v) is not none %}{{ "{:,.0f}".format(num(v)) }}{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr>
+      {% else %}<tr><td colspan="{{ f.cols|length + 1 }}" class="tc">[TO CONFIRM: fill this table in Bid Room]</td></tr>{% endfor %}</tbody>
+      {% if f.key == "turnover" and f.rows %}{% set vals = f.rows | map(attribute="amount_etb") | map("string") | list %}{% set ns = namespace(s=0, n=0) %}{% for v in vals %}{% if num(v) is not none %}{% set ns.s = ns.s + num(v) %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+      {% if ns.n %}<tfoot><tr><td></td><td>Average annual turnover</td><td class="num">{{ "{:,.0f}".format(ns.s / ns.n) }}</td></tr></tfoot>{% endif %}{% endif %}
+      </table>
+      {% if f.hint %}<p class="muted" style="font-size:11px">{{ f.hint }}</p>{% endif %}
+      {% if f.sign %}{{ signature() }}{% endif %}
+    {% elif f.type == "price" %}
+      {{ head(f, False) }}
+      <p class="muted">For: {{ t.title }} · Currency: Ethiopian Birr</p>
+      {% set goods = d.kind == "goods" %}
+      <table><thead><tr><th style="width:44px">No.</th><th>Description</th>{% if goods %}<th>Country of origin</th>{% endif %}<th>Unit</th><th class="num">Qty</th><th class="num">{{ "Rate" if d.kind == "works" else "Unit price" }}</th><th class="num">Amount</th></tr></thead><tbody>
+      {% for r in d.financial %}{% set q, pr = num(r.qty), num(r.price) %}<tr><td>{{ r.no or loop.index }}</td><td>{{ r.item }}</td>{% if goods %}<td>{{ r.origin }}</td>{% endif %}<td>{{ r.unit }}</td><td class="num">{{ r.qty }}</td>
+        <td class="num">{{ money(pr) if pr is not none else r.price }}</td><td class="num">{{ money(q * pr) if q is not none and pr is not none else "" }}</td></tr>
+      {% else %}<tr><td colspan="7" class="tc">[TO CONFIRM: fill the price lines in Bid Room]</td></tr>{% endfor %}
+      </tbody><tfoot>
+        {% set span = 6 if goods else 5 %}
+        <tr><td colspan="{{ span }}" class="num">Total{% if x.vat %} before VAT{% endif %}</td><td class="num">{{ money(total) }}</td></tr>
+        {% if x.vat %}<tr><td colspan="{{ span }}" class="num">VAT 15%</td><td class="num">{{ money(x.vat) }}</td></tr>
+        <tr><td colspan="{{ span }}" class="num">Total bid price including VAT</td><td class="num">{{ money(total + x.vat) }}</td></tr>{% endif %}
+      </tfoot></table>
+      {% if total %}<p><b>Total bid price in words:</b> {{ x["values"].total_words }}{% if det.vat == "incl" %}, including VAT{% endif %}.</p>{% endif %}
+      {{ signature() }}
+    {% elif f.type == "security" %}
+      {% if det.security_type == "declaration" %}
+        {{ head({"title": "Bid-Securing Declaration"}) }}
+        {{ paras(x["values"].securing_declaration) }}
+        {{ signature() }}
+      {% else %}
+        {{ head(f, False) }}
+        <table><tbody>
+          <tr><th style="width:38%">Form</th><td>{{ F.SECURITY_LABEL[det.security_type] }}</td></tr>
+          <tr><th>Amount</th><td>{{ det.security_amount }}</td></tr>
+          <tr><th>Issued by</th><td>{{ det.security_bank }}</td></tr>
+          <tr><th>Number</th><td>{{ det.security_number }}</td></tr>
+          <tr><th>Date issued</th><td>{{ det.security_date | long_date if det.security_date }}</td></tr>
+          <tr><th>In favour of</th><td>{{ t.buyer }}</td></tr>
+          {% if det.security_type == "guarantee" and x.security_until %}<tr><th>Valid until at least</th><td>{{ x.security_until | long_date }}</td></tr>{% endif %}
+        </tbody></table>
+        <p class="muted">The original {{ "CPO" if det.security_type == "cpo" else "bank guarantee" }} is attached to this page.</p>
+      {% endif %}
+    {% elif f.type == "papers" %}
+      {{ head(f, False) }}
+      <p>The following documents are attached to this bid, in this order:</p>
+      <table><thead><tr><th style="width:30px">No.</th><th>Document</th><th>Number</th><th>Issued by</th><th>Valid until</th></tr></thead><tbody>
+      {% for r in x.env["items"] if r.from == "file" %}{% set pp = x.held.get(r.key) %}<tr><td class="num">{{ loop.index }}</td><td>{{ r.label }}</td><td>{{ pp.number if pp }}</td><td>{{ pp.issuer if pp }}</td><td>{{ (pp.expires | long_date) if pp and pp.expires }}{% if not pp %}<span class="tc">[TO CONFIRM: not in your company file]</span>{% endif %}</td></tr>{% endfor %}
+      {% if det.security_type in ("cpo", "guarantee") %}<tr><td class="num">{{ x.env["items"] | selectattr("from", "equalto", "file") | list | length + 1 }}</td><td>Bid security ({{ F.SECURITY_LABEL[det.security_type] }}), original</td><td>{{ det.security_number }}</td><td>{{ det.security_bank }}</td><td></td></tr>{% endif %}
+      </tbody></table>
+      {{ signature() }}
+    {% elif f.type == "profile" %}
+      {{ head(f, False) }}
+      <table><tbody>
+        {% for lbl, v in [("Bidder's legal name", p.legal_name), ("Legal address", p.address), ("P.O. Box", p.po_box), ("Telephone", p.phone), ("Email", p.email), ("TIN", p.tin),
+                          ("VAT registration number", p.vat_number), ("Year of establishment", p.year_established), ("Grade or licence class", p.grade), ("Permanent staff", p.staff_count),
+                          ("Authorised representative", (p.signatory_name or "") ~ (", " ~ p.signatory_title if p.signatory_title else "")), ("Bank and branch", p.bank_name), ("Bank account number", p.bank_account)] %}
+        <tr><th style="width:38%">{{ lbl }}</th><td>{{ v }}</td></tr>{% endfor %}
+      </tbody></table>
+      {% if p.licences %}<h2>Licences and certificates</h2>
+      <table><thead><tr><th>Licence or certificate</th><th>Number</th><th>Issued by</th><th>Valid until</th></tr></thead><tbody>
+      {% for l in p.licences %}<tr><td>{{ l.name }}</td><td>{{ l.number }}</td><td>{{ l.issuer }}</td><td>{{ l.expires | long_date if l.expires }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+      {{ signature() }}
+    {% endif %}
+  </div>
+  {% endfor %}
+{% endfor %}
+{% if not word %}<script src="/static/app.js?v=3" defer></script>{% endif %}
+</body>
+</html>

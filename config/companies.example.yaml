@@ -6,3 +6,5 @@ companies:
     regions: [Addis Ababa, Oromia]
     min_budget_etb: 500000
     exclude: [medical, software]
+    certifications: [MoUD Grade 3 General Contractor, VAT registered]
+    size: "medium, about 80 staff"

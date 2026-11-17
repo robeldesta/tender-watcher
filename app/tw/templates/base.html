@@ -1,0 +1,118 @@
+<!doctype html>
+{% from "ui/_ui.html" import icon %}
+{% set path = request.url.path %}
+{% set app_shell = me and me.role in ("member", "collector") %}
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Tender Watcher: every tender in Ethiopia{% endblock %}</title>
+<meta name="description" content="Every open tender in Ethiopia, matched to your business, with alerts every morning.">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Ethiopic:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/app.css?v=20">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B2F65'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E1%8C%A8%3C/text%3E%3C/svg%3E">
+<script src="/static/boot.js?v=20"></script>
+<script src="/static/app.js?v=20" defer></script>
+</head>
+{% macro nav(href, label, ico, current=False, lock=False, count=0, bad=False) -%}
+<a class="side-link" href="{{ href }}" {% if current %}aria-current="page"{% endif %} title="{{ label }}">{{ icon(ico) }}<span class="lbl">{{ label }}</span>{% if lock %}<span class="lock" title="In the Win plan">{{ icon("lock", "s") }}</span>{% elif count %}<span class="count{{ ' bad' if bad }}">{{ count }}</span>{% endif %}</a>
+{%- endmacro %}
+{% if app_shell %}
+<body class="app" data-page="{% block page_id %}{% endblock %}">
+{% include "ui/_sprite.html" %}
+<a class="sr" href="#main">Skip to content</a>
+<aside class="app-side" id="side" aria-label="Main">
+  <a class="side-brand" href="{{ '/my' if me.role == 'member' else '/collect' }}"><span class="mark" aria-hidden="true">ጨ</span><span>Tender Watcher<small>{{ me.company.name if me.company else "Collector" }}</small></span></a>
+  <nav class="side-nav-list">
+  {% if me.role == "member" %}
+    {% set win = shell.win if shell else True %}
+    {% set q = request.query_params %}
+    <div class="side-group">{{ nav("/my", "Overview", "home", path == "/my") }}</div>
+    <div class="side-group"><h6>Tenders</h6>
+      {{ nav("/", "All tenders", "list", path == "/" and not q.get("match")) }}
+      {{ nav("/?match=1", "Recommended", "target", path == "/" and q.get("match")) }}
+      {{ nav("/saved", "Saved", "star", path == "/saved") }}
+    </div>
+    <div class="side-group"><h6>Bids</h6>
+      {{ nav("/bids", "Bid Room", "briefcase", path.startswith("/bids"), lock=not win) }}
+      {{ nav("/past-bids", "Past bids", "file", path.startswith("/past-bids"), lock=not win) }}
+    </div>
+    <div class="side-group"><h6>Documents</h6>
+      {{ nav("/file", "Document vault", "folder", path.startswith("/file"), lock=not win) }}
+    </div>
+    <div class="side-group"><h6>Reports</h6>
+      {{ nav("/reports", "Market and bids", "chart", path == "/reports") }}
+    </div>
+    <div class="side-group"><h6>Company</h6>
+      {{ nav("/profile", "Company profile", "building", path == "/profile", lock=not win) }}
+      {{ nav("/account#interests", "Interests and alerts", "sliders", False) }}
+      {{ nav("/account", "Plan and billing", "card", path == "/account") }}
+      {{ nav("/security", "Security", "shield", path == "/security") }}
+    </div>
+  {% else %}
+    <div class="side-group"><h6>Collect</h6>
+      {{ nav("/collect", "Add a tender", "camera", path == "/collect") }}
+      {{ nav("/mine", "My entries", "list", path == "/mine") }}
+      {{ nav("/", "Open tenders", "list", path == "/") }}
+    </div>
+    <div class="side-group"><h6>Account</h6>{{ nav("/security", "Security", "shield", path == "/security") }}</div>
+  {% endif %}
+  </nav>
+  <div class="side-foot">
+    {% if shell %}<div class="side-plan"><span>Plan</span><a href="/account#plans" class="pill {{ 'ok' if shell.plan == 'Win' else 'brand' if shell.plan in ('Watch', 'Trial') else 'bad' }}">{{ "Free trial" if shell.plan == "Trial" else "Trial ended" if shell.plan == "Ended" else shell.plan }}</a></div>{% endif %}
+    <span class="eth" title="Today in the Ethiopian calendar"><b>{{ eth_date(today) }}</b> · {{ today | short_date }}</span>
+  </div>
+</aside>
+<div class="scrim" data-nav-close></div>
+<div class="app-main">
+  <header class="topbar">
+    <button class="tb-btn menu-toggle" type="button" data-nav-open aria-label="Open menu" aria-controls="side">{{ icon("menu") }}</button>
+    <button class="tb-btn nav-collapse" type="button" data-nav-min aria-label="Collapse the sidebar" title="Collapse the sidebar">{{ icon("sidebar") }}</button>
+    <nav class="crumbs" aria-label="Breadcrumb">{% block crumbs %}{% endblock %}</nav>
+    <form class="gsearch" method="get" action="/" role="search">
+      {{ icon("search") }}<label class="sr" for="gq">Search tenders</label>
+      <input id="gq" name="q" placeholder="Search tenders, buyers, references" value="{{ request.query_params.get('q', '') if path == '/' else '' }}" autocomplete="off"><kbd>/</kbd>
+    </form>
+    {% if shell %}
+    <details class="menu">
+      <summary class="tb-btn" aria-label="Notifications{{ ': ' ~ shell.bell|length ~ ' new' if shell.bell }}" title="Notifications">{{ icon("bell") }}{% if shell.bell %}<span class="dot">{{ shell.bell|length }}</span>{% endif %}</summary>
+      <div class="menu-p" style="width:320px">
+        <div class="mh"><b>Notifications</b>Papers and bids that need you</div>
+        {% for n in shell.bell %}<a href="{{ n.href }}"><span class="ind {{ n.level }}">{{ n.text }}</span></a>
+        {% else %}<p class="note">{% if shell.win %}Nothing needs you right now. Papers that expire within 30 days and bids closing within 3 days show here.{% else %}Paper expiry and bid deadline alerts come with the Win plan.{% endif %}</p>{% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    <details class="menu">
+      <summary class="tb-btn" aria-label="Your account" title="{{ me.name }}"><span class="avatar">{{ me.name[:1]|upper }}</span></summary>
+      <div class="menu-p">
+        <div class="mh"><b>{{ me.name }}</b>{{ me.phone }}{% if me.company %} · {{ me.company.name }}{% endif %}</div>
+        {% if me.role == "member" %}<a href="/account">{{ icon("card") }}Plan and billing</a><a href="/profile">{{ icon("building") }}Company profile</a>{% endif %}
+        <a href="/security">{{ icon("shield") }}Security</a>
+        <a href="/pricing">{{ icon("info") }}Pricing</a>
+        <hr><form method="post" action="/logout"><button type="submit">{{ icon("out") }}Sign out</button></form>
+      </div>
+    </details>
+  </header>
+{% else %}
+<body class="pub" data-page="{{ self.page_id() }}">
+{% include "ui/_sprite.html" %}
+<header class="pubbar"><div class="wrap">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true">ጨ</span>Tender Watcher</a>
+  <nav aria-label="Main">
+    <a href="/" {% if path == "/" %}aria-current="page"{% endif %}>Open tenders</a>
+    {% if not me %}<a href="/pricing" class="hide-sm" {% if path == "/pricing" %}aria-current="page"{% endif %}>Pricing</a>{% endif %}
+    {% if me %}<a href="/security" class="hide-sm">Security</a><form method="post" action="/logout"><button class="btn quiet" type="submit">Sign out</button></form>
+    {% else %}<a href="/login" {% if path == "/login" %}aria-current="page"{% endif %}>Sign in</a><a class="btn" href="/signup">Start free trial</a>{% endif %}
+  </nav>
+</div></header>
+{% endif %}
+{% block page %}{% if app_shell %}<main class="content" id="main">{% block body %}{% endblock %}</main>{% else %}<main class="pub-main" id="main"><div class="wrap">{{ self.body() }}</div></main>{% endif %}{% endblock %}
+{% if app_shell %}</div>{% else %}
+{% block footer %}<footer class="foot"><div class="wrap"><span>Tender Watcher, made by Sonador Systems in Addis Ababa</span><a href="/">Open tenders</a><a href="/pricing">Pricing</a><a href="/signup">Free trial</a><a href="https://t.me/tender_watcher_entry_bot" rel="noopener">Telegram</a></div></footer>{% endblock %}
+{% endif %}
+<dialog id="confirm-dialog" aria-labelledby="cd-t"><form method="dialog"><div class="d-body"><h2 id="cd-t">Are you sure?</h2><p class="muted" data-cd-text></p></div>
+  <div class="d-foot"><button class="btn ghost" value="cancel">Cancel</button><button class="btn danger solid" value="ok" data-cd-ok>Confirm</button></div></form></dialog>
+</body>
+</html>

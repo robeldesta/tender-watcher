@@ -1,0 +1,41 @@
+{% extends layout %}{% import "admin/_bits.html" as b with context %}{% block title %}Overview | Admin{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Overview</h1><p class="sub">{{ today | long_date }}</p></div></div>
+<div class="kpis">
+  <a class="kpi" href="/admin/tenders"><span>Open tenders</span><b>{{ k.open }}</b><small>{{ k.closing }} close within 7 days</small></a>
+  <a class="kpi {{ 'warn' if k.pending }}" href="/admin/review"><span>Waiting for review</span><b>{{ k.pending }}</b><small>collectors and websites</small></a>
+  <a class="kpi" href="/admin/tenders?status=open"><span>Published this week</span><b>{{ k.new_week }}</b><small>last 7 days</small></a>
+  {% if me.role == "admin" %}
+  <a class="kpi" href="/admin/companies?state=paid"><span>Paying companies</span><b>{{ k.paid }}</b><small>of {{ k.companies }} signed up</small></a>
+  <a class="kpi" href="/admin/companies?state=trial"><span>On free trial</span><b>{{ k.trials }}</b><small>{{ k.signups }} new this week</small></a>
+  <a class="kpi" href="/admin/payments"><span>Revenue this month</span><b>{% if k.revenue %}{% for cur, amt in k.revenue.items() %}{{ b.money(cur, amt) }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}0{% endif %}</b><small>paid payments</small></a>
+  <a class="kpi {{ 'bad' if k.failed > 20 else '' }}" href="/admin/activity?action=password_wrong"><span>Failed sign-ins, 24 h</span><b>{{ k.failed }}</b><small>wrong passwords</small></a>
+  {% endif %}
+</div>
+<div class="two-col">
+  <section>
+    <div class="panel-h"><h2>Review queue</h2><a href="/admin/review">Open queue</a></div>
+    <div class="table-wrap"><table><thead><tr><th>Tender</th><th>From</th><th class="num">Closes</th></tr></thead><tbody>
+    {% for t in queue %}<tr><td><a href="/entry/{{ t.id }}">{{ t.title or "(no title)" }}</a><div class="small muted">{{ t.buyer }}</div></td>
+      <td class="small">{{ t.collector.name if t.collector else t.source }}</td><td class="num nowrap">{{ t.closes or "?" }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">Nothing waiting. New collector photos and website finds land here.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  {% if me.role == "admin" %}
+  <section>
+    <div class="panel-h"><h2>Latest payments</h2><a href="/admin/payments">All payments</a></div>
+    <div class="table-wrap"><table><thead><tr><th>Company</th><th>Status</th><th class="num">Amount</th></tr></thead><tbody>
+    {% for p in pays %}<tr><td><a href="/admin/companies/{{ p.company_id }}">{{ p.company.name }}</a><div class="small muted">{{ b.when(p.created_at) }}</div></td>
+      <td>{% if p.status == "paid" %}<span class="pill ok">Paid</span>{% elif p.status == "pending" %}<span class="pill warn">Waiting</span>{% else %}<span class="pill">Not paid</span>{% endif %}</td>
+      <td class="num">{{ b.money(p.currency, p.amount) }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No payments yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="panel-h" style="margin-top:16px"><h2>Recent activity</h2><a href="/admin/activity">Activity log</a></div>
+    <div class="table-wrap"><table><tbody>
+    {% for a in recent %}<tr><td class="nowrap small muted">{{ b.when(a.at) }}</td><td>{{ a.actor.name if a.actor else "System" }}</td><td>{{ b.ACTIONS.get(a.action, a.action) }}<div class="small muted">{{ a.detail }}</div></td></tr>
+    {% else %}<tr><td class="muted">Nothing yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

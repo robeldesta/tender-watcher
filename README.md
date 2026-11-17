@@ -7,10 +7,12 @@ AI that watches Ethiopian public and NGO tenders, matches them to a company's pr
 ## Layout
 - `src/tenderwatch/sources/` one module per tender source (each returns raw `Tender`s)
 - `extract.py` LLM turns messy text into structured fields (deadline, buyer, budget, requirements)
-- `match.py` scores tenders against a company profile
+- `match.py` cheap keyword score, used as a prefilter
+- `llm_match.py` Claude scores each prefiltered tender 0-100 against the profile (sector, regions, certifications, size) with a one-line reason
 - `digest.py` builds the daily message
+- `bid_draft.py` drafts a bid pack (cover letter, company profile, experience tables, compliance checklist) for one firm and one tender; `bid_profile.py` holds the firm's bid profile and renders the tables; `draft_cli.py` runs it
 - `store.py` SQLite storage with de-duplication
-- `cli.py` `python -m tenderwatch.cli run|digest`
+- `cli.py` `python -m tenderwatch.cli demo|run|fetch-fixture`
 - `dataset.py` record human-checked fields (`review`, `check`) and export notices plus checked labels for training Kyrie, our own model (`export`)
 - `config/companies.example.yaml` copy to `companies.yaml` (not committed)
 
@@ -19,9 +21,31 @@ AI that watches Ethiopian public and NGO tenders, matches them to a company's pr
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=...   # needed for extract/match only
-PYTHONPATH=src python -m tenderwatch.cli demo
+PYTHONPATH=src python -m tenderwatch.cli demo        # offline on saved World Bank notices, keyword match only
+PYTHONPATH=src python -m tenderwatch.cli demo --llm  # adds Claude match score + reason
+PYTHONPATH=src python -m tenderwatch.cli run         # fetch live notices into data/tenders.db
 ```
+The match model defaults to `claude-opus-5-5`; set `TENDERWATCH_MATCH_MODEL` to change it.
+
+## Bid drafting
+Fill a firm's profile from the onboarding call into `config/bid_profiles.yaml` (copy the example; not committed). Then:
+```
+PYTHONPATH=src python -m tenderwatch.draft_cli demo          # offline sample pack, canned model reply
+PYTHONPATH=src python -m tenderwatch.draft_cli draft --profile config/bid_profiles.yaml \
+    --firm "Example Construction PLC" --tender tender.json --bid-doc section3.txt
+```
+The pack is written to `out/bids/` as Markdown to paste into the firm's letterhead. Paste the bidding document's instructions and qualification criteria (ITB, Section III) into `--bid-doc`: a World Bank notice alone is too short for a full checklist. Tables, values and licence numbers come only from the profile; Claude writes the prose and the checklist, and anything it can't back up is listed under "Before you send". The model defaults to `claude-opus-5-5`; set `TENDERWATCH_DRAFT_MODEL` to change it.
+
+## Tests
+```
+pip install -r requirements-dev.txt
+python -m pytest     # offline: the Anthropic client is mocked
+```
+
+## Sources
+- `worldbank`: [World Bank procurement notices API](https://search.worldbank.org/api/v2/procnotices?format=json&project_ctry_name_exact=Ethiopia), Ethiopia only. Public JSON, no key. Covers World Bank-financed projects (lots of civil works and supply). Contract awards are skipped.
 
 ## Rules
 - Respect each source's terms and robots.txt; keep request rates low.
 - Verify every deadline by showing the source link in the digest. Never present a model guess as fact.
+- Tender text is untrusted input to the model: keep it inside the `<tender>` fence, give the model no tools, and clean anything it writes before it reaches a customer.

@@ -1,0 +1,74 @@
+{% extends "base.html" %}{% from "ui/_ui.html" import icon, page_header, empty %}{% from "_env.html" import words %}
+{% block title %}Document vault | Tender Watcher{% endblock %}
+{% block crumbs %}<span class="here">Document vault</span>{% endblock %}
+{% block body %}
+{% set show = request.query_params.get("show", "") %}
+{% if saved %}<div class="toast" role="status">{{ icon("check") }}Saved. Every envelope is checked again against your vault.</div>{% endif %}
+{% if error %}<div class="alert warn" role="alert"><div class="grow"><p>{{ error }}</p></div></div>{% endif %}
+{% call page_header("Document vault", "Your company papers, with numbers and expiry dates. Every tender's envelope is checked against them.") %}
+  <a class="btn" href="#add" data-open-add>{{ icon("upload") }}Add a document</a>
+{% endcall %}
+{% set bad = (g.missing|length) + (g.expired|length) %}
+<div class="desk-lead {{ 'bad' if bad else 'ok' if g.total else '' }}" role="status"><p>
+  {%- if bad %}{{ words(bad) }} {{ "paper" if bad == 1 else "papers" }} would get any bid of yours thrown out today.
+  {%- elif g.total %}Your company file is in order. Every envelope starts from here.
+  {%- else %}Put your company papers here once. Every bid is checked against them.{% endif %}</p></div>
+
+<nav class="vault-summary" aria-label="Filter documents">
+  <a href="/file" {% if not show %}aria-current="true"{% endif %}><span>All</span><b>{{ g.total }}</b></a>
+  <a class="bad" href="/file?show=missing" {% if show == "missing" %}aria-current="true"{% endif %}><span>Missing</span><b>{{ g.missing|length }}</b></a>
+  <a class="bad" href="/file?show=expired" {% if show == "expired" %}aria-current="true"{% endif %}><span>Expired</span><b>{{ g.expired|length }}</b></a>
+  <a class="warn" href="/file?show=soon" {% if show == "soon" %}aria-current="true"{% endif %}><span>Expiring within 30 days</span><b>{{ g.soon|length }}</b></a>
+  <a class="ok" href="/file?show=ok" {% if show == "ok" %}aria-current="true"{% endif %}><span>Valid</span><b>{{ g.ok|length }}</b></a>
+</nav>
+
+<section class="card flush" aria-label="Documents">
+  <div class="filterbar"><div class="search">{{ icon("search") }}<label class="sr" for="vq">Find a document</label><input id="vq" type="search" placeholder="Find by name, number or issuer" data-filter-rows="#vault tbody tr"></div></div>
+  {% if g.total %}
+  <div class="table-wrap"><table class="dt stack-sm" id="vault">
+    <thead><tr><th>Document</th><th class="hide-sm">Number</th><th class="hide-sm">Issued by</th><th style="width:170px">Valid until</th><th style="width:150px">Status</th><th class="num" style="width:110px"><span class="sr">Actions</span></th></tr></thead>
+    <tbody>
+    {% if not show or show == "missing" %}{% for m in g.missing %}{% set b = blocked.get(m.kind, []) %}<tr>
+      <td class="tcell"><b>{{ m.label }}</b><span class="sub">{% if b %}It holds up {{ "your envelope for" if b|length == 1 else (b|length ~ " envelopes, first") }} {{ b[0].bid.tender.buyer }}{% if b[0].days is not none %}, closing in {{ b[0].days }} day{{ "s" if b[0].days != 1 }}{% endif %}.{% else %}Almost every tender asks for it. No open envelope needs it today, but the next one will.{% endif %}</span></td>
+      <td class="hide-sm muted">–</td><td class="hide-sm muted">–</td><td class="inline-sm muted">–</td>
+      <td class="inline-sm"><span class="ind bad">Missing</span></td>
+      <td class="c-act"><a class="btn sm" href="/file?add={{ m.kind }}#add">Add</a></td></tr>{% endfor %}{% endif %}
+    {% if not show or show == "expired" %}{% for p in g.expired %}<tr>
+      <td class="tcell"><b>{{ label(p) }}</b><span class="sub">Expired on {{ p.expires | long_date }}. Add the renewed one and remove this.</span></td>
+      <td class="hide-sm mono">{{ p.number or "–" }}</td><td class="hide-sm small">{{ p.issuer or "–" }}</td>
+      <td class="inline-sm small">{{ p.expires | long_date }}</td><td class="inline-sm"><span class="ind bad">Expired</span></td>
+      <td class="c-act"><div class="row-act"><a class="btn sm" href="/file?add={{ p.kind }}#add">Renew</a>
+        <form method="post" action="/file/{{ p.id }}/delete" data-ask="Remove {{ label(p) }} from the vault? Its scan is deleted too." data-ask-label="Remove"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="iconbtn" type="submit" title="Remove" aria-label="Remove {{ label(p) }}">{{ icon("trash") }}</button></form></div></td></tr>{% endfor %}{% endif %}
+    {% for p in g.soon + g.ok if (not show) or (show == "soon" and p in g.soon) or (show == "ok" and p in g.ok) %}<tr>
+      <td class="tcell"><b>{{ label(p) }}</b>{% if p.name and p.name != label(p) %}<span class="sub">{{ KINDS.get(p.kind, KINDS.other)[0] }}</span>{% endif %}</td>
+      <td class="hide-sm mono">{{ p.number or "–" }}</td><td class="hide-sm small">{{ p.issuer or "–" }}</td>
+      <td class="inline-sm small">{% if p.expires %}Valid until {{ p.expires | long_date }}{% if p in g.soon %}<span class="sub" style="color:var(--warn)">{{ p.expires | days_from(today) }} days from now</span>{% endif %}{% else %}Does not expire{% endif %}</td>
+      <td class="inline-sm">{% if p in g.soon %}<span class="ind warn">Expiring soon</span>{% else %}<span class="ind ok">Valid</span>{% endif %}</td>
+      <td class="c-act"><div class="row-act">{% if p.file %}<a class="iconbtn" href="/file/{{ p.id }}/scan" title="See the scan" aria-label="See the scan of {{ label(p) }}">{{ icon("eye") }}</a>{% endif %}
+        <form method="post" action="/file/{{ p.id }}/delete" data-ask="Remove {{ label(p) }} from the vault? Its scan is deleted too." data-ask-label="Remove"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="iconbtn" type="submit" title="Remove" aria-label="Remove {{ label(p) }}">{{ icon("trash") }}</button></form></div></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}
+    {{ empty("No documents yet", "Add your trade licence, TIN certificate and tax clearance first: almost every tender asks for them.", "/file?add=trade_licence#add", "Add the trade licence") }}
+  {% endif %}
+</section>
+
+<details class="drawer" id="add" style="margin-top:16px" {{ "open" if add or error or not g.total }}>
+  <summary>{{ icon("upload") }}Add a document {{ icon("chev-d", "chev") }}</summary>
+  <div class="drawer-b">
+  <form method="post" action="/file" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="form-grid">
+    <div class="field"><label for="kind">Which paper</label>
+      <select id="kind" name="kind" required>{% for k, v in KINDS.items() %}<option value="{{ k }}"{% if k == add %} selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="number">Number on the paper</label><input id="number" name="number" maxlength="80" autocomplete="off"></div>
+    <div class="field"><label for="issuer">Issued by</label><input id="issuer" name="issuer" maxlength="160" placeholder="For example Ministry of Revenues"></div>
+    <div class="field"><label for="expires">Valid until</label><input id="expires" name="expires" type="date"><span class="hint">Leave empty if it does not expire. For a licence in its renewal window, give the last day of the window.</span></div>
+    <div class="field"><label for="name">Your own name for it</label><input id="name" name="name" maxlength="160" placeholder="Only if you hold several of this kind"></div>
+    <div class="field"><label for="scan">Scan or photo</label><input id="scan" name="scan" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span class="hint">PDF, JPG or PNG, up to 15 MB. Only your company can open it.</span></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Save to the vault</button></div>
+  </form>
+  </div>
+</details>
+{% endblock %}

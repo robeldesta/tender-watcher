@@ -1,0 +1,14 @@
+{% extends layout %}{% import "admin/_bits.html" as b with context %}{% from "_due.html" import pager %}{% block title %}Activity log | Admin{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Activity log</h1><p class="sub">Every admin change and staff sign-in, newest first. Entries can't be edited or deleted.</p></div></div>
+<form class="toolbar" method="get" action="/admin/activity">
+  <label class="sr" for="action">Action</label><select id="action" name="action"><option value="">Every action</option>{% for a in actions %}<option value="{{ a }}" {{ "selected" if a == action }}>{{ b.ACTIONS.get(a, a) }}</option>{% endfor %}</select>
+  <button class="btn ghost" type="submit">Show</button>
+</form>
+<div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>About</th><th>Details</th><th>IP</th></tr></thead><tbody>
+{% for a in rows %}<tr><td class="nowrap small">{{ b.when(a.at) }}</td><td>{{ a.actor.name if a.actor else "System" }}</td><td>{{ b.ACTIONS.get(a.action, a.action) }}</td>
+  <td class="small">{% if a.target.startswith("company:") %}<a href="/admin/companies/{{ a.target[8:] }}">Company {{ a.target[8:] }}</a>{% elif a.target.startswith(("tw-","web-","wb-","fc-")) %}<a href="/entry/{{ a.target }}">{{ a.target }}</a>{% else %}{{ a.target }}{% endif %}</td>
+  <td class="small muted">{{ a.detail }}</td><td class="mono muted">{{ a.ip }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">Nothing logged yet.</td></tr>{% endfor %}</tbody></table></div>
+{{ pager(pg, "/admin/activity", qs) }}
+{% endblock %}
