@@ -13,6 +13,7 @@ AI that watches Ethiopian public and NGO tenders, matches them to a company's pr
 - `bid_draft.py` drafts a bid pack (cover letter, company profile, experience tables, compliance checklist) for one firm and one tender; `bid_profile.py` holds the firm's bid profile and renders the tables; `draft_cli.py` runs it
 - `store.py` SQLite storage with de-duplication
 - `cli.py` `python -m tenderwatch.cli demo|run|fetch-fixture`
+- `dataset.py` record human-checked fields (`review`, `check`) and export notices plus checked labels for training Kyrie, our own model (`export`)
 - `config/companies.example.yaml` copy to `companies.yaml` (not committed)
 
 ## Setup
