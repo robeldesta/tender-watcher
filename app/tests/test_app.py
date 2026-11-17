@@ -1079,3 +1079,25 @@ def test_past_bids_import_profile_and_reuse(env, tmp_path):
     assert len(stored) == 1  # the .docx was refused; a retried read keeps its one file
     c.post(url + "/delete", data={"csrf": tok})
     assert c.get(url).status_code == 404 and not list((tmp_path / "appdata" / "past_bids").rglob("*.pdf"))
+
+def test_username_member_from_manage(env, tmp_path, monkeypatch):
+    from tw import manage
+    from tw.auth import norm_login
+    app = env[0]
+    assert norm_login(" Jobale ") == "jobale" and norm_login("0911 234 567") == "0911234567"
+    assert norm_login("ab") == norm_login("x y") == norm_login("1abc") == ""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/t.db")
+    monkeypatch.setenv("MEMBER_PASSWORD", "password1")
+    monkeypatch.setenv("SECRET_KEY", "test")
+    manage.main(["create-member", "--login", "Jobale", "--company", "Jobale Engineering", "--name", "Jobale",
+                 "--categories", "construction"])
+    with pytest.raises(SystemExit):
+        manage.main(["create-member", "--login", "jobale", "--company", "Again", "--name", "X"])
+    bad = client(app).post("/login", data={"phone": "jobale", "password": "nope"})
+    assert bad.status_code == 400 and "or username" in bad.text
+    c = client(app, "JOBALE")
+    home = c.get("/my")
+    assert home.status_code == 200 and "Jobale Engineering" in home.text
+    acct = c.get("/account").text
+    assert 'value="construction" checked' in acct or "construction" in acct
+    assert c.get("/bids").status_code == 200  # the trial includes Bid Room
