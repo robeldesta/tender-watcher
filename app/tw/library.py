@@ -80,7 +80,14 @@ def _obj(props):
 
 
 def _rows(cols):
-    return {"type": "array", "items": _obj(cols)}
+    # Rows as plain string lists in column order (see COLUMNS in the prompt). Objects per row made the
+    # strict-output grammar too large for the API once equipment_items joined the profile tables.
+    return {"type": "array", "items": SA}
+
+
+TABLES = {**bids.ROWS, "turnover": ["year", "amount_etb"], "price_lines": ["item", "unit", "qty", "price"]}
+SYSTEM += "\n\nTables are lists of rows, and each row is a list of strings in exactly this column order " \
+          "(empty string for a missing cell):\n" + "\n".join(f"- {k}: {', '.join(c)}" for k, c in TABLES.items())
 
 
 SCHEMA = {
@@ -132,6 +139,8 @@ def clean_reply(data):
                                                 ("price_lines", ["item", "unit", "qty", "price"])]:
         rows = []
         for r in (data.get(key) or [])[:bids.MAX_ROWS]:
+            if isinstance(r, list):
+                r = dict(zip(cols, r))
             if isinstance(r, dict):
                 row = {c: _c(r.get(c)) for c in cols}
                 if any(row.values()):
